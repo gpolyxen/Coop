@@ -2,7 +2,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "ShooterCharacter.generated.h"
-class UCameraComponent;class USpringArmComponent;class UInventoryComponent;class UHealthArmorComponent;class USkeletalMeshComponent;class UStaticMeshComponent;class UBlendSpace;class UAnimMontage;class UAnimSequence;class UAnimInstance;class AWeaponBase;class APickupActor;
+class UCameraComponent;class USpringArmComponent;class UInventoryComponent;class UHealthArmorComponent;class UNavigationInvokerComponent;class UAIPerceptionStimuliSourceComponent;class USkeletalMeshComponent;class UStaticMeshComponent;class UBlendSpace;class UAnimMontage;class UAnimSequence;class UAnimInstance;class AWeaponBase;class APickupActor;
 UCLASS(Blueprintable)
 class MYPROJECT_API AShooterCharacter:public ACharacter
 {
@@ -26,22 +26,29 @@ public:
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Camera")FRotator CameraSocketRotation=FRotator(0.f,89.999f,-84.999f);
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Camera")FVector CameraSocketScale=FVector(.2187f,.25f,.2187f);
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Camera")bool bHideLocalHead=false;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Camera",meta=(ClampMin="0.0"))float AimCameraPullback=8.f;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation")TSubclassOf<UAnimInstance> UnarmedAnimClass;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation")TSubclassOf<UAnimInstance> ArmedAnimClass;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation",meta=(ClampMin="-1.0",ClampMax="1.0"))float AimPitchScale=1.f;
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly) UInventoryComponent* Inventory;
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly) UHealthArmorComponent* Health;
+	UPROPERTY(VisibleAnywhere,BlueprintReadOnly,Category="Navigation")UNavigationInvokerComponent* NavigationInvoker;
+	UPROPERTY(VisibleAnywhere,BlueprintReadOnly,Category="AI")UAIPerceptionStimuliSourceComponent* StimuliSource;
 	UPROPERTY(ReplicatedUsing=OnRep_Weapon,VisibleAnywhere,BlueprintReadOnly) AWeaponBase* EquippedWeapon=nullptr;
 	UPROPERTY(ReplicatedUsing=OnRep_Weapon,VisibleAnywhere,BlueprintReadOnly) TArray<AWeaponBase*> WeaponSlots;
 	UPROPERTY(Replicated,VisibleAnywhere,BlueprintReadOnly) int32 ActiveWeaponSlot=INDEX_NONE;
 	UFUNCTION(BlueprintCallable) void EquipWeapon(TSubclassOf<AWeaponBase> WeaponClass);
+	UFUNCTION(BlueprintPure) bool IsAiming()const{return bIsAiming;}
+	UFUNCTION(BlueprintPure) bool IsDead()const;
 protected:
 	void MoveForward(float Value);void MoveRight(float Value);void TurnAtRate(float Value);void LookUpAtRate(float Value);void SwitchWeapon(float Value);void StartFire();void StopFire();void FireOnce();void StartAim();void StopAim();void Reload();void Interact();void SprintPressed();void SprintReleased();void ToggleCrouch();
 	UFUNCTION(Server,Reliable,WithValidation)void ServerEquipWeapon(TSubclassOf<AWeaponBase> WeaponClass);
 	UFUNCTION(Server,Reliable,WithValidation)void ServerSwitchWeapon(int32 Direction);
 	UFUNCTION(Server,Reliable,WithValidation)void ServerInteract(APickupActor* Pickup);
+	UFUNCTION(Server,Reliable,WithValidation)void ServerSetAiming(bool bNewAiming);
 	UFUNCTION()void OnRep_Weapon();
-	UPROPERTY(EditDefaultsOnly,Category="Movement")float WalkSpeed=450.f;UPROPERTY(EditDefaultsOnly,Category="Movement")float SprintSpeed=700.f;UPROPERTY(EditDefaultsOnly,Category="Movement")float BaseTurnRate=45.f;UPROPERTY(EditDefaultsOnly,Category="Interaction")float InteractionDistance=300.f;UPROPERTY(EditDefaultsOnly,Category="Aim")float HipFOV=90.f;UPROPERTY(EditDefaultsOnly,Category="Aim")float AimFOV=75.f;bool bIsAiming=false;FTimerHandle FireTimer;
+	UFUNCTION()void HandleDeath();
+	UPROPERTY(EditDefaultsOnly,Category="Movement")float WalkSpeed=450.f;UPROPERTY(EditDefaultsOnly,Category="Movement")float SprintSpeed=700.f;UPROPERTY(EditDefaultsOnly,Category="Movement")float BaseTurnRate=45.f;UPROPERTY(EditDefaultsOnly,Category="Interaction")float InteractionDistance=300.f;UPROPERTY(EditDefaultsOnly,Category="Aim")float HipFOV=90.f;UPROPERTY(EditDefaultsOnly,Category="Aim")float AimFOV=75.f;UPROPERTY(Replicated)bool bIsAiming=false;FTimerHandle FireTimer;
 	void CaptureDiagnosticScreenshot();
 	void ResetFirstPersonArmsAnimation();
 	FVector ArmsBaseLocation=FVector(-20.f,8.f,-98.f);

@@ -20,6 +20,7 @@ public:
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Effects")UNiagaraSystem* MuzzleFlash=nullptr;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Effects")USoundBase* FireSound=nullptr;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation")UAnimMontage* CharacterFireMontage=nullptr;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation")UAnimMontage* CharacterAimFireMontage=nullptr;
 	UPROPERTY(Replicated,VisibleAnywhere,BlueprintReadOnly) int32 AmmoInMagazine=0;
 	UPROPERTY(Replicated,VisibleAnywhere,BlueprintReadOnly) int32 ReserveAmmo=90;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,meta=(ClampMin="0")) int32 MaxReserveAmmo=120;

@@ -1,8 +1,250 @@
 #include "ZombieCharacter.h"
+
 #include "ZombieAIController.h"
 #include "HealthArmorComponent.h"
-#include "GameFramework/CharacterMovementComponent.h"
+#include "Animation/AnimSequence.h"
 #include "Components/CapsuleComponent.h"
-AZombieCharacter::AZombieCharacter(){bReplicates=true;AIControllerClass=AZombieAIController::StaticClass();AutoPossessAI=EAutoPossessAI::PlacedInWorldOrSpawned;Health=CreateDefaultSubobject<UHealthArmorComponent>(TEXT("Health"));Health->MaxHealth=120.f;Health->OnDeath.AddDynamic(this,&AZombieCharacter::HandleDeath);GetCharacterMovement()->MaxWalkSpeed=350.f;GetCharacterMovement()->bOrientRotationToMovement=true;}
-bool AZombieCharacter::TryAttack(AActor*T){if(!HasAuthority()||!T||FVector::DistSquared(T->GetActorLocation(),GetActorLocation())>FMath::Square(AttackRange))return false;const double N=GetWorld()->GetTimeSeconds();if(N-LastAttackTime<AttackCooldown)return false;LastAttackTime=N;if(UHealthArmorComponent*H=T->FindComponentByClass<UHealthArmorComponent>())H->ApplyDamage(AttackDamage,GetController(),this);return true;}
-void AZombieCharacter::HandleDeath(){if(AAIController*C=Cast<AAIController>(GetController()))C->StopMovement();GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);GetMesh()->SetCollisionProfileName(TEXT("Ragdoll"));GetMesh()->SetSimulatePhysics(true);SetLifeSpan(20.f);}
+#include "Components/SkeletalMeshComponent.h"
+#include "Engine/SkeletalMesh.h"
+#include "Engine/World.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "NavigationInvokerComponent.h"
+#include "Net/UnrealNetwork.h"
+#include "TimerManager.h"
+#include "UObject/ConstructorHelpers.h"
+
+AZombieCharacter::AZombieCharacter()
+{
+	PrimaryActorTick.bCanEverTick=true;
+	bReplicates=true;
+	AIControllerClass=AZombieAIController::StaticClass();
+	AutoPossessAI=EAutoPossessAI::PlacedInWorldOrSpawned;
+	Health=CreateDefaultSubobject<UHealthArmorComponent>(TEXT("Health"));
+	Health->MaxHealth=1000.f;
+	NavigationInvoker=CreateDefaultSubobject<UNavigationInvokerComponent>(TEXT("NavigationInvoker"));
+	NavigationInvoker->SetGenerationRadii(12000.f,16000.f);
+	GetCharacterMovement()->MaxWalkSpeed=270.f;
+	GetCharacterMovement()->bOrientRotationToMovement=true;
+	GetCharacterMovement()->RotationRate=FRotator(0.f,260.f,0.f);
+	GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_WorldDynamic,ECR_Ignore);
+	GetMesh()->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	GetMesh()->SetCollisionResponseToChannel(ECC_WorldDynamic,ECR_Block);
+	GetMesh()->SetAnimationMode(EAnimationMode::AnimationSingleNode);
+
+	static ConstructorHelpers::FObjectFinder<USkeletalMesh> ZombieMesh(TEXT("/Game/ThirdPersonBP/Bot/bot_animations/T-Pose.T-Pose"));
+	if(ZombieMesh.Succeeded())
+	{
+		GetMesh()->SetSkeletalMesh(ZombieMesh.Object);
+		GetMesh()->SetRelativeLocation(FVector(0.f,0.f,-90.f));
+		GetMesh()->SetRelativeRotation(FRotator(0.f,-90.f,0.f));
+	}
+	static ConstructorHelpers::FObjectFinder<UAnimSequence> IdleAsset(TEXT("/Game/ThirdPersonBP/Bot/bot_animations/Zombie_Idle_Anim.Zombie_Idle_Anim"));
+	if(IdleAsset.Succeeded())IdleAnimation=IdleAsset.Object;
+	static ConstructorHelpers::FObjectFinder<UAnimSequence> WalkAsset(TEXT("/Game/ThirdPersonBP/Bot/bot_animations/Zombie_Walk__1__Anim.Zombie_Walk__1__Anim"));
+	if(WalkAsset.Succeeded())WalkAnimation=WalkAsset.Object;
+	static ConstructorHelpers::FObjectFinder<UAnimSequence> AttackAsset(TEXT("/Game/ThirdPersonBP/Bot/bot_animations/Zombie_Attack__1__Anim.Zombie_Attack__1__Anim"));
+	if(AttackAsset.Succeeded())AttackAnimation=AttackAsset.Object;
+}
+
+void AZombieCharacter::BeginPlay()
+{
+	Super::BeginPlay();
+	UpdateLocomotionAnimation();
+}
+
+void AZombieCharacter::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+	if(bIsDead)return;
+	if(bIsAttacking)
+	{
+		if(HasAuthority()&&PendingAttackTarget.IsValid())
+		{
+			FVector ToTarget=PendingAttackTarget->GetActorLocation()-GetActorLocation();
+			ToTarget.Z=0.f;
+			if(!ToTarget.IsNearlyZero())
+			{
+				const FRotator DesiredRotation=ToTarget.Rotation();
+				SetActorRotation(FMath::RInterpTo(GetActorRotation(),DesiredRotation,DeltaSeconds,9.f));
+			}
+		}
+		return;
+	}
+	UpdateLocomotionAnimation();
+}
+
+void AZombieCharacter::PlayZombieAnimation(UAnimationAsset* Animation,bool bLooping,float PlayRate)
+{
+	if(!Animation||CurrentAnimation==Animation)return;
+	CurrentAnimation=Animation;
+	GetMesh()->GlobalAnimRateScale=FMath::Max(.1f,PlayRate);
+	GetMesh()->PlayAnimation(Animation,bLooping);
+}
+
+void AZombieCharacter::UpdateLocomotionAnimation()
+{
+	if(bIsDead||bIsAttacking)return;
+	const bool bMoving=GetVelocity().SizeSquared2D()>FMath::Square(8.f);
+	PlayZombieAnimation(bMoving?WalkAnimation:IdleAnimation,true,bMoving?WalkAnimationPlayRate:1.f);
+}
+
+void AZombieCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps)const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+	DOREPLIFETIME(AZombieCharacter,HeadHits);
+	DOREPLIFETIME(AZombieCharacter,TorsoHits);
+	DOREPLIFETIME(AZombieCharacter,LimbHits);
+	DOREPLIFETIME(AZombieCharacter,LethalProgress);
+	DOREPLIFETIME(AZombieCharacter,bIsDead);
+	DOREPLIFETIME(AZombieCharacter,bIsAttacking);
+}
+
+bool AZombieCharacter::IsHeadBone(FName BoneName)
+{
+	return BoneName.ToString().ToLower().Contains(TEXT("head"));
+}
+
+bool AZombieCharacter::IsLimbBone(FName BoneName)
+{
+	const FString Bone=BoneName.ToString().ToLower();
+	static const TCHAR* LimbTokens[]={TEXT("arm"),TEXT("hand"),TEXT("finger"),TEXT("thumb"),TEXT("leg"),TEXT("upleg"),TEXT("foot"),TEXT("toe"),TEXT("thigh"),TEXT("calf")};
+	for(const TCHAR* Token:LimbTokens)if(Bone.Contains(Token))return true;
+	return false;
+}
+
+float AZombieCharacter::TakeDamage(float DamageAmount,const FDamageEvent& DamageEvent,AController* EventInstigator,AActor* DamageCauser)
+{
+	const float AppliedDamage=Super::TakeDamage(DamageAmount,DamageEvent,EventInstigator,DamageCauser);
+	if(!HasAuthority()||bIsDead)return 0.f;
+
+	FName HitBone=NAME_None;
+	FVector ShotDirection=GetActorForwardVector();
+	FVector HitLocation=GetActorLocation();
+	if(DamageEvent.IsOfType(FPointDamageEvent::ClassID))
+	{
+		const FPointDamageEvent& PointEvent=static_cast<const FPointDamageEvent&>(DamageEvent);
+		HitBone=PointEvent.HitInfo.BoneName;
+		ShotDirection=PointEvent.ShotDirection.GetSafeNormal();
+		HitLocation=PointEvent.HitInfo.ImpactPoint;
+	}
+
+	const bool bHeadshot=IsHeadBone(HitBone);
+	if(bHeadshot)
+	{
+		++HeadHits;
+		LethalProgress=1.f;
+	}
+	else if(IsLimbBone(HitBone))
+	{
+		++LimbHits;
+		LethalProgress+=.2f;
+	}
+	else
+	{
+		++TorsoHits;
+		LethalProgress+=1.f/3.f;
+	}
+
+	if(AZombieAIController* ZombieController=Cast<AZombieAIController>(GetController()))
+	{
+		AActor* Attacker=EventInstigator?EventInstigator->GetPawn():DamageCauser;
+		ZombieController->AlertToActor(Attacker);
+	}
+	if(bHeadshot||LethalProgress>=.999f)Die(bHeadshot,HitBone,ShotDirection,HitLocation);
+	return AppliedDamage;
+}
+
+bool AZombieCharacter::TryAttack(AActor* Target)
+{
+	if(!HasAuthority()||bIsDead||bIsAttacking||!Target)return false;
+	if(FVector::DistSquared(Target->GetActorLocation(),GetActorLocation())>FMath::Square(AttackRange))return false;
+	const double Now=GetWorld()->GetTimeSeconds();
+	if(Now-LastAttackTime<AttackCooldown)return false;
+
+	LastAttackTime=Now;
+	PendingAttackTarget=Target;
+	bIsAttacking=true;
+	GetCharacterMovement()->StopMovementImmediately();
+	OnRep_IsAttacking();
+	GetWorldTimerManager().SetTimer(AttackHitTimer,this,&AZombieCharacter::PerformAttackHit,AttackHitDelay,false);
+	const float AnimationDuration=AttackAnimation?AttackAnimation->GetPlayLength()/FMath::Max(.1f,AttackPlayRate):1.8f;
+	GetWorldTimerManager().SetTimer(AttackFinishTimer,this,&AZombieCharacter::FinishAttack,FMath::Max(AttackHitDelay+.2f,AnimationDuration),false);
+	return true;
+}
+
+void AZombieCharacter::OnRep_IsAttacking()
+{
+	CurrentAnimation=nullptr;
+	if(bIsAttacking)PlayZombieAnimation(AttackAnimation,false,AttackPlayRate);
+	else UpdateLocomotionAnimation();
+}
+
+void AZombieCharacter::PerformAttackHit()
+{
+	if(!HasAuthority()||bIsDead||!bIsAttacking||!PendingAttackTarget.IsValid())return;
+	AActor* Target=PendingAttackTarget.Get();
+	FVector ToTarget=Target->GetActorLocation()-GetActorLocation();
+	const float Distance2D=ToTarget.Size2D();
+	ToTarget.Z=0.f;
+	if(Distance2D>AttackRange+35.f||ToTarget.IsNearlyZero())return;
+	const FVector AttackDirection=ToTarget.GetSafeNormal();
+	if(FVector::DotProduct(GetActorForwardVector(),AttackDirection)<AttackFacingThreshold)return;
+
+	FHitResult ObstacleHit;
+	FCollisionQueryParams Query(SCENE_QUERY_STAT(ZombieAttack),false,this);
+	const FVector TraceStart=GetActorLocation()+FVector(0.f,0.f,45.f);
+	const FVector TraceEnd=Target->GetActorLocation()+FVector(0.f,0.f,35.f);
+	if(GetWorld()->LineTraceSingleByChannel(ObstacleHit,TraceStart,TraceEnd,ECC_Visibility,Query))
+	{
+		AActor* HitActor=ObstacleHit.GetActor();
+		if(HitActor&&HitActor!=Target&&!HitActor->IsOwnedBy(Target))return;
+	}
+
+	if(UHealthArmorComponent* TargetHealth=Target->FindComponentByClass<UHealthArmorComponent>())
+	{
+		const float AppliedDamage=TargetHealth->ApplyDamage(AttackDamage,GetController(),this);
+		if(AppliedDamage>0.f)UE_LOG(LogTemp,Display,TEXT("Zombie %s melee hit %s: %.0f damage, %.0f health remaining"),*GetName(),*GetNameSafe(Target),AppliedDamage,TargetHealth->Health);
+		if(ACharacter* HitCharacter=Cast<ACharacter>(Target))HitCharacter->LaunchCharacter(AttackDirection*90.f+FVector(0.f,0.f,35.f),false,false);
+	}
+}
+
+void AZombieCharacter::FinishAttack()
+{
+	if(!HasAuthority()||bIsDead)return;
+	PendingAttackTarget.Reset();
+	bIsAttacking=false;
+	OnRep_IsAttacking();
+}
+
+void AZombieCharacter::Die(bool bHeadshot,FName HitBone,const FVector& ShotDirection,const FVector& HitLocation)
+{
+	if(bIsDead)return;
+	bIsDead=true;
+	bIsAttacking=false;
+	PendingAttackTarget.Reset();
+	GetWorldTimerManager().ClearTimer(AttackHitTimer);
+	GetWorldTimerManager().ClearTimer(AttackFinishTimer);
+	const FVector Impulse=ShotDirection.GetSafeNormal()*HeadDetachImpulse;
+	MulticastDie(bHeadshot,HitBone,Impulse,HitLocation);
+	SetLifeSpan(20.f);
+}
+
+void AZombieCharacter::MulticastDie_Implementation(bool bHeadshot,FName HitBone,FVector Impulse,FVector HitLocation)
+{
+	bIsDead=true;
+	bIsAttacking=false;
+	CurrentAnimation=nullptr;
+	if(AAIController* ZombieController=Cast<AAIController>(GetController()))ZombieController->StopMovement();
+	GetCharacterMovement()->DisableMovement();
+	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	GetMesh()->SetCollisionProfileName(TEXT("Ragdoll"));
+	GetMesh()->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+	GetMesh()->SetAllBodiesSimulatePhysics(true);
+	GetMesh()->WakeAllRigidBodies();
+	if(bHeadshot)
+	{
+		const FName HeadBone=IsHeadBone(HitBone)?HitBone:FName(TEXT("Head"));
+		GetMesh()->BreakConstraint(Impulse,HitLocation,HeadBone);
+		GetMesh()->AddImpulseToAllBodiesBelow(Impulse,HeadBone,true);
+	}
+}
