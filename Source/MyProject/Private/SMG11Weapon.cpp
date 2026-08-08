@@ -1,0 +1,4 @@
+#include "SMG11Weapon.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "UObject/ConstructorHelpers.h"
+ASMG11Weapon::ASMG11Weapon(){WeaponName=TEXT("SMG11");RecoilPitch=.4f;RecoilYaw=.22f;RecoilKickback=.55f;RecoilRecoverySpeed=16.f;FirstPersonCameraRotation=FRotator::ZeroRotator;FirstPersonGripLocation=FVector::ZeroVector;FirstPersonGripRotation=FRotator::ZeroRotator;static ConstructorHelpers::FObjectFinder<USkeletalMesh>FP(TEXT("/Game/FPS_Weapon_Bundle/Weapons/Meshes/SMG11/SK_SMG11_X.SK_SMG11_X"));if(FP.Succeeded()){Mesh->SetSkeletalMesh(FP.Object);FirstPersonMesh->SetSkeletalMesh(FP.Object);}Stats.Damage=22;Stats.MagazineSize=32;Stats.RoundsPerMinute=900;Stats.ReloadSeconds=1.8f;Stats.MuzzleVelocity=42000;Stats.SpreadDegrees=.8f;AmmoInMagazine=32;ReserveAmmo=96;MaxReserveAmmo=160;}
