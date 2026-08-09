@@ -6,6 +6,7 @@
 #include "ShooterGameInstance.generated.h"
 
 class AShooterCharacter;
+class UPauseMenuWidget;
 class UShooterSaveGame;
 class FOnlineSessionSearch;
 
@@ -25,7 +26,13 @@ public:
 	UFUNCTION(BlueprintCallable)void HostLanGame();
 	UFUNCTION(BlueprintCallable)void FindLanGames();
 	UFUNCTION(BlueprintCallable)void JoinLanGame(int32 ResultIndex);
+	UFUNCTION(BlueprintCallable)void JoinLanByAddress(const FString& Address);
+	UFUNCTION(BlueprintPure)FString GetLocalLanAddressText()const;
+	UFUNCTION(BlueprintCallable)void TogglePauseMenu();
+	UFUNCTION(BlueprintCallable)void ClosePauseMenu();
 	UFUNCTION(BlueprintCallable)void ReturnToMainMenu();
+	UFUNCTION(BlueprintCallable)void QuitToDesktop();
+	UFUNCTION(BlueprintPure)bool IsPauseMenuOpen()const;
 	UFUNCTION(BlueprintPure)bool HasSaveGame()const;
 	UFUNCTION(BlueprintCallable)bool SavePlayerAtBed(AShooterCharacter* Character);
 	bool ApplyPendingSave(AShooterCharacter* Character);
@@ -57,5 +64,6 @@ private:
 	FDelegateHandle JoinSessionHandle;
 	TArray<int32> FoundLanResultIndices;
 	UPROPERTY()UShooterSaveGame* PendingSave=nullptr;
+	UPROPERTY(Transient)UPauseMenuWidget* PauseMenuWidget=nullptr;
 	bool bCreateSessionAfterDestroy=false;
 };

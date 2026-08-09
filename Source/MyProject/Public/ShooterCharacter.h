@@ -2,7 +2,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "ShooterCharacter.generated.h"
-class UCameraComponent;class USpringArmComponent;class UInventoryComponent;class UHealthArmorComponent;class UNavigationInvokerComponent;class UAIPerceptionStimuliSourceComponent;class USkeletalMeshComponent;class UStaticMeshComponent;class UBlendSpace;class UAnimMontage;class UAnimSequence;class UAnimInstance;class AWeaponBase;class APickupActor;class ASaveBed;
+class UCameraComponent;class USpringArmComponent;class USceneComponent;class UInventoryComponent;class UHealthArmorComponent;class UNavigationInvokerComponent;class UAIPerceptionStimuliSourceComponent;class USkeletalMeshComponent;class UStaticMeshComponent;class UBlendSpace;class UAnimMontage;class UAnimSequence;class UAnimInstance;class AWeaponBase;class APickupActor;class ASaveBed;
 UCLASS(Blueprintable)
 class MYPROJECT_API AShooterCharacter:public ACharacter
 {
@@ -11,6 +11,7 @@ public:
 	AShooterCharacter();virtual void BeginPlay()override;virtual void PossessedBy(AController* NewController)override;virtual void OnRep_Controller()override;virtual void Tick(float DeltaSeconds)override;virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)override;virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps)const override;
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly) USpringArmComponent* CameraBoom;
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly) UCameraComponent* Camera;
+	UPROPERTY(VisibleAnywhere,BlueprintReadOnly)USceneComponent* FirstPersonRigRoot;
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly)USkeletalMeshComponent* FirstPersonArms;
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly)USkeletalMeshComponent* FirstPersonBody;
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly)UStaticMeshComponent* LeftFirstPersonArm;
@@ -40,6 +41,7 @@ public:
 	UFUNCTION(BlueprintCallable) void EquipWeapon(TSubclassOf<AWeaponBase> WeaponClass);
 	UFUNCTION(BlueprintCallable) int32 AddAmmunition(int32 Amount);
 	UFUNCTION(BlueprintCallable) void AddExperience(int32 Amount);
+	void StopGameplayActionsForMenu();
 	void SetActiveWeaponSlotForLoad(int32 SlotIndex);
 	void ShowLocalNotification(const FString& Message,float Duration=4.f);
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly,Category="UI")FString LocalNotification;
@@ -67,6 +69,17 @@ protected:
 	UPROPERTY(EditDefaultsOnly,Category="Progression",meta=(ClampMin="0"))int32 ExperienceGrowthPerLevel=50;
 	void CaptureDiagnosticScreenshot();
 	void ResetFirstPersonArmsAnimation();
+	void ConfigureDedicatedFirstPersonRig();
+	void UpdateDedicatedFirstPersonRigTransform(float DeltaSeconds);
+	void UpdateDedicatedFirstPersonRigAnimation();
+	void PlayDedicatedFirstPersonRigAction(UAnimSequence* Animation);
+	void FinishDedicatedFirstPersonRigAction();
+	bool IsDedicatedFirstPersonRigActive()const;
+	UPROPERTY(Transient)UAnimSequence* CurrentFirstPersonRigAnimation=nullptr;
+	UPROPERTY(Transient)AWeaponBase* FirstPersonRigWeapon=nullptr;
+	FTimerHandle FirstPersonRigAnimationTimer;
+	bool bFirstPersonRigActionPlaying=false;
+	bool bFirstPersonRigLooping=false;
 	FVector ArmsBaseLocation=FVector(-20.f,8.f,-98.f);
 	FRotator ArmsBaseRotation=FRotator(0.f,-10.f,0.f);
 	FVector ArmsHipLocation=FVector(-20.f,8.f,-98.f);

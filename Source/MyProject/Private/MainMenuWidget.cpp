@@ -5,6 +5,7 @@
 #include "Components/Border.h"
 #include "Components/Button.h"
 #include "Components/ButtonSlot.h"
+#include "Components/EditableTextBox.h"
 #include "Components/Overlay.h"
 #include "Components/OverlaySlot.h"
 #include "Components/SizeBox.h"
@@ -94,6 +95,16 @@ void UMainMenuWidget::NativeOnInitialized()
 	AddMenuText(WidgetTree,Menu,TEXT("МУЛЬТИПЛЕЕР"),24,FLinearColor(.45f,.75f,1.f));
 	UButton* HostButton=AddButton(Menu,TEXT("СОЗДАТЬ ИГРУ В LAN"));
 	UButton* FindButton=AddButton(Menu,TEXT("НАЙТИ ИГРЫ В LAN"));
+	if(UShooterGameInstance* GI=GetGameInstance<UShooterGameInstance>())
+	{
+		AddMenuText(WidgetTree,Menu,GI->GetLocalLanAddressText(),15,FLinearColor(.55f,.8f,1.f));
+	}
+	AddMenuText(WidgetTree,Menu,TEXT("Если игра не найдена — введите IP первого ПК"),16,FLinearColor(.7f,.85f,.95f));
+	DirectIpInput=WidgetTree->ConstructWidget<UEditableTextBox>();
+	DirectIpInput->SetHintText(FText::FromString(TEXT("Например: 192.168.1.25")));
+	DirectIpInput->SetJustification(ETextJustify::Center);
+	if(UVerticalBoxSlot* IpSlot=Menu->AddChildToVerticalBox(DirectIpInput))IpSlot->SetPadding(FMargin(8.f,4.f));
+	UButton* JoinByIpButton=AddButton(Menu,TEXT("ПОДКЛЮЧИТЬСЯ ПО IP"));
 	UButton* InternetButton=AddButton(Menu,TEXT("ИГРА ПО ИНТЕРНЕТУ — ПОЗЖЕ"));
 	InternetButton->SetIsEnabled(false);
 	SessionList=WidgetTree->ConstructWidget<UVerticalBox>();
@@ -103,6 +114,7 @@ void UMainMenuWidget::NativeOnInitialized()
 	ContinueButton->OnClicked.AddDynamic(this,&UMainMenuWidget::ContinueClicked);
 	HostButton->OnClicked.AddDynamic(this,&UMainMenuWidget::HostLanClicked);
 	FindButton->OnClicked.AddDynamic(this,&UMainMenuWidget::FindLanClicked);
+	JoinByIpButton->OnClicked.AddDynamic(this,&UMainMenuWidget::JoinByIpClicked);
 	if(UShooterGameInstance* GI=GetGameInstance<UShooterGameInstance>())GI->OnMenuStateChanged.AddDynamic(this,&UMainMenuWidget::RefreshMenuState);
 	RefreshMenuState();
 }
@@ -142,3 +154,10 @@ void UMainMenuWidget::NewGameClicked(){if(UShooterGameInstance* GI=GetGameInstan
 void UMainMenuWidget::ContinueClicked(){if(UShooterGameInstance* GI=GetGameInstance<UShooterGameInstance>())GI->ContinueGame();}
 void UMainMenuWidget::HostLanClicked(){if(UShooterGameInstance* GI=GetGameInstance<UShooterGameInstance>())GI->HostLanGame();}
 void UMainMenuWidget::FindLanClicked(){if(UShooterGameInstance* GI=GetGameInstance<UShooterGameInstance>())GI->FindLanGames();}
+void UMainMenuWidget::JoinByIpClicked()
+{
+	if(UShooterGameInstance* GI=GetGameInstance<UShooterGameInstance>())
+	{
+		GI->JoinLanByAddress(DirectIpInput?DirectIpInput->GetText().ToString():FString());
+	}
+}

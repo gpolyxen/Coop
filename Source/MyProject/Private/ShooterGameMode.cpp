@@ -1,5 +1,6 @@
 #include "ShooterGameMode.h"
 #include "ShooterCharacter.h"
+#include "ShooterPlayerController.h"
 #include "ShooterHUD.h"
 #include "ShooterGameInstance.h"
 #include "SaveBed.h"
@@ -8,6 +9,7 @@
 #include "KA47Rifle.h"
 #include "SMG11Weapon.h"
 #include "ASValRifle.h"
+#include "P9Weapon.h"
 #include "ZombieCharacter.h"
 #include "ZombieSpawnManager.h"
 #include "WindField.h"
@@ -23,6 +25,7 @@
 
 AShooterGameMode::AShooterGameMode()
 {
+	PlayerControllerClass=AShooterPlayerController::StaticClass();
 	DefaultPawnClass=AShooterCharacter::StaticClass();
 	static ConstructorHelpers::FClassFinder<AShooterCharacter> ConfigurablePlayer(TEXT("/Game/ThirdPersonBP/Player_0/BP_ShooterCharacter"));
 	if(ConfigurablePlayer.Succeeded())DefaultPawnClass=ConfigurablePlayer.Class;
@@ -82,12 +85,12 @@ void AShooterGameMode::BeginPlay()
 	{
 		FVector Base=Start->GetActorLocation()+Start->GetActorForwardVector()*300.f;
 		Base.Z=100.f;
-		const TSubclassOf<AWeaponBase> Classes[4]={AStarterRifle::StaticClass(),AKA47Rifle::StaticClass(),ASMG11Weapon::StaticClass(),AASValRifle::StaticClass()};
-		for(int32 Index=0;Index<4;++Index)
+		const TSubclassOf<AWeaponBase> Classes[5]={AStarterRifle::StaticClass(),AKA47Rifle::StaticClass(),ASMG11Weapon::StaticClass(),AASValRifle::StaticClass(),AP9Weapon::StaticClass()};
+		for(int32 Index=0;Index<5;++Index)
 		{
 			FActorSpawnParameters SpawnParameters;
 			SpawnParameters.SpawnCollisionHandlingOverride=ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-			const FVector SpawnLocation=Base+Start->GetActorRightVector()*(Index-1.5f)*180.f;
+			const FVector SpawnLocation=Base+Start->GetActorRightVector()*(Index-2.f)*180.f;
 			AWeaponPickup* Pickup=GetWorld()->SpawnActor<AWeaponPickup>(AWeaponPickup::StaticClass(),SpawnLocation,FRotator(0,90,0),SpawnParameters);
 			if(Pickup)
 			{

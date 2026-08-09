@@ -6,7 +6,10 @@
 #include "Perception/AISenseConfig_Sight.h"
 #include "Perception/AISenseConfig_Hearing.h"
 #include "NavigationSystem.h"
+#include "NavigationPath.h"
 #include "Navigation/PathFollowingComponent.h"
+#include "Components/CapsuleComponent.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "EngineUtils.h"
 
 AZombieAIController::AZombieAIController()
@@ -38,6 +41,15 @@ void AZombieAIController::OnPossess(APawn* InPawn)
 {
 	Super::OnPossess(InPawn);
 	NextPatrolTime=GetWorld()?GetWorld()->GetTimeSeconds()+FMath::FRandRange(PatrolWaitMin,PatrolWaitMax):0.;
+	ResetNavigationRecovery();
+}
+
+void AZombieAIController::ResetNavigationRecovery()
+{
+	bUsingDetour=false;
+	DetourLocation=FVector::ZeroVector;
+	DetourExpireTime=0.;
+	NextPathRefreshTime=0.;
 }
 
 void AZombieAIController::AlertToActor(AActor* Actor)
@@ -51,7 +63,7 @@ void AZombieAIController::AlertToActor(AActor* Actor)
 	bSteeringPatrol=false;
 	LastChaseProgressLocation=GetPawn()?GetPawn()->GetActorLocation():FVector::ZeroVector;
 	LastChaseProgressTime=GetWorld()->GetTimeSeconds();
-	bDirectChase=false;
+	ResetNavigationRecovery();
 }
 
 void AZombieAIController::OnTargetPerception(AActor* Actor,FAIStimulus Stimulus)
@@ -59,15 +71,19 @@ void AZombieAIController::OnTargetPerception(AActor* Actor,FAIStimulus Stimulus)
 	if(!Cast<AShooterCharacter>(Actor)||Actor==GetPawn())return;
 	if(Stimulus.WasSuccessfullySensed())
 	{
+		const bool bNewTarget=Target.Get()!=Actor;
 		Target=Actor;
 		LastKnownLocation=Stimulus.StimulusLocation.IsNearlyZero()?Actor->GetActorLocation():Stimulus.StimulusLocation;
 		LastStimulus=GetWorld()->GetTimeSeconds();
-		bPatrolMoveActive=false;
-		bSteeringPatrol=false;
-		LastChaseProgressLocation=GetPawn()?GetPawn()->GetActorLocation():FVector::ZeroVector;
-		LastChaseProgressTime=GetWorld()->GetTimeSeconds();
-		bDirectChase=false;
-		UE_LOG(LogTemp,Display,TEXT("Zombie perception sensed %s"),*GetNameSafe(Actor));
+		if(bNewTarget)
+		{
+			bPatrolMoveActive=false;
+			bSteeringPatrol=false;
+			LastChaseProgressLocation=GetPawn()?GetPawn()->GetActorLocation():FVector::ZeroVector;
+			LastChaseProgressTime=GetWorld()->GetTimeSeconds();
+			ResetNavigationRecovery();
+			UE_LOG(LogTemp,Display,TEXT("Zombie perception acquired %s"),*GetNameSafe(Actor));
+		}
 	}
 }
 
@@ -91,10 +107,142 @@ void AZombieAIController::TryStartPatrol()
 	}
 }
 
+bool AZombieAIController::TryJumpObstacle(const FVector& Destination)
+{
+	AZombieCharacter* Zombie=Cast<AZombieCharacter>(GetPawn());
+	if(!Zombie||!GetWorld())return false;
+	UCharacterMovementComponent* Movement=Zombie->GetCharacterMovement();
+	UCapsuleComponent* Capsule=Zombie->GetCapsuleComponent();
+	const double Now=GetWorld()->GetTimeSeconds();
+	if(!Movement||!Capsule||Movement->IsFalling()||!Movement->IsMovingOnGround()||Now-LastJumpTime<JumpCooldown)return false;
+
+	FVector TravelDirection=Zombie->GetVelocity();
+	TravelDirection.Z=0.f;
+	if(TravelDirection.SizeSquared2D()<FMath::Square(35.f))
+	{
+		TravelDirection=Destination-Zombie->GetActorLocation();
+		TravelDirection.Z=0.f;
+	}
+	if(!TravelDirection.Normalize())return false;
+
+	float CapsuleRadius=0.f;
+	float CapsuleHalfHeight=0.f;
+	Capsule->GetScaledCapsuleSize(CapsuleRadius,CapsuleHalfHeight);
+	const FVector ActorLocation=Zombie->GetActorLocation();
+	const float GroundZ=ActorLocation.Z-CapsuleHalfHeight;
+	const float ProbeRadius=FMath::Clamp(CapsuleRadius*.55f,18.f,28.f);
+	const FVector ProbeStart(ActorLocation.X,ActorLocation.Y,GroundZ+Movement->MaxStepHeight+ProbeRadius*.75f);
+	const FVector ProbeEnd=ProbeStart+TravelDirection*JumpProbeDistance;
+
+	FCollisionObjectQueryParams ObjectTypes;
+	ObjectTypes.AddObjectTypesToQuery(ECC_WorldStatic);
+	ObjectTypes.AddObjectTypesToQuery(ECC_WorldDynamic);
+	FCollisionQueryParams Query(SCENE_QUERY_STAT(ZombieJumpProbe),false,Zombie);
+	if(Target.IsValid())Query.AddIgnoredActor(Target.Get());
+
+	FHitResult ObstacleHit;
+	if(!GetWorld()->SweepSingleByObjectType(ObstacleHit,ProbeStart,ProbeEnd,FQuat::Identity,ObjectTypes,FCollisionShape::MakeSphere(ProbeRadius),Query))return false;
+	if(ObstacleHit.bStartPenetrating||ObstacleHit.ImpactNormal.Z>=Movement->GetWalkableFloorZ())return false;
+
+	const FVector TopProbePoint=ObstacleHit.ImpactPoint+TravelDirection*(ProbeRadius+8.f);
+	const FVector TopTraceStart(TopProbePoint.X,TopProbePoint.Y,GroundZ+MaximumJumpObstacleHeight+60.f);
+	const FVector TopTraceEnd(TopProbePoint.X,TopProbePoint.Y,GroundZ+1.f);
+	FHitResult TopHit;
+	if(!GetWorld()->LineTraceSingleByObjectType(TopHit,TopTraceStart,TopTraceEnd,ObjectTypes,Query))return false;
+	const float ObstacleHeight=TopHit.ImpactPoint.Z-GroundZ;
+	if(ObstacleHeight<=FMath::Max(MinimumJumpObstacleHeight,Movement->MaxStepHeight+2.f)||ObstacleHeight>MaximumJumpObstacleHeight)return false;
+	if(TopHit.ImpactNormal.Z<Movement->GetWalkableFloorZ())return false;
+
+	const float Gravity=FMath::Abs(Movement->GetGravityZ());
+	if(Gravity<=KINDA_SMALL_NUMBER)return false;
+	const float MaximumBallisticRise=FMath::Square(Movement->JumpZVelocity)/(2.f*Gravity);
+	const float RequiredRise=ObstacleHeight+JumpClearance;
+	if(RequiredRise>MaximumBallisticRise*.9f)return false;
+
+	const FCollisionShape ClearanceCapsule=FCollisionShape::MakeCapsule(FMath::Max(8.f,CapsuleRadius-4.f),FMath::Max(12.f,CapsuleHalfHeight-6.f));
+	FHitResult ClearanceHit;
+	const FVector RaisedLocation=ActorLocation+FVector(0.f,0.f,RequiredRise);
+	if(GetWorld()->SweepSingleByObjectType(ClearanceHit,ActorLocation,RaisedLocation,FQuat::Identity,ObjectTypes,ClearanceCapsule,Query))return false;
+
+	const float LandingDistance=JumpProbeDistance*2.f;
+	const FVector RaisedEnd=RaisedLocation+TravelDirection*LandingDistance;
+	if(GetWorld()->SweepSingleByObjectType(ClearanceHit,RaisedLocation,RaisedEnd,FQuat::Identity,ObjectTypes,ClearanceCapsule,Query))return false;
+
+	const FVector LandingProbe=ActorLocation+TravelDirection*LandingDistance;
+	const FVector LandingTraceStart(LandingProbe.X,LandingProbe.Y,GroundZ+MaximumBallisticRise+60.f);
+	const FVector LandingTraceEnd(LandingProbe.X,LandingProbe.Y,GroundZ-MaximumLandingDrop);
+	FHitResult LandingHit;
+	if(!GetWorld()->LineTraceSingleByObjectType(LandingHit,LandingTraceStart,LandingTraceEnd,ObjectTypes,Query))return false;
+	const float LandingHeight=LandingHit.ImpactPoint.Z-GroundZ;
+	if(LandingHeight>MaximumJumpObstacleHeight||LandingHeight<-MaximumLandingDrop||LandingHit.ImpactNormal.Z<Movement->GetWalkableFloorZ())return false;
+
+	StopMovement();
+	Movement->StopMovementImmediately();
+	JumpTravelDirection=TravelDirection;
+	LastJumpTime=Now;
+	bUsingDetour=false;
+	NextPathRefreshTime=Now+PathRefreshInterval;
+	Zombie->LaunchCharacter(TravelDirection*JumpForwardVelocity+FVector(0.f,0.f,Movement->JumpZVelocity),true,true);
+	UE_LOG(LogTemp,Display,TEXT("Zombie %s jumps over %.0f cm obstacle"),*GetNameSafe(Zombie),ObstacleHeight);
+	return true;
+}
+
+bool AZombieAIController::TryStartDetour(const FVector& Destination)
+{
+	AZombieCharacter* Zombie=Cast<AZombieCharacter>(GetPawn());
+	UNavigationSystemV1* Navigation=UNavigationSystemV1::GetCurrent(GetWorld());
+	if(!Zombie||!Navigation)return false;
+
+	FVector Forward=Destination-Zombie->GetActorLocation();
+	Forward.Z=0.f;
+	if(!Forward.Normalize())return false;
+	const FVector Right=FVector::CrossProduct(FVector::UpVector,Forward).GetSafeNormal();
+	const FVector Start=Zombie->GetActorLocation();
+	const float Side=DetourSearchRadius;
+	const float Ahead=DetourSearchRadius*.55f;
+	TArray<FVector> Candidates;
+	Candidates.Reserve(6);
+	Candidates.Add(Start+Forward*Ahead+Right*Side);
+	Candidates.Add(Start+Forward*Ahead-Right*Side);
+	Candidates.Add(Start+Right*Side);
+	Candidates.Add(Start-Right*Side);
+	Candidates.Add(Start+Forward*DetourSearchRadius+Right*Side*.55f);
+	Candidates.Add(Start+Forward*DetourSearchRadius-Right*Side*.55f);
+
+	bool bFoundCandidate=false;
+	float BestScore=MAX_flt;
+	FVector BestLocation=FVector::ZeroVector;
+	for(const FVector& Candidate:Candidates)
+	{
+		FNavLocation Projected;
+		if(!Navigation->ProjectPointToNavigation(Candidate,Projected,FVector(180.f,180.f,300.f)))continue;
+		UNavigationPath* Path=UNavigationSystemV1::FindPathToLocationSynchronously(GetWorld(),Start,Projected.Location,Zombie);
+		if(!Path||!Path->IsValid()||Path->IsPartial())continue;
+		const float Score=FVector::DistSquared2D(Projected.Location,Destination)+FVector::DistSquared2D(Projected.Location,Start)*.2f;
+		if(Score<BestScore)
+		{
+			BestScore=Score;
+			BestLocation=Projected.Location;
+			bFoundCandidate=true;
+		}
+	}
+	if(!bFoundCandidate)return false;
+
+	const EPathFollowingRequestResult::Type MoveResult=MoveToLocation(BestLocation,PatrolAcceptanceRadius,true,true,true);
+	if(MoveResult==EPathFollowingRequestResult::Failed)return false;
+	bUsingDetour=true;
+	DetourLocation=BestLocation;
+	DetourExpireTime=GetWorld()->GetTimeSeconds()+DetourTimeout;
+	NextPathRefreshTime=DetourExpireTime;
+	UE_LOG(LogTemp,Display,TEXT("Zombie %s uses a NavMesh detour"),*GetNameSafe(Zombie));
+	return true;
+}
+
 void AZombieAIController::SteerToward(const FVector& Destination)
 {
 	AZombieCharacter* Zombie=Cast<AZombieCharacter>(GetPawn());
 	if(!Zombie)return;
+	if(TryJumpObstacle(Destination))return;
 	FVector DesiredDirection=Destination-Zombie->GetActorLocation();
 	DesiredDirection.Z=0.f;
 	if(!DesiredDirection.Normalize())return;
@@ -151,7 +299,7 @@ void AZombieAIController::TryAcquireVisibleTarget()
 		bSteeringPatrol=false;
 		LastChaseProgressLocation=Zombie->GetActorLocation();
 		LastChaseProgressTime=GetWorld()->GetTimeSeconds();
-		bDirectChase=false;
+		ResetNavigationRecovery();
 		UE_LOG(LogTemp,Display,TEXT("Zombie %s acquired %s by sight"),*GetNameSafe(Zombie),*GetNameSafe(BestTarget));
 	}
 }
@@ -163,11 +311,26 @@ void AZombieAIController::Tick(float DeltaSeconds)
 	if(!Zombie||Zombie->IsDead()){StopMovement();return;}
 	if(Zombie->IsAttacking()){StopMovement();return;}
 	const double Now=GetWorld()->GetTimeSeconds();
+	UCharacterMovementComponent* Movement=Zombie->GetCharacterMovement();
+	if(Movement&&Movement->IsFalling())
+	{
+		if(!JumpTravelDirection.IsNearlyZero())Zombie->AddMovementInput(JumpTravelDirection,1.f);
+		return;
+	}
+	if(!JumpTravelDirection.IsNearlyZero())
+	{
+		JumpTravelDirection=FVector::ZeroVector;
+		NextPathRefreshTime=0.;
+	}
 
 	if(Target.IsValid())
 	{
 		if(UHealthArmorComponent* TargetHealth=Target->FindComponentByClass<UHealthArmorComponent>())
-			if(TargetHealth->IsDead())Target.Reset();
+			if(TargetHealth->IsDead())
+			{
+				Target.Reset();
+				ResetNavigationRecovery();
+			}
 	}
 	if(!Target.IsValid())TryAcquireVisibleTarget();
 
@@ -182,7 +345,7 @@ void AZombieAIController::Tick(float DeltaSeconds)
 		if(Now-LastStimulus>ForgetAfter)
 		{
 			Target.Reset();
-			bDirectChase=false;
+			ResetNavigationRecovery();
 			StopMovement();
 			NextPatrolTime=Now+FMath::FRandRange(PatrolWaitMin,PatrolWaitMax);
 		}
@@ -199,21 +362,40 @@ void AZombieAIController::Tick(float DeltaSeconds)
 				StopMovement();
 				Zombie->TryAttack(Target.Get());
 			}
-			else if(bCanSeeTarget)
+			else
 			{
-				if(!bDirectChase)
+				const FVector Destination=bCanSeeTarget?Target->GetActorLocation():LastKnownLocation;
+				if(bUsingDetour)
 				{
-					const EPathFollowingRequestResult::Type MoveResult=MoveToActor(Target.Get(),Zombie->AttackRange*.75f,true,true,true);
-					if(MoveResult==EPathFollowingRequestResult::Failed||Now-LastChaseProgressTime>.75)
+					const bool bDetourFinished=FVector::DistSquared2D(Zombie->GetActorLocation(),DetourLocation)<=FMath::Square(PatrolAcceptanceRadius)
+						||GetMoveStatus()==EPathFollowingStatus::Idle||Now>=DetourExpireTime;
+					if(!bDetourFinished)
 					{
-						UE_LOG(LogTemp,Display,TEXT("Zombie %s continuing chase with local obstacle steering"),*GetNameSafe(Zombie));
-						bDirectChase=true;
-						StopMovement();
+						TryJumpObstacle(DetourLocation);
+						return;
 					}
+					bUsingDetour=false;
+					NextPathRefreshTime=0.;
 				}
-				if(bDirectChase)SteerToward(Target->GetActorLocation());
+
+				if(TryJumpObstacle(Destination))return;
+				if(Now-LastChaseProgressTime>=StuckRecoveryDelay)
+				{
+					if(TryStartDetour(Destination))return;
+					LastChaseProgressLocation=Zombie->GetActorLocation();
+					LastChaseProgressTime=Now;
+					NextPathRefreshTime=0.;
+				}
+
+				if(GetMoveStatus()==EPathFollowingStatus::Idle||Now>=NextPathRefreshTime)
+				{
+					const EPathFollowingRequestResult::Type MoveResult=bCanSeeTarget
+						?MoveToActor(Target.Get(),Zombie->AttackRange*.75f,true,true,true)
+						:MoveToLocation(LastKnownLocation,PatrolAcceptanceRadius,true,true,true);
+					NextPathRefreshTime=Now+PathRefreshInterval;
+					if(MoveResult==EPathFollowingRequestResult::Failed&&!TryStartDetour(Destination))SteerToward(Destination);
+				}
 			}
-			else if(MoveToLocation(LastKnownLocation,PatrolAcceptanceRadius,true,true,true)==EPathFollowingRequestResult::Failed)SteerToward(LastKnownLocation);
 			return;
 		}
 	}

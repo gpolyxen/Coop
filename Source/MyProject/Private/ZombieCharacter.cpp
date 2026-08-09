@@ -24,9 +24,14 @@ AZombieCharacter::AZombieCharacter()
 	Health->MaxHealth=1000.f;
 	NavigationInvoker=CreateDefaultSubobject<UNavigationInvokerComponent>(TEXT("NavigationInvoker"));
 	NavigationInvoker->SetGenerationRadii(12000.f,16000.f);
-	GetCharacterMovement()->MaxWalkSpeed=270.f;
-	GetCharacterMovement()->bOrientRotationToMovement=true;
-	GetCharacterMovement()->RotationRate=FRotator(0.f,260.f,0.f);
+	UCharacterMovementComponent* Movement=GetCharacterMovement();
+	Movement->MaxWalkSpeed=270.f;
+	Movement->bOrientRotationToMovement=true;
+	Movement->RotationRate=FRotator(0.f,260.f,0.f);
+	Movement->MaxStepHeight=45.f;
+	Movement->JumpZVelocity=560.f;
+	Movement->AirControl=.55f;
+	Movement->GetNavAgentPropertiesRef().bCanJump=true;
 	GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_WorldDynamic,ECR_Ignore);
 	GetMesh()->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 	GetMesh()->SetCollisionResponseToChannel(ECC_WorldDynamic,ECR_Block);

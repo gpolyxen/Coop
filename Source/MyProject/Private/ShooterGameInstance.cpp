@@ -1,6 +1,7 @@
 #include "ShooterGameInstance.h"
 
 #include "HealthArmorComponent.h"
+#include "PauseMenuWidget.h"
 #include "ShooterCharacter.h"
 #include "ShooterSaveGame.h"
 #include "WeaponBase.h"
@@ -9,8 +10,12 @@
 #include "Engine/LocalPlayer.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
+#include "Kismet/KismetSystemLibrary.h"
 #include "OnlineSessionSettings.h"
 #include "OnlineSubsystem.h"
+#include "IPAddress.h"
+#include "Interfaces/IPv4/IPv4Address.h"
+#include "SocketSubsystem.h"
 #include "UObject/SoftObjectPath.h"
 
 const FString UShooterGameInstance::SaveSlot=TEXT("ShooterBedSave");
@@ -23,7 +28,29 @@ void UShooterGameInstance::Init()
 {
 	Super::Init();
 	if(IOnlineSubsystem* Online=IOnlineSubsystem::Get())SessionInterface=Online->GetSessionInterface();
-	SetStatus(SessionInterface.IsValid()?TEXT("Готово"):TEXT("Сетевая подсистема недоступна"));
+	SetStatus(SessionInterface.IsValid()?GetLocalLanAddressText():TEXT("Сетевая подсистема недоступна"));
+}
+
+FString UShooterGameInstance::GetLocalLanAddressText()const
+{
+	TArray<FString> Addresses;
+	if(ISocketSubsystem* SocketSubsystem=ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM))
+	{
+		TArray<TSharedPtr<FInternetAddr>> AdapterAddresses;
+		if(SocketSubsystem->GetLocalAdapterAddresses(AdapterAddresses))
+		{
+			for(const TSharedPtr<FInternetAddr>& AdapterAddress:AdapterAddresses)
+			{
+				if(!AdapterAddress.IsValid()||!AdapterAddress->IsValid())continue;
+				const FString Address=AdapterAddress->ToString(false);
+				if(Address.IsEmpty()||Address==TEXT("0.0.0.0")||Address.StartsWith(TEXT("127."))||Address.Contains(TEXT(":")))continue;
+				Addresses.AddUnique(Address+TEXT(":7777"));
+			}
+		}
+	}
+	return Addresses.Num()>0
+		?FString::Printf(TEXT("IP этого ПК: %s"),*FString::Join(Addresses,TEXT("   ")))
+		:TEXT("IP этого ПК не определён — посмотрите IPv4 через ipconfig");
 }
 
 void UShooterGameInstance::Shutdown()
@@ -41,15 +68,74 @@ void UShooterGameInstance::SetStatus(const FString& NewStatus)
 
 void UShooterGameInstance::PrepareForGameplayTravel()
 {
+	ClosePauseMenu();
 	UWidgetLayoutLibrary::RemoveAllWidgets(this);
 	if(APlayerController* PC=GetFirstLocalPlayerController())
 	{
 		PC->bShowMouseCursor=false;
 		PC->bEnableClickEvents=false;
 		PC->bEnableMouseOverEvents=false;
-		PC->SetIgnoreMoveInput(false);
-		PC->SetIgnoreLookInput(false);
+		PC->ResetIgnoreMoveInput();
+		PC->ResetIgnoreLookInput();
 		PC->SetPause(false);
+		FInputModeGameOnly InputMode;
+		PC->SetInputMode(InputMode);
+	}
+}
+
+bool UShooterGameInstance::IsPauseMenuOpen()const
+{
+	return PauseMenuWidget&&PauseMenuWidget->IsInViewport();
+}
+
+void UShooterGameInstance::TogglePauseMenu()
+{
+	if(IsPauseMenuOpen())
+	{
+		ClosePauseMenu();
+		return;
+	}
+	UWorld* World=GetWorld();
+	APlayerController* PC=GetFirstLocalPlayerController();
+	if(!World||!PC||!PC->IsLocalController())return;
+
+	if(AShooterCharacter* Character=Cast<AShooterCharacter>(PC->GetPawn()))Character->StopGameplayActionsForMenu();
+	PauseMenuWidget=CreateWidget<UPauseMenuWidget>(PC,UPauseMenuWidget::StaticClass());
+	if(!PauseMenuWidget)return;
+	const bool bPauseSinglePlayer=World->GetNetMode()==NM_Standalone;
+	PauseMenuWidget->SetSinglePlayerPaused(bPauseSinglePlayer);
+	PauseMenuWidget->AddToViewport(500);
+
+	PC->bShowMouseCursor=true;
+	PC->bEnableClickEvents=true;
+	PC->bEnableMouseOverEvents=true;
+	PC->SetIgnoreMoveInput(true);
+	PC->SetIgnoreLookInput(true);
+	FInputModeGameAndUI InputMode;
+	InputMode.SetWidgetToFocus(PauseMenuWidget->TakeWidget());
+	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+	InputMode.SetHideCursorDuringCapture(false);
+	PC->SetInputMode(InputMode);
+	PauseMenuWidget->SetKeyboardFocus();
+	if(bPauseSinglePlayer)PC->SetPause(true);
+	UE_LOG(LogTemp,Display,TEXT("Pause menu opened: net mode %d, world paused %s"),static_cast<int32>(World->GetNetMode()),bPauseSinglePlayer?TEXT("true"):TEXT("false"));
+}
+
+void UShooterGameInstance::ClosePauseMenu()
+{
+	if(PauseMenuWidget)
+	{
+		PauseMenuWidget->RemoveFromParent();
+		PauseMenuWidget=nullptr;
+	}
+	if(APlayerController* PC=GetFirstLocalPlayerController())
+	{
+		if(GetWorld()&&GetWorld()->GetNetMode()==NM_Standalone&&UGameplayStatics::IsGamePaused(this))PC->SetPause(false);
+		PC->bShowMouseCursor=false;
+		PC->bEnableClickEvents=false;
+		PC->bEnableMouseOverEvents=false;
+		PC->ResetIgnoreMoveInput();
+		PC->ResetIgnoreLookInput();
 		FInputModeGameOnly InputMode;
 		PC->SetInputMode(InputMode);
 	}
@@ -172,7 +258,7 @@ void UShooterGameInstance::OnCreateSessionComplete(FName,bool bSuccess)
 {
 	if(SessionInterface.IsValid())SessionInterface->ClearOnCreateSessionCompleteDelegate_Handle(CreateSessionHandle);
 	if(!bSuccess){SetStatus(TEXT("Не удалось создать LAN-сессию"));return;}
-	SetStatus(TEXT("LAN-сессия создана"));
+	SetStatus(FString::Printf(TEXT("LAN-сессия создана. %s"),*GetLocalLanAddressText()));
 	PrepareForGameplayTravel();
 	if(UWorld* World=GetWorld())World->ServerTravel(GameMap+TEXT("?listen"));
 }
@@ -232,6 +318,41 @@ void UShooterGameInstance::JoinLanGame(int32 ResultIndex)
 	if(!SessionInterface->JoinSession(0,NAME_GameSession,SessionSearch->SearchResults[SearchResultIndex]))OnJoinSessionComplete(NAME_GameSession,EOnJoinSessionCompleteResult::UnknownError);
 }
 
+void UShooterGameInstance::JoinLanByAddress(const FString& Address)
+{
+	FString ConnectAddress=Address;
+	ConnectAddress.TrimStartAndEndInline();
+	ConnectAddress.RemoveFromStart(TEXT("open "),ESearchCase::IgnoreCase);
+	ConnectAddress.RemoveFromStart(TEXT("udp://"),ESearchCase::IgnoreCase);
+	ConnectAddress.RemoveFromStart(TEXT("unreal://"),ESearchCase::IgnoreCase);
+	ConnectAddress.RemoveFromEnd(TEXT("/"));
+	if(ConnectAddress.IsEmpty())
+	{
+		SetStatus(TEXT("Введите IPv4 первого ПК, например 192.168.1.25"));
+		return;
+	}
+	if(!ConnectAddress.Contains(TEXT(":")))ConnectAddress+=TEXT(":7777");
+
+	FString HostPart;
+	FString PortPart;
+	if(!ConnectAddress.Split(TEXT(":"),&HostPart,&PortPart,ESearchCase::IgnoreCase,ESearchDir::FromEnd))
+	{
+		SetStatus(TEXT("Неверный адрес. Пример: 192.168.1.25:7777"));
+		return;
+	}
+	FIPv4Address ParsedAddress;
+	if(!FIPv4Address::Parse(HostPart,ParsedAddress)||FCString::Atoi(*PortPart)<=0||FCString::Atoi(*PortPart)>65535)
+	{
+		SetStatus(TEXT("Неверный адрес. Пример: 192.168.1.25:7777"));
+		return;
+	}
+
+	SetStatus(FString::Printf(TEXT("Прямое подключение к %s..."),*ConnectAddress));
+	UE_LOG(LogTemp,Display,TEXT("LAN direct connect to %s"),*ConnectAddress);
+	PrepareForGameplayTravel();
+	if(APlayerController* PC=GetFirstLocalPlayerController())PC->ClientTravel(ConnectAddress,TRAVEL_Absolute);
+}
+
 void UShooterGameInstance::OnJoinSessionComplete(FName,EOnJoinSessionCompleteResult::Type Result)
 {
 	if(SessionInterface.IsValid())SessionInterface->ClearOnJoinSessionCompleteDelegate_Handle(JoinSessionHandle);
@@ -244,8 +365,20 @@ void UShooterGameInstance::OnJoinSessionComplete(FName,EOnJoinSessionCompleteRes
 
 void UShooterGameInstance::ReturnToMainMenu()
 {
+	ClosePauseMenu();
+	UWidgetLayoutLibrary::RemoveAllWidgets(this);
+	bCreateSessionAfterDestroy=false;
 	if(SessionInterface.IsValid()&&SessionInterface->GetNamedSession(NAME_GameSession))SessionInterface->DestroySession(NAME_GameSession);
 	UGameplayStatics::OpenLevel(this,FName(*MenuMap));
+}
+
+void UShooterGameInstance::QuitToDesktop()
+{
+	APlayerController* PC=GetFirstLocalPlayerController();
+	ClosePauseMenu();
+	bCreateSessionAfterDestroy=false;
+	if(SessionInterface.IsValid()&&SessionInterface->GetNamedSession(NAME_GameSession))SessionInterface->DestroySession(NAME_GameSession);
+	UKismetSystemLibrary::QuitGame(this,PC,EQuitPreference::Quit,false);
 }
 
 void UShooterGameInstance::ClearSessionDelegates()

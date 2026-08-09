@@ -21,7 +21,30 @@ bool AWeaponBase::CanFire()const{return !bIsReloading&&AmmoInMagazine>0&&GetWorl
 bool AWeaponBase::Fire(FVector Aim){if(!HasAuthority()){if(!CanFire())return false;ServerFire(Aim);return true;}return FireAuthoritative(Aim);}
 bool AWeaponBase::ServerFire_Validate(FVector_NetQuantizeNormal Aim){return !Aim.IsNearlyZero();}void AWeaponBase::ServerFire_Implementation(FVector_NetQuantizeNormal Aim){FireAuthoritative(Aim);}
 bool AWeaponBase::FireAuthoritative(FVector Aim){if(!CanFire())return false;LastFireTime=GetWorld()->GetTimeSeconds();--AmmoInMagazine;const FVector Muzzle=GetMuzzleLocation();const FVector Shot=FMath::VRandCone(Aim.GetSafeNormal(),FMath::DegreesToRadians(Stats.SpreadDegrees));FActorSpawnParameters P;P.Owner=GetOwner();P.Instigator=Cast<APawn>(GetOwner());ABallisticProjectile* B=GetWorld()->SpawnActor<ABallisticProjectile>(ProjectileClass,Muzzle,Shot.Rotation(),P);if(B){B->InitializeProjectile(Stats.Damage,Stats.DragCoefficient,Stats.WindInfluence,Stats.GravityScale,Stats.ProjectileLifeSeconds,GetOwner()?GetOwner()->GetInstigatorController():nullptr);B->Movement->Velocity=Shot*Stats.MuzzleVelocity;}MulticastFireEffects(Muzzle,Shot.Rotation());UAISense_Hearing::ReportNoiseEvent(GetWorld(),Muzzle,Stats.NoiseLoudness,GetOwner(),4000.f,TEXT("Gunshot"));return true;}
-void AWeaponBase::MulticastFireEffects_Implementation(FVector_NetQuantize Muzzle,FRotator Rotation){if(MuzzleFlash&&Mesh)UNiagaraFunctionLibrary::SpawnSystemAttached(MuzzleFlash,Mesh,TEXT("b_gun_muzzleflash"),FVector::ZeroVector,FRotator::ZeroRotator,EAttachLocation::SnapToTarget,true,true,ENCPoolMethod::None,true);if(FireSound)UGameplayStatics::PlaySoundAtLocation(this,FireSound,Muzzle);if(ACharacter*C=Cast<ACharacter>(GetOwner()))if(C->GetMesh()&&C->GetMesh()->GetAnimInstance()){UAnimMontage*Montage=CharacterFireMontage;if(const AShooterCharacter*S=Cast<AShooterCharacter>(C))if(S->IsAiming()){if(S->IsLocallyControlled()&&!bPlayCharacterAimFireMontage)Montage=nullptr;else if(CharacterAimFireMontage)Montage=CharacterAimFireMontage;}if(Montage)C->GetMesh()->GetAnimInstance()->Montage_Play(Montage);}}
+void AWeaponBase::MulticastFireEffects_Implementation(FVector_NetQuantize Muzzle,FRotator Rotation)
+{
+	static const FName MuzzleBone(TEXT("b_gun_muzzleflash"));
+	if(MuzzleFlash)
+	{
+		if(Mesh&&Mesh->DoesSocketExist(MuzzleBone))
+			UNiagaraFunctionLibrary::SpawnSystemAttached(MuzzleFlash,Mesh,MuzzleBone,FVector::ZeroVector,
+				FRotator::ZeroRotator,EAttachLocation::SnapToTarget,true,true,ENCPoolMethod::None,true);
+		else UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(),MuzzleFlash,Muzzle,Rotation);
+	}
+	if(FireSound)UGameplayStatics::PlaySoundAtLocation(this,FireSound,Muzzle);
+	if(ACharacter*C=Cast<ACharacter>(GetOwner()))
+		if(C->GetMesh()&&C->GetMesh()->GetAnimInstance())
+		{
+			UAnimMontage*Montage=CharacterFireMontage;
+			if(const AShooterCharacter*S=Cast<AShooterCharacter>(C))
+				if(S->IsAiming())
+				{
+					if(S->IsLocallyControlled()&&!bPlayCharacterAimFireMontage)Montage=nullptr;
+					else if(CharacterAimFireMontage)Montage=CharacterAimFireMontage;
+				}
+			if(Montage)C->GetMesh()->GetAnimInstance()->Montage_Play(Montage);
+		}
+}
 void AWeaponBase::Reload(){if(HasAuthority())ServerReload_Implementation();else ServerReload();}bool AWeaponBase::ServerReload_Validate(){return true;}void AWeaponBase::ServerReload_Implementation(){if(bIsReloading||AmmoInMagazine>=Stats.MagazineSize||ReserveAmmo<=0)return;bIsReloading=true;GetWorldTimerManager().SetTimer(ReloadTimer,this,&AWeaponBase::FinishReload,FMath::Max(.1f,Stats.ReloadSeconds),false);}
 void AWeaponBase::FinishReload(){if(!HasAuthority())return;const int32 Need=Stats.MagazineSize-AmmoInMagazine,Take=FMath::Min(Need,ReserveAmmo);AmmoInMagazine+=Take;ReserveAmmo-=Take;bIsReloading=false;}
 int32 AWeaponBase::AddReserveAmmo(int32 Amount){if(!HasAuthority()||Amount<=0)return 0;const int32 Accepted=FMath::Min(Amount,FMath::Max(0,MaxReserveAmmo-ReserveAmmo));ReserveAmmo+=Accepted;return Accepted;}

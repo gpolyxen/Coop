@@ -1,0 +1,50 @@
+{
+  "source": "C:\\Program Files\\Epic Games\\UE_4.27\\Coop 4.27 - 3\\SourceArt\\P9MannyFPS\\source\\RIG_UE5_Manny_JOINED.glb",
+  "skeletal_mesh": "SK_P9_MannyFPS.fbx",
+  "static_pistol": "SM_P9.fbx",
+  "animations": [
+    {
+      "name": "WEP_Draw",
+      "file": "A_P9_WEP_Draw.fbx",
+      "start_frame": 0,
+      "end_frame": 14
+    },
+    {
+      "name": "WEP_Fire",
+      "file": "A_P9_WEP_Fire.fbx",
+      "start_frame": 0,
+      "end_frame": 24
+    },
+    {
+      "name": "WEP_Idle",
+      "file": "A_P9_WEP_Idle.fbx",
+      "start_frame": 0,
+      "end_frame": 80
+    },
+    {
+      "name": "WEP_Inspect_01",
+      "file": "A_P9_WEP_Inspect_01.fbx",
+      "start_frame": 0,
+      "end_frame": 112
+    },
+    {
+      "name": "WEP_Refpose",
+      "file": "A_P9_WEP_Refpose.fbx",
+      "start_frame": 0,
+      "end_frame": 1
+    },
+    {
+      "name": "WEP_Reload_01",
+      "file": "A_P9_WEP_Reload_01.fbx",
+      "start_frame": 0,
+      "end_frame": 64
+    },
+    {
+      "name": "WEP_Walk",
+      "file": "A_P9_WEP_Walk.fbx",
+      "start_frame": 0,
+      "end_frame": 32
+    }
+  ],
+  "fps": 24
+}

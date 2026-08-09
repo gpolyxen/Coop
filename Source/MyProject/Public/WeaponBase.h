@@ -3,7 +3,13 @@
 #include "GameFramework/Actor.h"
 #include "ShooterTypes.h"
 #include "WeaponBase.generated.h"
-class USkeletalMeshComponent; class ABallisticProjectile;class UNiagaraSystem;class USoundBase;class UAnimMontage;
+class USkeletalMesh;
+class USkeletalMeshComponent;
+class UAnimSequence;
+class ABallisticProjectile;
+class UNiagaraSystem;
+class USoundBase;
+class UAnimMontage;
 UCLASS(Blueprintable)
 class MYPROJECT_API AWeaponBase : public AActor
 {
@@ -18,6 +24,7 @@ public:
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly) USkeletalMeshComponent* FirstPersonMesh;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly) FWeaponStats Stats;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Weapon")FString WeaponName=TEXT("Weapon");
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Weapon")bool bAutomatic=true;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly) TSubclassOf<ABallisticProjectile> ProjectileClass;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Effects")UNiagaraSystem* MuzzleFlash=nullptr;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Effects")USoundBase* FireSound=nullptr;
@@ -28,7 +35,26 @@ public:
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,meta=(ClampMin="0")) int32 MaxReserveAmmo=120;
 	UPROPERTY(Replicated,VisibleAnywhere,BlueprintReadOnly) bool bIsReloading=false;
 	UFUNCTION(BlueprintPure) int32 GetTotalAmmo()const{return AmmoInMagazine+ReserveAmmo;}
-	UFUNCTION(BlueprintPure) FVector GetMuzzleLocation()const;
+	UFUNCTION(BlueprintPure) virtual FVector GetMuzzleLocation()const;
+	// Optional camera-attached arms + weapon rig. It is only created visually for
+	// the locally controlled owner while this exact weapon is equipped.
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="FirstPerson|Dedicated Rig")bool bUseDedicatedFirstPersonRig=false;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="FirstPerson|Dedicated Rig")bool bHideOwnerCharacterMeshWhenRigActive=true;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="FirstPerson|Dedicated Rig")USkeletalMesh* FirstPersonRigMesh=nullptr;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="FirstPerson|Dedicated Rig")UAnimSequence* FirstPersonRigDrawAnimation=nullptr;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="FirstPerson|Dedicated Rig")UAnimSequence* FirstPersonRigIdleAnimation=nullptr;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="FirstPerson|Dedicated Rig")UAnimSequence* FirstPersonRigWalkAnimation=nullptr;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="FirstPerson|Dedicated Rig")UAnimSequence* FirstPersonRigFireAnimation=nullptr;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="FirstPerson|Dedicated Rig")UAnimSequence* FirstPersonRigReloadAnimation=nullptr;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="FirstPerson|Dedicated Rig")UAnimSequence* FirstPersonRigInspectAnimation=nullptr;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="FirstPerson|Dedicated Rig")FVector FirstPersonRigLocation=FVector(0.f,0.f,-155.f);
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="FirstPerson|Dedicated Rig")FRotator FirstPersonRigRotation=FRotator::ZeroRotator;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="FirstPerson|Dedicated Rig")FVector FirstPersonRigScale=FVector::OneVector;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="FirstPerson|Dedicated Rig|Aiming")bool bUseFirstPersonRigAimTransform=false;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="FirstPerson|Dedicated Rig|Aiming")FVector FirstPersonRigAimLocation=FVector(0.f,0.f,-155.f);
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="FirstPerson|Dedicated Rig|Aiming")FRotator FirstPersonRigAimRotation=FRotator::ZeroRotator;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="FirstPerson|Dedicated Rig|Aiming")FVector FirstPersonRigAimScale=FVector::OneVector;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="FirstPerson|Dedicated Rig|Aiming",meta=(ClampMin="1.0"))float FirstPersonRigAimInterpSpeed=18.f;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="FirstPerson")FVector FirstPersonRestLocation=FVector(45.f,0.f,-22.f);
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="FirstPerson")FRotator FirstPersonCameraRotation=FRotator(0.f,-90.f,0.f);
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Recoil")float RecoilPitch=0.7f;

@@ -5,6 +5,7 @@
 #include "MainMenuWidget.generated.h"
 
 class UButton;
+class UEditableTextBox;
 class UTextBlock;
 class UVerticalBox;
 
@@ -37,8 +38,10 @@ private:
 	UFUNCTION()void ContinueClicked();
 	UFUNCTION()void HostLanClicked();
 	UFUNCTION()void FindLanClicked();
+	UFUNCTION()void JoinByIpClicked();
 	UFUNCTION()void RefreshMenuState();
 	UPROPERTY()UButton* ContinueButton=nullptr;
+	UPROPERTY()UEditableTextBox* DirectIpInput=nullptr;
 	UPROPERTY()UVerticalBox* SessionList=nullptr;
 	UPROPERTY()UTextBlock* StatusText=nullptr;
 };
