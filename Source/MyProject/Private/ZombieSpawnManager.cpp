@@ -1,6 +1,7 @@
 #include "ZombieSpawnManager.h"
 
 #include "AmmoPickup.h"
+#include "HealthPickup.h"
 #include "ShooterCharacter.h"
 #include "ZombieCharacter.h"
 #include "EngineUtils.h"
@@ -18,7 +19,9 @@ void AZombieSpawnManager::BeginPlay()
 	Super::BeginPlay();
 	if(!HasAuthority())return;
 	GetWorldTimerManager().SetTimer(ZombieTimer,this,&AZombieSpawnManager::MaintainZombiePopulation,SpawnInterval,true,.75f);
-	GetWorldTimerManager().SetTimer(AmmoTimer,this,&AZombieSpawnManager::TrySpawnAmmunition,AmmoSpawnInterval,true,6.f);
+	GetWorldTimerManager().SetTimer(InitialSuppliesTimer,this,&AZombieSpawnManager::SpawnInitialSupplies,1.25f,false);
+	GetWorldTimerManager().SetTimer(AmmoTimer,this,&AZombieSpawnManager::TrySpawnAmmunition,AmmoSpawnInterval,true,7.f);
+	GetWorldTimerManager().SetTimer(HealthTimer,this,&AZombieSpawnManager::TrySpawnHealth,HealthSpawnInterval,true,8.f);
 }
 
 AShooterCharacter* AZombieSpawnManager::FindPlayer()const
@@ -70,16 +73,57 @@ void AZombieSpawnManager::MaintainZombiePopulation()
 void AZombieSpawnManager::TrySpawnAmmunition()
 {
 	if(FMath::FRand()>AmmoSpawnChance)return;
+	SpawnAmmunition();
+}
+
+void AZombieSpawnManager::TrySpawnHealth()
+{
+	if(FMath::FRand()>HealthSpawnChance)return;
+	SpawnHealth();
+}
+
+void AZombieSpawnManager::SpawnInitialSupplies()
+{
+	SpawnAmmunition();
+	SpawnHealth();
+}
+
+bool AZombieSpawnManager::SpawnAmmunition()
+{
 	AShooterCharacter* Player=FindPlayer();
-	if(!Player)return;
+	if(!Player)return false;
 	int32 PickupCount=0;
 	for(TActorIterator<AAmmoPickup> It(GetWorld());It;++It)++PickupCount;
-	if(PickupCount>=MaxAmmoPickups)return;
+	if(PickupCount>=MaxAmmoPickups)return false;
 	FVector SpawnLocation;
-	if(!FindGroundedLocation(Player->GetActorLocation(),500.f,2000.f,SpawnLocation))return;
-	SpawnLocation.Z+=40.f;
+	if(!FindGroundedLocation(Player->GetActorLocation(),MinimumSupplyDistance,MaximumSupplyDistance,SpawnLocation))return false;
+	SpawnLocation.Z+=35.f;
 	FActorSpawnParameters Parameters;
 	Parameters.SpawnCollisionHandlingOverride=ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
 	if(GetWorld()->SpawnActor<AAmmoPickup>(AAmmoPickup::StaticClass(),SpawnLocation,FRotator::ZeroRotator,Parameters))
+	{
 		UE_LOG(LogTemp,Display,TEXT("Spawned ammunition pickup at %s"),*SpawnLocation.ToCompactString());
+		return true;
+	}
+	return false;
+}
+
+bool AZombieSpawnManager::SpawnHealth()
+{
+	AShooterCharacter* Player=FindPlayer();
+	if(!Player)return false;
+	int32 PickupCount=0;
+	for(TActorIterator<AHealthPickup> It(GetWorld());It;++It)++PickupCount;
+	if(PickupCount>=MaxHealthPickups)return false;
+	FVector SpawnLocation;
+	if(!FindGroundedLocation(Player->GetActorLocation(),MinimumSupplyDistance,MaximumSupplyDistance,SpawnLocation))return false;
+	SpawnLocation.Z+=35.f;
+	FActorSpawnParameters Parameters;
+	Parameters.SpawnCollisionHandlingOverride=ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
+	if(GetWorld()->SpawnActor<AHealthPickup>(AHealthPickup::StaticClass(),SpawnLocation,FRotator::ZeroRotator,Parameters))
+	{
+		UE_LOG(LogTemp,Display,TEXT("Spawned health pickup at %s"),*SpawnLocation.ToCompactString());
+		return true;
+	}
+	return false;
 }

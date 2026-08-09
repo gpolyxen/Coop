@@ -10,5 +10,14 @@ float UHealthArmorComponent::ApplyDamage(float RawDamage, AController*, AActor*)
 	const float Old = Health; Health = FMath::Clamp(Health - Applied, 0.f, MaxHealth);
 	OnHealthChanged.Broadcast(Health, Health - Old); if (IsDead()) OnDeath.Broadcast(); return Old - Health;
 }
+float UHealthArmorComponent::Heal(float Amount)
+{
+	if (!GetOwner()->HasAuthority() || IsDead() || Amount <= 0.f) return 0.f;
+	const float Old = Health;
+	Health = FMath::Clamp(Health + Amount, 0.f, MaxHealth);
+	const float Restored = Health - Old;
+	if (Restored > 0.f) OnHealthChanged.Broadcast(Health, Restored);
+	return Restored;
+}
 void UHealthArmorComponent::OnRep_Health(float OldHealth) { OnHealthChanged.Broadcast(Health, Health - OldHealth); if (IsDead() && OldHealth > 0.f) OnDeath.Broadcast(); }
 void UHealthArmorComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const { Super::GetLifetimeReplicatedProps(OutLifetimeProps); DOREPLIFETIME(UHealthArmorComponent, Health); DOREPLIFETIME(UHealthArmorComponent, ArmorReduction); }
