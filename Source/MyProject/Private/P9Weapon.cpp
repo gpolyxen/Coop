@@ -75,7 +75,10 @@ AP9Weapon::AP9Weapon()
 		TEXT("/Game/sA_ShootingVfxPack/FX/NiagaraSystems/NS_AR_Muzzleflash_1_ONCE.NS_AR_Muzzleflash_1_ONCE"));
 	if(Flash.Succeeded())MuzzleFlash=Flash.Object;
 
-	Stats.Damage=28.f;
+	// 9x19 mm: four centre-mass hits or two precise head hits against a normal zombie.
+	Stats.Damage=30.f;
+	Stats.HeadshotDamageMultiplier=1.7f;
+	Stats.LimbDamageMultiplier=.5f;
 	Stats.MagazineSize=15;
 	Stats.RoundsPerMinute=420.f;
 	Stats.ReloadSeconds=2.67f;
@@ -85,6 +88,7 @@ AP9Weapon::AP9Weapon()
 	Stats.WindInfluence=.8f;
 	Stats.GravityScale=1.f;
 	Stats.ProjectileLifeSeconds=8.f;
+	CloseRangeHitCorrectionDistance=450.f;
 	AmmoInMagazine=Stats.MagazineSize;
 	ReserveAmmo=45;
 	MaxReserveAmmo=90;

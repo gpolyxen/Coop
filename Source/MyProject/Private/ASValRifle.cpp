@@ -27,7 +27,9 @@ AASValRifle::AASValRifle()
 	static ConstructorHelpers::FObjectFinder<USoundBase> Shot(TEXT("/Game/FirstPerson/Audio/FirstPersonTemplateWeaponFire02.FirstPersonTemplateWeaponFire02"));
 	if(Shot.Succeeded())FireSound=Shot.Object;
 
-	Stats.Damage=38.f;
+	Stats.Damage=42.f;
+	Stats.HeadshotDamageMultiplier=2.6f;
+	Stats.LimbDamageMultiplier=.55f;
 	Stats.MagazineSize=20;
 	Stats.RoundsPerMinute=800.f;
 	Stats.ReloadSeconds=2.6f;

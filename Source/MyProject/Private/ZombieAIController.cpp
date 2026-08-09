@@ -11,10 +11,13 @@
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "EngineUtils.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
 
 AZombieAIController::AZombieAIController()
 {
 	PrimaryActorTick.bCanEverTick=true;
+	bDiagnosticLogging=FParse::Param(FCommandLine::Get(),TEXT("CodexAIDiagnostic"));
 	Senses=CreateDefaultSubobject<UAIPerceptionComponent>(TEXT("Perception"));
 	SetPerceptionComponent(*Senses);
 	Sight=CreateDefaultSubobject<UAISenseConfig_Sight>(TEXT("Sight"));
@@ -40,8 +43,10 @@ AZombieAIController::AZombieAIController()
 void AZombieAIController::OnPossess(APawn* InPawn)
 {
 	Super::OnPossess(InPawn);
+	if(Senses)Senses->RequestStimuliListenerUpdate();
 	NextPatrolTime=GetWorld()?GetWorld()->GetTimeSeconds()+FMath::FRandRange(PatrolWaitMin,PatrolWaitMax):0.;
 	ResetNavigationRecovery();
+	UE_LOG(LogTemp,Display,TEXT("Zombie AI %s possessed %s"),*GetName(),*GetNameSafe(InPawn));
 }
 
 void AZombieAIController::ResetNavigationRecovery()
@@ -49,6 +54,7 @@ void AZombieAIController::ResetNavigationRecovery()
 	bUsingDetour=false;
 	DetourLocation=FVector::ZeroVector;
 	DetourExpireTime=0.;
+	ForceSteeringUntil=0.;
 	NextPathRefreshTime=0.;
 }
 
@@ -114,6 +120,13 @@ bool AZombieAIController::TryJumpObstacle(const FVector& Destination)
 	UCharacterMovementComponent* Movement=Zombie->GetCharacterMovement();
 	UCapsuleComponent* Capsule=Zombie->GetCapsuleComponent();
 	const double Now=GetWorld()->GetTimeSeconds();
+	if(bDiagnosticLogging&&Now>=NextDiagnosticLogTime)
+	{
+		NextDiagnosticLogTime=Now+1.;
+		UE_LOG(LogTemp,Display,TEXT("AI_DIAG controller=%s pawn=%s location=%s velocity=%.1f target=%s move=%d"),
+			*GetName(),*GetNameSafe(Zombie),*Zombie->GetActorLocation().ToCompactString(),
+			Zombie->GetVelocity().Size2D(),*GetNameSafe(Target.Get()),static_cast<int32>(GetMoveStatus()));
+	}
 	if(!Movement||!Capsule||Movement->IsFalling()||!Movement->IsMovingOnGround()||Now-LastJumpTime<JumpCooldown)return false;
 
 	FVector TravelDirection=Zombie->GetVelocity();
@@ -280,7 +293,8 @@ void AZombieAIController::TryAcquireVisibleTarget()
 		ToPlayer.Z=0.f;
 		if(!bLoggedInitialSightScan)UE_LOG(LogTemp,Display,TEXT("Zombie sight scan: player=%s distance=%.0f facing=%.2f line-of-sight=%s"),*GetNameSafe(Player),FMath::Sqrt(DistanceSquared),FVector::DotProduct(Zombie->GetActorForwardVector(),ToPlayer.GetSafeNormal()),LineOfSightTo(Player,EyesLocation)?TEXT("true"):TEXT("false"));
 		if(DistanceSquared>BestDistanceSquared||ToPlayer.IsNearlyZero())continue;
-		if(FVector::DotProduct(Zombie->GetActorForwardVector(),ToPlayer.GetSafeNormal())<MinimumFacingDot)continue;
+		const bool bInsideProximityRadius=DistanceSquared<=FMath::Square(ProximityAwarenessRadius);
+		if(!bInsideProximityRadius&&FVector::DotProduct(Zombie->GetActorForwardVector(),ToPlayer.GetSafeNormal())<MinimumFacingDot)continue;
 		if(!LineOfSightTo(Player,EyesLocation))continue;
 		BestTarget=Player;
 		BestDistanceSquared=DistanceSquared;
@@ -365,6 +379,14 @@ void AZombieAIController::Tick(float DeltaSeconds)
 			else
 			{
 				const FVector Destination=bCanSeeTarget?Target->GetActorLocation():LastKnownLocation;
+				// Dynamic invoker tiles need a short time to appear in a packaged game.
+				// Continue physical steering during that interval instead of standing still.
+				if(Now<ForceSteeringUntil)
+				{
+					if(TryJumpObstacle(Destination))return;
+					SteerToward(Destination);
+					return;
+				}
 				if(bUsingDetour)
 				{
 					const bool bDetourFinished=FVector::DistSquared2D(Zombie->GetActorLocation(),DetourLocation)<=FMath::Square(PatrolAcceptanceRadius)
@@ -384,7 +406,10 @@ void AZombieAIController::Tick(float DeltaSeconds)
 					if(TryStartDetour(Destination))return;
 					LastChaseProgressLocation=Zombie->GetActorLocation();
 					LastChaseProgressTime=Now;
-					NextPathRefreshTime=0.;
+					StopMovement();
+					ForceSteeringUntil=Now+StuckRecoveryDelay;
+					SteerToward(Destination);
+					return;
 				}
 
 				if(GetMoveStatus()==EPathFollowingStatus::Idle||Now>=NextPathRefreshTime)
@@ -393,7 +418,11 @@ void AZombieAIController::Tick(float DeltaSeconds)
 						?MoveToActor(Target.Get(),Zombie->AttackRange*.75f,true,true,true)
 						:MoveToLocation(LastKnownLocation,PatrolAcceptanceRadius,true,true,true);
 					NextPathRefreshTime=Now+PathRefreshInterval;
-					if(MoveResult==EPathFollowingRequestResult::Failed&&!TryStartDetour(Destination))SteerToward(Destination);
+					if(MoveResult==EPathFollowingRequestResult::Failed&&!TryStartDetour(Destination))
+					{
+						ForceSteeringUntil=Now+StuckRecoveryDelay;
+						SteerToward(Destination);
+					}
 				}
 			}
 			return;

@@ -1,6 +1,7 @@
 #pragma once
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
+#include "ShooterTypes.h"
 #include "ShooterCharacter.generated.h"
 class UCameraComponent;class USpringArmComponent;class USceneComponent;class UInventoryComponent;class UHealthArmorComponent;class UNavigationInvokerComponent;class UAIPerceptionStimuliSourceComponent;class USkeletalMeshComponent;class UStaticMeshComponent;class UBlendSpace;class UAnimMontage;class UAnimSequence;class UAnimInstance;class AWeaponBase;class APickupActor;class ASaveBed;
 UCLASS(Blueprintable)
@@ -41,6 +42,20 @@ public:
 	UFUNCTION(BlueprintCallable) void EquipWeapon(TSubclassOf<AWeaponBase> WeaponClass);
 	UFUNCTION(BlueprintCallable) int32 AddAmmunition(int32 Amount);
 	UFUNCTION(BlueprintCallable) void AddExperience(int32 Amount);
+	UFUNCTION(BlueprintCallable) bool PurchaseSkill(EShooterSkill Skill);
+	UFUNCTION(BlueprintPure) bool HasSkill(EShooterSkill Skill)const{return UnlockedSkills.Contains(Skill);}
+	UFUNCTION(BlueprintPure) bool CanPurchaseSkill(EShooterSkill Skill)const;
+	UFUNCTION(BlueprintPure) int32 GetSkillCost(EShooterSkill Skill)const;
+	UFUNCTION(BlueprintPure) FText GetSkillName(EShooterSkill Skill)const;
+	UFUNCTION(BlueprintPure) FText GetSkillDescription(EShooterSkill Skill)const;
+	UFUNCTION(BlueprintPure) FText GetSkillRequirementText(EShooterSkill Skill)const;
+	UFUNCTION(BlueprintPure) float GetReloadTimeMultiplier()const{return HasSkill(EShooterSkill::QuickReload)?.72f:1.f;}
+	UFUNCTION(BlueprintPure) float GetRecoilMultiplier()const{return HasSkill(EShooterSkill::SteadyAim)?.78f:1.f;}
+	UFUNCTION(BlueprintPure) float GetPickupMultiplier()const{return HasSkill(EShooterSkill::Scavenger)?1.25f:1.f;}
+	UFUNCTION(BlueprintPure) float GetHealingMultiplier()const{return HasSkill(EShooterSkill::CombatMedic)?1.4f:1.f;}
+	UFUNCTION(BlueprintPure) bool IsLastLifeInvulnerable()const;
+	bool TryActivateLastLife();
+	void ApplyUnlockedSkillEffects();
 	void StopGameplayActionsForMenu();
 	void SetActiveWeaponSlotForLoad(int32 SlotIndex);
 	void ShowLocalNotification(const FString& Message,float Duration=4.f);
@@ -52,6 +67,10 @@ public:
 	UPROPERTY(Replicated,VisibleAnywhere,BlueprintReadOnly,Category="Progression")int32 CharacterLevel=1;
 	UPROPERTY(Replicated,VisibleAnywhere,BlueprintReadOnly,Category="Progression")int32 Experience=0;
 	UPROPERTY(Replicated,VisibleAnywhere,BlueprintReadOnly,Category="Progression")int32 TotalExperience=0;
+	UPROPERTY(Replicated,VisibleAnywhere,BlueprintReadOnly,Category="Progression")int32 SkillPoints=0;
+	UPROPERTY(Replicated,VisibleAnywhere,BlueprintReadOnly,Category="Progression")TArray<EShooterSkill> UnlockedSkills;
+	UPROPERTY(Replicated,VisibleAnywhere,BlueprintReadOnly,Category="Progression")bool bLastLifeConsumed=false;
+	UPROPERTY(Replicated,VisibleAnywhere,BlueprintReadOnly,Category="Progression")float LastLifeInvulnerableUntil=0.f;
 protected:
 	void RestoreLocalGameplayInput();
 	void MoveForward(float Value);void MoveRight(float Value);void TurnAtRate(float Value);void LookUpAtRate(float Value);void SwitchWeapon(float Value);void StartFire();void StopFire();void FireOnce();void StartAim();void StopAim();void Reload();void Interact();void SprintPressed();void SprintReleased();void ToggleCrouch();
@@ -61,6 +80,7 @@ protected:
 	UFUNCTION(Server,Reliable,WithValidation)void ServerUseBed(ASaveBed* Bed);
 	UFUNCTION(Client,Reliable)void ClientSaveAtBed();
 	UFUNCTION(Server,Reliable,WithValidation)void ServerSetAiming(bool bNewAiming);
+	UFUNCTION(Server,Reliable,WithValidation)void ServerPurchaseSkill(EShooterSkill Skill);
 	UFUNCTION()void OnRep_Weapon();
 	UFUNCTION()void HandleDeath();
 	void RefreshAnimationState();

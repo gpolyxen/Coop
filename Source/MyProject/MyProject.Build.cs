@@ -11,6 +11,10 @@ public class MyProject : ModuleRules
 		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "AIModule", "GameplayTasks", "NavigationSystem", "Niagara", "UMG", "Slate", "SlateCore", "Sockets", "Networking", "OnlineSubsystem", "OnlineSubsystemUtils" });
 
 		PrivateDependencyModuleNames.AddRange(new string[] {  });
+		if (Target.bBuildEditor)
+		{
+			AddEngineThirdPartyPrivateStaticDependencies(Target, "FBX");
+		}
 
 		DynamicallyLoadedModuleNames.Add("OnlineSubsystemNull");
 	}

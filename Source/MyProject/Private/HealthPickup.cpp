@@ -54,9 +54,10 @@ bool AHealthPickup::TryPickup(APawn* Pawn)
 	if(!HasAuthority()||!Pawn||FVector::DistSquared(Pawn->GetActorLocation(),GetActorLocation())>FMath::Square(400.f))return false;
 	if(AShooterCharacter* Character=Cast<AShooterCharacter>(Pawn))
 	{
-		if(Character->Health&&Character->Health->Heal(static_cast<float>(Quantity))>0.f)
+		const int32 RestoredAmount=FMath::Max(1,FMath::RoundToInt(Quantity*Character->GetHealingMultiplier()));
+		if(Character->Health&&Character->Health->Heal(static_cast<float>(RestoredAmount))>0.f)
 		{
-			UE_LOG(LogTemp,Display,TEXT("Player %s picked up %d health"),*Character->GetName(),Quantity);
+			UE_LOG(LogTemp,Display,TEXT("Player %s picked up %d health"),*Character->GetName(),RestoredAmount);
 			Destroy();
 			return true;
 		}

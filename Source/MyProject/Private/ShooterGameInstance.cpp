@@ -1,6 +1,7 @@
 #include "ShooterGameInstance.h"
 
 #include "HealthArmorComponent.h"
+#include "InventoryComponent.h"
 #include "PauseMenuWidget.h"
 #include "ShooterCharacter.h"
 #include "ShooterSaveGame.h"
@@ -172,6 +173,15 @@ bool UShooterGameInstance::SavePlayerAtBed(AShooterCharacter* Character)
 	Save->CharacterLevel=Character->CharacterLevel;
 	Save->Experience=Character->Experience;
 	Save->TotalExperience=Character->TotalExperience;
+	Save->SkillPoints=Character->SkillPoints;
+	Save->UnlockedSkills=Character->UnlockedSkills;
+	Save->bLastLifeConsumed=Character->bLastLifeConsumed;
+	if(Character->Inventory)
+	{
+		Save->InventoryMaxSlots=Character->Inventory->MaxSlots;
+		Save->InventoryMaxWeight=Character->Inventory->MaxWeight;
+		Save->InventoryItems=Character->Inventory->Items;
+	}
 	Save->ActiveWeaponSlot=Character->ActiveWeaponSlot;
 	Save->SavedAt=FDateTime::Now();
 	for(AWeaponBase* Weapon:Character->WeaponSlots)
@@ -200,10 +210,22 @@ bool UShooterGameInstance::ApplyPendingSave(AShooterCharacter* Character)
 {
 	if(!PendingSave||!Character||!Character->HasAuthority())return false;
 	Character->SetActorTransform(PendingSave->PlayerTransform,false,nullptr,ETeleportType::TeleportPhysics);
-	if(Character->Health)Character->Health->Health=FMath::Clamp(PendingSave->Health,1.f,Character->Health->MaxHealth);
 	Character->CharacterLevel=FMath::Max(1,PendingSave->CharacterLevel);
 	Character->Experience=FMath::Max(0,PendingSave->Experience);
 	Character->TotalExperience=FMath::Max(0,PendingSave->TotalExperience);
+	Character->SkillPoints=FMath::Max(0,PendingSave->SkillPoints);
+	Character->UnlockedSkills=PendingSave->UnlockedSkills;
+	Character->bLastLifeConsumed=PendingSave->bLastLifeConsumed;
+	Character->LastLifeInvulnerableUntil=0.f;
+	Character->ApplyUnlockedSkillEffects();
+	if(Character->Health)Character->Health->Health=FMath::Clamp(PendingSave->Health,1.f,Character->Health->MaxHealth);
+	if(Character->Inventory)
+	{
+		Character->Inventory->MaxSlots=FMath::Clamp(PendingSave->InventoryMaxSlots,6,20);
+		Character->Inventory->MaxWeight=FMath::Max(1.f,PendingSave->InventoryMaxWeight);
+		Character->Inventory->Items=PendingSave->InventoryItems;
+		Character->Inventory->OnInventoryChanged.Broadcast();
+	}
 	for(const FSavedWeaponData& Data:PendingSave->Weapons)
 	{
 		UClass* WeaponClass=FSoftClassPath(Data.WeaponClassPath).TryLoadClass<AWeaponBase>();

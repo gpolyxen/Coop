@@ -5,11 +5,13 @@
 #include "ShooterGameInstance.h"
 #include "SaveBed.h"
 #include "WeaponPickup.h"
+#include "BackpackPickup.h"
 #include "StarterRifle.h"
 #include "KA47Rifle.h"
 #include "SMG11Weapon.h"
 #include "ASValRifle.h"
 #include "P9Weapon.h"
+#include "AK74UWeapon.h"
 #include "ZombieCharacter.h"
 #include "ZombieSpawnManager.h"
 #include "WindField.h"
@@ -85,12 +87,12 @@ void AShooterGameMode::BeginPlay()
 	{
 		FVector Base=Start->GetActorLocation()+Start->GetActorForwardVector()*300.f;
 		Base.Z=100.f;
-		const TSubclassOf<AWeaponBase> Classes[5]={AStarterRifle::StaticClass(),AKA47Rifle::StaticClass(),ASMG11Weapon::StaticClass(),AASValRifle::StaticClass(),AP9Weapon::StaticClass()};
-		for(int32 Index=0;Index<5;++Index)
+		const TSubclassOf<AWeaponBase> Classes[6]={AStarterRifle::StaticClass(),AKA47Rifle::StaticClass(),ASMG11Weapon::StaticClass(),AASValRifle::StaticClass(),AP9Weapon::StaticClass(),AAK74UWeapon::StaticClass()};
+		for(int32 Index=0;Index<6;++Index)
 		{
 			FActorSpawnParameters SpawnParameters;
 			SpawnParameters.SpawnCollisionHandlingOverride=ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-			const FVector SpawnLocation=Base+Start->GetActorRightVector()*(Index-2.f)*180.f;
+			const FVector SpawnLocation=Base+Start->GetActorRightVector()*(Index-2.5f)*180.f;
 			AWeaponPickup* Pickup=GetWorld()->SpawnActor<AWeaponPickup>(AWeaponPickup::StaticClass(),SpawnLocation,FRotator(0,90,0),SpawnParameters);
 			if(Pickup)
 			{
@@ -98,6 +100,25 @@ void AShooterGameMode::BeginPlay()
 				UE_LOG(LogTemp,Display,TEXT("Spawned initial weapon pickup %d at %s"),Index,*SpawnLocation.ToString());
 			}
 			else UE_LOG(LogTemp,Error,TEXT("Failed to spawn initial weapon pickup %d"),Index);
+		}
+	}
+
+	bool bHasBackpack=false;
+	for(TActorIterator<ABackpackPickup> It(GetWorld());It;++It){bHasBackpack=true;break;}
+	if(!bHasBackpack)
+	{
+		for(int32 Index=0;Index<2;++Index)
+		{
+			FVector BackpackLocation=Start->GetActorLocation()+Start->GetActorForwardVector()*520.f+Start->GetActorRightVector()*(Index==0?-260.f:260.f);
+			FHitResult GroundHit;
+			if(GetWorld()->LineTraceSingleByChannel(GroundHit,BackpackLocation+FVector(0.f,0.f,1500.f),BackpackLocation-FVector(0.f,0.f,2500.f),ECC_WorldStatic))
+				BackpackLocation.Z=GroundHit.ImpactPoint.Z+60.f;
+			FActorSpawnParameters Parameters;Parameters.SpawnCollisionHandlingOverride=ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
+			if(ABackpackPickup* Backpack=GetWorld()->SpawnActor<ABackpackPickup>(ABackpackPickup::StaticClass(),BackpackLocation,Start->GetActorRotation(),Parameters))
+			{
+				Backpack->ConfigureCapacity(Index==0?12:20);
+				UE_LOG(LogTemp,Display,TEXT("Spawned test backpack with %d slots at %s"),Backpack->Capacity,*BackpackLocation.ToCompactString());
+			}
 		}
 	}
 

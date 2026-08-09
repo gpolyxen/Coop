@@ -16,7 +16,10 @@ class MYPROJECT_API AWeaponBase : public AActor
 	GENERATED_BODY()
 public:
 	AWeaponBase();virtual void Tick(float DeltaSeconds)override; virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps)const override;
-	UFUNCTION(BlueprintCallable) bool Fire(FVector AimDirection);
+	// AimPoint is the camera-selected world point. The physical projectile still
+	// starts at the muzzle, while close-range weapons may preserve the selected
+	// hit bone when muzzle parallax crosses another part of the same target.
+	UFUNCTION(BlueprintCallable) bool Fire(FVector AimPoint);
 	UFUNCTION(BlueprintCallable) void Reload();
 	UFUNCTION(BlueprintPure) bool CanFire()const;
 	UFUNCTION(BlueprintCallable) int32 AddReserveAmmo(int32 Amount);
@@ -50,6 +53,9 @@ public:
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="FirstPerson|Dedicated Rig")FVector FirstPersonRigLocation=FVector(0.f,0.f,-155.f);
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="FirstPerson|Dedicated Rig")FRotator FirstPersonRigRotation=FRotator::ZeroRotator;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="FirstPerson|Dedicated Rig")FVector FirstPersonRigScale=FVector::OneVector;
+	// Material slots that belong to third-person clothing/body geometry and must
+	// not obscure the camera in this weapon's dedicated FPS rig.
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="FirstPerson|Dedicated Rig")TArray<int32> HiddenFirstPersonRigMaterialSlots;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="FirstPerson|Dedicated Rig|Aiming")bool bUseFirstPersonRigAimTransform=false;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="FirstPerson|Dedicated Rig|Aiming")FVector FirstPersonRigAimLocation=FVector(0.f,0.f,-155.f);
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="FirstPerson|Dedicated Rig|Aiming")FRotator FirstPersonRigAimRotation=FRotator::ZeroRotator;
@@ -72,9 +78,10 @@ public:
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Aiming")bool bUseAimReferenceSocket=true;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Aiming")bool bUseScopeOverlay=false;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Aiming")bool bPlayCharacterAimFireMontage=false;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Aiming",meta=(ClampMin="0.0"))float CloseRangeHitCorrectionDistance=0.f;
 protected:
-	UFUNCTION(Server,Reliable,WithValidation) void ServerFire(FVector_NetQuantizeNormal AimDirection);
+	UFUNCTION(Server,Reliable,WithValidation) void ServerFire(FVector_NetQuantize AimPoint);
 	UFUNCTION(Server,Reliable,WithValidation) void ServerReload();
 	UFUNCTION(NetMulticast,Unreliable)void MulticastFireEffects(FVector_NetQuantize MuzzleLocation,FRotator MuzzleRotation);
-	bool FireAuthoritative(FVector AimDirection);void FinishReload();double LastFireTime=-1000.;FTimerHandle ReloadTimer;
+	bool FireAuthoritative(FVector AimPoint);void FinishReload();double LastFireTime=-1000.;FTimerHandle ReloadTimer;
 };

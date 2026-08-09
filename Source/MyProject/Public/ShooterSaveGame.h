@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/SaveGame.h"
+#include "ShooterTypes.h"
 #include "ShooterSaveGame.generated.h"
 
 USTRUCT(BlueprintType)
@@ -24,6 +25,12 @@ public:
 	UPROPERTY()int32 CharacterLevel=1;
 	UPROPERTY()int32 Experience=0;
 	UPROPERTY()int32 TotalExperience=0;
+	UPROPERTY()int32 SkillPoints=0;
+	UPROPERTY()TArray<EShooterSkill> UnlockedSkills;
+	UPROPERTY()bool bLastLifeConsumed=false;
+	UPROPERTY()int32 InventoryMaxSlots=6;
+	UPROPERTY()float InventoryMaxWeight=45.f;
+	UPROPERTY()TArray<FInventoryEntry> InventoryItems;
 	UPROPERTY()TArray<FSavedWeaponData> Weapons;
 	UPROPERTY()int32 ActiveWeaponSlot=INDEX_NONE;
 	UPROPERTY()FDateTime SavedAt;

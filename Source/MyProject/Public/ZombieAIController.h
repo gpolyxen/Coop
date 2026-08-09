@@ -24,6 +24,9 @@ protected:virtual void OnPossess(APawn* InPawn)override;
 	TWeakObjectPtr<AActor> Target;
 	FVector LastKnownLocation;
 	UPROPERTY(EditDefaultsOnly,Category="AI")float ForgetAfter=8.f;
+	// At arm's length a player is noticed even when he approaches from behind.
+	// An obstacle must still be absent, so this does not provide vision through walls.
+	UPROPERTY(EditDefaultsOnly,Category="AI",meta=(ClampMin="100"))float ProximityAwarenessRadius=350.f;
 	UPROPERTY(EditDefaultsOnly,Category="AI")float PatrolRadius=1500.f;
 	UPROPERTY(EditDefaultsOnly,Category="AI")float PatrolAcceptanceRadius=80.f;
 	UPROPERTY(EditDefaultsOnly,Category="AI")float PatrolWaitMin=1.f;
@@ -49,8 +52,11 @@ protected:virtual void OnPossess(APawn* InPawn)override;
 	double NextPathRefreshTime=0.;
 	double LastJumpTime=-1000.;
 	double DetourExpireTime=0.;
+	double ForceSteeringUntil=0.;
 	bool bUsingDetour=false;
 	FVector DetourLocation=FVector::ZeroVector;
 	FVector JumpTravelDirection=FVector::ZeroVector;
 	bool bLoggedInitialSightScan=false;
+	bool bDiagnosticLogging=false;
+	double NextDiagnosticLogTime=0.;
 };

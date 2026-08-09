@@ -1,6 +1,8 @@
 #include "ZombieCharacter.h"
 
 #include "ZombieAIController.h"
+#include "BloodBurstActor.h"
+#include "HeadGibActor.h"
 #include "ShooterCharacter.h"
 #include "HealthArmorComponent.h"
 #include "Animation/AnimSequence.h"
@@ -10,6 +12,7 @@
 #include "Engine/World.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "NavigationInvokerComponent.h"
+#include "NavigationSystem.h"
 #include "Net/UnrealNetwork.h"
 #include "TimerManager.h"
 #include "UObject/ConstructorHelpers.h"
@@ -55,6 +58,12 @@ AZombieCharacter::AZombieCharacter()
 void AZombieCharacter::BeginPlay()
 {
 	Super::BeginPlay();
+	if(HasAuthority())CombatHealth=MaxCombatHealth;
+	if(HasAuthority()&&!Controller)SpawnDefaultController();
+	if(UNavigationSystemV1* Navigation=UNavigationSystemV1::GetCurrent(GetWorld()))
+		if(NavigationInvoker)NavigationInvoker->RegisterWithNavigationSystem(*Navigation);
+	UE_LOG(LogTemp,Display,TEXT("Zombie %s began play; authority=%s controller=%s"),
+		*GetName(),HasAuthority()?TEXT("true"):TEXT("false"),*GetNameSafe(Controller));
 	UpdateLocomotionAnimation();
 }
 
@@ -62,6 +71,7 @@ void AZombieCharacter::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 	if(bIsDead)return;
+	SmoothedLocomotionSpeed=FMath::FInterpTo(SmoothedLocomotionSpeed,GetVelocity().Size2D(),DeltaSeconds,LocomotionSmoothingSpeed);
 	if(bIsAttacking)
 	{
 		if(HasAuthority()&&PendingAttackTarget.IsValid())
@@ -81,17 +91,29 @@ void AZombieCharacter::Tick(float DeltaSeconds)
 
 void AZombieCharacter::PlayZombieAnimation(UAnimationAsset* Animation,bool bLooping,float PlayRate)
 {
-	if(!Animation||CurrentAnimation==Animation)return;
+	if(!Animation)return;
+	const float TargetRate=FMath::Max(.1f,PlayRate);
+	if(CurrentAnimation==Animation)
+	{
+		GetMesh()->GlobalAnimRateScale=FMath::FInterpTo(GetMesh()->GlobalAnimRateScale,TargetRate,
+			GetWorld()?GetWorld()->GetDeltaSeconds():0.f,6.f);
+		return;
+	}
 	CurrentAnimation=Animation;
-	GetMesh()->GlobalAnimRateScale=FMath::Max(.1f,PlayRate);
+	GetMesh()->GlobalAnimRateScale=TargetRate;
 	GetMesh()->PlayAnimation(Animation,bLooping);
 }
 
 void AZombieCharacter::UpdateLocomotionAnimation()
 {
 	if(bIsDead||bIsAttacking)return;
-	const bool bMoving=GetVelocity().SizeSquared2D()>FMath::Square(8.f);
-	PlayZombieAnimation(bMoving?WalkAnimation:IdleAnimation,true,bMoving?WalkAnimationPlayRate:1.f);
+	if(bLocomotionMoving)
+	{
+		if(SmoothedLocomotionSpeed<StopWalkingSpeed)bLocomotionMoving=false;
+	}
+	else if(SmoothedLocomotionSpeed>StartWalkingSpeed)bLocomotionMoving=true;
+	const float WalkRate=FMath::Clamp(SmoothedLocomotionSpeed/270.f*WalkAnimationPlayRate,.72f,2.3f);
+	PlayZombieAnimation(bLocomotionMoving?WalkAnimation:IdleAnimation,true,bLocomotionMoving?WalkRate:1.f);
 }
 
 void AZombieCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps)const
@@ -101,6 +123,7 @@ void AZombieCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out
 	DOREPLIFETIME(AZombieCharacter,TorsoHits);
 	DOREPLIFETIME(AZombieCharacter,LimbHits);
 	DOREPLIFETIME(AZombieCharacter,LethalProgress);
+	DOREPLIFETIME(AZombieCharacter,CombatHealth);
 	DOREPLIFETIME(AZombieCharacter,bIsDead);
 	DOREPLIFETIME(AZombieCharacter,bIsAttacking);
 }
@@ -118,9 +141,21 @@ bool AZombieCharacter::IsLimbBone(FName BoneName)
 	return false;
 }
 
+FName AZombieCharacter::ResolveHeadBone(FName PreferredBone)const
+{
+	if(IsHeadBone(PreferredBone))return PreferredBone;
+	if(!GetMesh())return NAME_None;
+	for(int32 BoneIndex=0;BoneIndex<GetMesh()->GetNumBones();++BoneIndex)
+	{
+		const FName Candidate=GetMesh()->GetBoneName(BoneIndex);
+		if(IsHeadBone(Candidate))return Candidate;
+	}
+	return NAME_None;
+}
+
 float AZombieCharacter::TakeDamage(float DamageAmount,const FDamageEvent& DamageEvent,AController* EventInstigator,AActor* DamageCauser)
 {
-	const float AppliedDamage=Super::TakeDamage(DamageAmount,DamageEvent,EventInstigator,DamageCauser);
+	Super::TakeDamage(DamageAmount,DamageEvent,EventInstigator,DamageCauser);
 	if(!HasAuthority()||bIsDead)return 0.f;
 
 	FName HitBone=NAME_None;
@@ -135,28 +170,22 @@ float AZombieCharacter::TakeDamage(float DamageAmount,const FDamageEvent& Damage
 	}
 
 	const bool bHeadshot=IsHeadBone(HitBone);
-	if(bHeadshot)
-	{
-		++HeadHits;
-		LethalProgress=1.f;
-	}
-	else if(IsLimbBone(HitBone))
-	{
-		++LimbHits;
-		LethalProgress+=.2f;
-	}
-	else
-	{
-		++TorsoHits;
-		LethalProgress+=1.f/3.f;
-	}
+	if(bHeadshot)++HeadHits;
+	else if(IsLimbBone(HitBone))++LimbHits;
+	else ++TorsoHits;
+	const float OldCombatHealth=CombatHealth;
+	CombatHealth=FMath::Clamp(CombatHealth-FMath::Max(0.f,DamageAmount),0.f,MaxCombatHealth);
+	const float AppliedDamage=OldCombatHealth-CombatHealth;
+	LethalProgress=1.f-CombatHealth/FMath::Max(1.f,MaxCombatHealth);
+	const bool bKilled=CombatHealth<=KINDA_SMALL_NUMBER;
+	MulticastBloodImpact(HitLocation,ShotDirection,bKilled&&bHeadshot);
 
 	if(AZombieAIController* ZombieController=Cast<AZombieAIController>(GetController()))
 	{
 		AActor* Attacker=EventInstigator?EventInstigator->GetPawn():DamageCauser;
 		ZombieController->AlertToActor(Attacker);
 	}
-	if(bHeadshot||LethalProgress>=.999f)
+	if(bKilled)
 	{
 		if(AShooterCharacter* Killer=EventInstigator?Cast<AShooterCharacter>(EventInstigator->GetPawn()):nullptr)
 		{
@@ -166,7 +195,18 @@ float AZombieCharacter::TakeDamage(float DamageAmount,const FDamageEvent& Damage
 		}
 		Die(bHeadshot,HitBone,ShotDirection,HitLocation);
 	}
+	UE_LOG(LogTemp,Verbose,TEXT("Zombie %s took %.1f zone damage to %s (%.1f / %.1f remaining)"),
+		*GetName(),AppliedDamage,*HitBone.ToString(),CombatHealth,MaxCombatHealth);
 	return AppliedDamage;
+}
+
+void AZombieCharacter::MulticastBloodImpact_Implementation(FVector_NetQuantize HitLocation,FVector_NetQuantizeNormal ShotDirection,bool bFountain)
+{
+	if(!GetWorld())return;
+	FActorSpawnParameters Parameters;
+	Parameters.SpawnCollisionHandlingOverride=ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	if(ABloodBurstActor* Blood=GetWorld()->SpawnActor<ABloodBurstActor>(ABloodBurstActor::StaticClass(),HitLocation,ShotDirection.Rotation(),Parameters))
+		Blood->ActivateBurst(ShotDirection,bFountain);
 }
 
 bool AZombieCharacter::TryAttack(AActor* Target)
@@ -258,8 +298,13 @@ void AZombieCharacter::MulticastDie_Implementation(bool bHeadshot,FName HitBone,
 	GetMesh()->WakeAllRigidBodies();
 	if(bHeadshot)
 	{
-		const FName HeadBone=IsHeadBone(HitBone)?HitBone:FName(TEXT("Head"));
-		GetMesh()->BreakConstraint(Impulse,HitLocation,HeadBone);
-		GetMesh()->AddImpulseToAllBodiesBelow(Impulse,HeadBone,true);
+		const FName HeadBone=ResolveHeadBone(HitBone);
+		const FVector HeadLocation=HeadBone.IsNone()?HitLocation:GetMesh()->GetBoneLocation(HeadBone);
+		UMaterialInterface* HeadMaterial=GetMesh()->GetMaterial(0);
+		if(!HeadBone.IsNone())GetMesh()->HideBoneByName(HeadBone,PBO_Term);
+		FActorSpawnParameters Parameters;
+		Parameters.SpawnCollisionHandlingOverride=ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		if(AHeadGibActor* DetachedHead=GetWorld()->SpawnActor<AHeadGibActor>(AHeadGibActor::StaticClass(),HeadLocation,FRotator::ZeroRotator,Parameters))
+			DetachedHead->InitializeGib(HeadMaterial,Impulse);
 	}
 }

@@ -4,6 +4,7 @@
 #include "SMG11Weapon.h"
 #include "ASValRifle.h"
 #include "P9Weapon.h"
+#include "AK74UWeapon.h"
 #include "ShooterCharacter.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/SphereComponent.h"
@@ -33,6 +34,11 @@ void AWeaponPickup::ConfigureWeaponClass(TSubclassOf<AWeaponBase> C)
 	{
 		M=LoadObject<UStaticMesh>(nullptr,TEXT("/Game/P9MannyFPS/Meshes/SM_P9.SM_P9"));
 		ItemId=TEXT("P9");
+	}
+	else if(C==AAK74UWeapon::StaticClass())
+	{
+		M=LoadObject<UStaticMesh>(nullptr,TEXT("/Game/AK74UFree/WorldParts/AK74U_Gun.AK74U_Gun"));
+		ItemId=TEXT("AK74U");
 	}
 	else
 	{

@@ -26,6 +26,7 @@
 #include "KA47Rifle.h"
 #include "SMG11Weapon.h"
 #include "P9Weapon.h"
+#include "AK74UWeapon.h"
 #include "WeaponPickup.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
@@ -35,6 +36,7 @@
 #include "Perception/AIPerceptionStimuliSourceComponent.h"
 #include "Perception/AISense_Sight.h"
 #include "Perception/AISense_Hearing.h"
+#include "EngineUtils.h"
 
 AShooterCharacter::AShooterCharacter()
 {
@@ -47,6 +49,7 @@ AShooterCharacter::AShooterCharacter()
 	// scale-neutral root so dedicated FPS rigs retain their authored dimensions.
 	FirstPersonRigRoot=CreateDefaultSubobject<USceneComponent>(TEXT("FirstPersonRigRoot"));FirstPersonRigRoot->SetupAttachment(Camera);FirstPersonRigRoot->SetAbsolute(false,false,true);
 	FirstPersonArms=CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("FirstPersonArms"));FirstPersonArms->SetupAttachment(FirstPersonRigRoot);FirstPersonArms->SetRelativeLocation(FVector(-20.f,12.f,-105.f));FirstPersonArms->SetRelativeRotation(FRotator(0.f,-10.f,0.f));FirstPersonArms->SetRelativeScale3D(FVector(.65f));FirstPersonArms->SetOnlyOwnerSee(true);FirstPersonArms->SetCollisionEnabled(ECollisionEnabled::NoCollision);FirstPersonArms->CastShadow=false;
+	FirstPersonArms->SetIsReplicated(false);
 	FirstPersonArms->SetHiddenInGame(true);
 	LeftFirstPersonArm=CreateDefaultSubobject<UStaticMeshComponent>(TEXT("LeftFirstPersonArm"));LeftFirstPersonArm->SetupAttachment(Camera);LeftFirstPersonArm->SetOnlyOwnerSee(true);LeftFirstPersonArm->SetCollisionEnabled(ECollisionEnabled::NoCollision);LeftFirstPersonArm->CastShadow=false;
 	RightFirstPersonArm=CreateDefaultSubobject<UStaticMeshComponent>(TEXT("RightFirstPersonArm"));RightFirstPersonArm->SetupAttachment(Camera);RightFirstPersonArm->SetOnlyOwnerSee(true);RightFirstPersonArm->SetCollisionEnabled(ECollisionEnabled::NoCollision);RightFirstPersonArm->CastShadow=false;
@@ -72,6 +75,7 @@ void AShooterCharacter::BeginPlay()
 	Super::BeginPlay();
 	if(StimuliSource)StimuliSource->RegisterWithPerceptionSystem();
 	if(Health)Health->OnDeath.AddDynamic(this,&AShooterCharacter::HandleDeath);
+	ApplyUnlockedSkillEffects();
 	FirstPersonBody->SetHiddenInGame(true);
 	FirstPersonArms->SetHiddenInGame(true);
 	LeftFirstPersonArm->SetHiddenInGame(true);
@@ -94,10 +98,12 @@ void AShooterCharacter::BeginPlay()
 		}
 	const bool bCaptureDefaultWeapon=FParse::Param(FCommandLine::Get(),TEXT("CodexCapture"));
 	const bool bCaptureP9=FParse::Param(FCommandLine::Get(),TEXT("CodexCaptureP9"));
-	if((bCaptureDefaultWeapon||bCaptureP9)&&IsLocallyControlled())
+	const bool bCaptureAK74U=FParse::Param(FCommandLine::Get(),TEXT("CodexCaptureAK74U"));
+	const bool bCaptureAK74UHip=FParse::Param(FCommandLine::Get(),TEXT("CodexCaptureAK74UHip"));
+	if((bCaptureDefaultWeapon||bCaptureP9||bCaptureAK74U||bCaptureAK74UHip)&&IsLocallyControlled())
 	{
-		bIsAiming=true;
-		if(HasAuthority())EquipWeapon(bCaptureP9?AP9Weapon::StaticClass():AKA47Rifle::StaticClass());
+		bIsAiming=!bCaptureAK74UHip;
+		if(HasAuthority())EquipWeapon((bCaptureAK74U||bCaptureAK74UHip)?AAK74UWeapon::StaticClass():(bCaptureP9?AP9Weapon::StaticClass():AKA47Rifle::StaticClass()));
 		FTimerHandle CaptureTimer;
 		GetWorldTimerManager().SetTimer(CaptureTimer,this,&AShooterCharacter::CaptureDiagnosticScreenshot,3.f,false);
 	}
@@ -142,7 +148,10 @@ void AShooterCharacter::StopGameplayActionsForMenu()
 bool AShooterCharacter::IsDead()const{return Health&&Health->IsDead();}
 
 void AShooterCharacter::HandleDeath(){StopFire();bIsAiming=false;if(Camera)Camera->SetFieldOfView(HipFOV);if(UCharacterMovementComponent* Movement=GetCharacterMovement()){Movement->StopMovementImmediately();Movement->DisableMovement();}if(IsLocallyControlled())if(APlayerController* PC=Cast<APlayerController>(Controller))DisableInput(PC);UE_LOG(LogTemp,Display,TEXT("Player %s died"),*GetName());}
-void AShooterCharacter::CaptureDiagnosticScreenshot(){FScreenshotRequest::RequestScreenshot(TEXT("CodexWeaponView.png"),false,false);}
+void AShooterCharacter::CaptureDiagnosticScreenshot()
+{
+	FScreenshotRequest::RequestScreenshot(TEXT("CodexWeaponView.png"),false,false);
+}
 void AShooterCharacter::Tick(float D)
 {
 	Super::Tick(D);
@@ -195,16 +204,17 @@ void AShooterCharacter::FireOnce()
 	Params.AddIgnoredActor(EquippedWeapon);
 	const bool bHit=GetWorld()->LineTraceSingleByChannel(Hit,ViewStart,ViewEnd,ECC_Visibility,Params);
 	const FVector AimPoint=bHit?Hit.ImpactPoint:ViewEnd;
-	if(!EquippedWeapon->Fire((AimPoint-EquippedWeapon->GetMuzzleLocation()).GetSafeNormal()))return;
+	if(!EquippedWeapon->Fire(AimPoint))return;
 	PlayDedicatedFirstPersonRigAction(EquippedWeapon->FirstPersonRigFireAnimation);
-	RecoilPitchTarget=FMath::Clamp(RecoilPitchTarget+EquippedWeapon->RecoilPitch,0.f,4.f);
-	RecoilYawTarget=FMath::Clamp(RecoilYawTarget+FMath::FRandRange(-EquippedWeapon->RecoilYaw,EquippedWeapon->RecoilYaw),-1.5f,1.5f);
+	const float RecoilMultiplier=GetRecoilMultiplier();
+	RecoilPitchTarget=FMath::Clamp(RecoilPitchTarget+EquippedWeapon->RecoilPitch*RecoilMultiplier,0.f,4.f);
+	RecoilYawTarget=FMath::Clamp(RecoilYawTarget+FMath::FRandRange(-EquippedWeapon->RecoilYaw,EquippedWeapon->RecoilYaw)*RecoilMultiplier,-1.5f,1.5f);
 	RecoilKickTarget=FMath::Clamp(RecoilKickTarget+EquippedWeapon->RecoilKickback,0.f,5.f);
 	if(Controller)
 	{
 		FRotator ControlRotation=Controller->GetControlRotation();
-		ControlRotation.Pitch=FMath::ClampAngle(ControlRotation.Pitch-EquippedWeapon->RecoilPitch,-80.f,80.f);
-		ControlRotation.Yaw+=FMath::FRandRange(-EquippedWeapon->RecoilYaw,EquippedWeapon->RecoilYaw);
+		ControlRotation.Pitch=FMath::ClampAngle(ControlRotation.Pitch-EquippedWeapon->RecoilPitch*RecoilMultiplier,-80.f,80.f);
+		ControlRotation.Yaw+=FMath::FRandRange(-EquippedWeapon->RecoilYaw,EquippedWeapon->RecoilYaw)*RecoilMultiplier;
 		Controller->SetControlRotation(ControlRotation);
 	}
 }
@@ -227,7 +237,7 @@ void AShooterCharacter::Reload()
 	if(bCanStartReload)PlayDedicatedFirstPersonRigAction(EquippedWeapon->FirstPersonRigReloadAnimation);
 }
 
-void AShooterCharacter::SprintPressed(){if(!IsDead())GetCharacterMovement()->MaxWalkSpeed=SprintSpeed;}
+void AShooterCharacter::SprintPressed(){if(!IsDead())GetCharacterMovement()->MaxWalkSpeed=SprintSpeed*(HasSkill(EShooterSkill::Marathon)?1.15f:1.f);}
 void AShooterCharacter::SprintReleased(){if(!IsDead())GetCharacterMovement()->MaxWalkSpeed=WalkSpeed;}
 
 bool AShooterCharacter::IsDedicatedFirstPersonRigActive()const
@@ -256,6 +266,9 @@ void AShooterCharacter::ConfigureDedicatedFirstPersonRig()
 
 	FirstPersonRigWeapon=EquippedWeapon;
 	FirstPersonArms->SetSkeletalMesh(EquippedWeapon->FirstPersonRigMesh);
+	FirstPersonArms->ShowAllMaterialSections(0);
+	for(const int32 MaterialSlot:EquippedWeapon->HiddenFirstPersonRigMaterialSlots)
+		FirstPersonArms->ShowMaterialSection(MaterialSlot,MaterialSlot,false,0);
 	FirstPersonArms->SetRelativeLocation(EquippedWeapon->FirstPersonRigLocation);
 	FirstPersonArms->SetRelativeRotation(EquippedWeapon->FirstPersonRigRotation);
 	FirstPersonArms->SetRelativeScale3D(EquippedWeapon->FirstPersonRigScale);
@@ -342,6 +355,7 @@ void AShooterCharacter::SetActiveWeaponSlotForLoad(int32 SlotIndex)
 int32 AShooterCharacter::AddAmmunition(int32 Amount)
 {
 	if(!HasAuthority()||Amount<=0)return 0;
+	Amount=FMath::Max(1,FMath::RoundToInt(Amount*GetPickupMultiplier()));
 	int32 Remaining=Amount;
 	if(EquippedWeapon)Remaining-=EquippedWeapon->AddReserveAmmo(Remaining);
 	for(AWeaponBase* Weapon:WeaponSlots)
@@ -361,8 +375,108 @@ void AShooterCharacter::AddExperience(int32 Amount)
 	{
 		Experience-=GetExperienceForNextLevel();
 		++CharacterLevel;
+		++SkillPoints;
+		ShowLocalNotification(FString::Printf(TEXT("LEVEL %d: +1 SKILL POINT"),CharacterLevel),5.f);
 		UE_LOG(LogTemp,Display,TEXT("Player %s reached level %d"),*GetName(),CharacterLevel);
 	}
+}
+
+int32 AShooterCharacter::GetSkillCost(EShooterSkill Skill)const
+{
+	switch(Skill)
+	{
+	case EShooterSkill::CombatMedic:case EShooterSkill::DeepPockets:return 2;
+	case EShooterSkill::LastLife:return 3;
+	default:return 1;
+	}
+}
+
+FText AShooterCharacter::GetSkillName(EShooterSkill Skill)const
+{
+	switch(Skill)
+	{
+	case EShooterSkill::QuickReload:return FText::FromString(TEXT("Быстрая перезарядка"));
+	case EShooterSkill::Marathon:return FText::FromString(TEXT("Марафонец"));
+	case EShooterSkill::Vitality:return FText::FromString(TEXT("Живучесть"));
+	case EShooterSkill::SteadyAim:return FText::FromString(TEXT("Твёрдая рука"));
+	case EShooterSkill::Scavenger:return FText::FromString(TEXT("Сборщик"));
+	case EShooterSkill::CombatMedic:return FText::FromString(TEXT("Полевой медик"));
+	case EShooterSkill::DeepPockets:return FText::FromString(TEXT("Глубокие карманы"));
+	case EShooterSkill::LastLife:return FText::FromString(TEXT("Последняя жизнь"));
+	default:return FText::FromString(TEXT("Навык"));
+	}
+}
+
+FText AShooterCharacter::GetSkillDescription(EShooterSkill Skill)const
+{
+	switch(Skill)
+	{
+	case EShooterSkill::QuickReload:return FText::FromString(TEXT("Перезарядка оружия быстрее на 28%."));
+	case EShooterSkill::Marathon:return FText::FromString(TEXT("Скорость бесконечного спринта выше на 15%."));
+	case EShooterSkill::Vitality:return FText::FromString(TEXT("Максимальное здоровье увеличено на 25."));
+	case EShooterSkill::SteadyAim:return FText::FromString(TEXT("Вертикальная и горизонтальная отдача меньше на 22%."));
+	case EShooterSkill::Scavenger:return FText::FromString(TEXT("Подбираемые боеприпасы дают на 25% больше патронов."));
+	case EShooterSkill::CombatMedic:return FText::FromString(TEXT("Аптечки восстанавливают на 40% больше здоровья."));
+	case EShooterSkill::DeepPockets:return FText::FromString(TEXT("Максимальный переносимый вес увеличен на 15 кг."));
+	case EShooterSkill::LastLife:return FText::FromString(TEXT("Один раз оставляет 1 HP и даёт бессмертие на 5 секунд."));
+	default:return FText::GetEmpty();
+	}
+}
+
+FText AShooterCharacter::GetSkillRequirementText(EShooterSkill Skill)const
+{
+	if(Skill==EShooterSkill::CombatMedic)return FText::FromString(TEXT("Требуется: Живучесть"));
+	if(Skill==EShooterSkill::DeepPockets)return FText::FromString(TEXT("Требуется: Сборщик"));
+	if(Skill==EShooterSkill::LastLife)return FText::FromString(TEXT("Требуются: Живучесть и Полевой медик"));
+	return FText::GetEmpty();
+}
+
+bool AShooterCharacter::CanPurchaseSkill(EShooterSkill Skill)const
+{
+	if(HasSkill(Skill)||SkillPoints<GetSkillCost(Skill))return false;
+	if(Skill==EShooterSkill::CombatMedic&&!HasSkill(EShooterSkill::Vitality))return false;
+	if(Skill==EShooterSkill::DeepPockets&&!HasSkill(EShooterSkill::Scavenger))return false;
+	if(Skill==EShooterSkill::LastLife&&(!HasSkill(EShooterSkill::Vitality)||!HasSkill(EShooterSkill::CombatMedic)))return false;
+	return true;
+}
+
+bool AShooterCharacter::PurchaseSkill(EShooterSkill Skill)
+{
+	if(!HasAuthority()){ServerPurchaseSkill(Skill);return CanPurchaseSkill(Skill);}
+	if(!CanPurchaseSkill(Skill))return false;
+	SkillPoints-=GetSkillCost(Skill);
+	UnlockedSkills.AddUnique(Skill);
+	ApplyUnlockedSkillEffects();
+	ShowLocalNotification(FString::Printf(TEXT("UNLOCKED: %s"),*GetSkillName(Skill).ToString()),4.f);
+	return true;
+}
+
+bool AShooterCharacter::ServerPurchaseSkill_Validate(EShooterSkill Skill){return static_cast<uint8>(Skill)<=static_cast<uint8>(EShooterSkill::LastLife);}
+void AShooterCharacter::ServerPurchaseSkill_Implementation(EShooterSkill Skill){PurchaseSkill(Skill);}
+
+void AShooterCharacter::ApplyUnlockedSkillEffects()
+{
+	if(Health)
+	{
+		const float OldMax=Health->MaxHealth;
+		Health->MaxHealth=HasSkill(EShooterSkill::Vitality)?125.f:100.f;
+		if(HasAuthority()&&Health->Health>0.f&&Health->MaxHealth>OldMax)Health->Health=FMath::Min(Health->MaxHealth,Health->Health+Health->MaxHealth-OldMax);
+	}
+	if(Inventory)Inventory->MaxWeight=HasSkill(EShooterSkill::DeepPockets)?60.f:45.f;
+}
+
+bool AShooterCharacter::IsLastLifeInvulnerable()const
+{
+	return GetWorld()&&GetWorld()->GetTimeSeconds()<LastLifeInvulnerableUntil;
+}
+
+bool AShooterCharacter::TryActivateLastLife()
+{
+	if(!HasAuthority()||!HasSkill(EShooterSkill::LastLife)||bLastLifeConsumed)return false;
+	bLastLifeConsumed=true;
+	LastLifeInvulnerableUntil=GetWorld()->GetTimeSeconds()+5.f;
+	ShowLocalNotification(TEXT("LAST LIFE: 5 SECONDS OF INVULNERABILITY"),5.f);
+	return true;
 }
 
 void AShooterCharacter::OnRep_Weapon()
@@ -395,4 +509,4 @@ void AShooterCharacter::OnRep_Weapon()
 		Weapon->FirstPersonMesh->SetVisibility(false,true);
 	}
 }
-void AShooterCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>&OutLifetimeProps)const{Super::GetLifetimeReplicatedProps(OutLifetimeProps);DOREPLIFETIME(AShooterCharacter,EquippedWeapon);DOREPLIFETIME(AShooterCharacter,WeaponSlots);DOREPLIFETIME(AShooterCharacter,ActiveWeaponSlot);DOREPLIFETIME(AShooterCharacter,bIsAiming);DOREPLIFETIME(AShooterCharacter,CharacterLevel);DOREPLIFETIME(AShooterCharacter,Experience);DOREPLIFETIME(AShooterCharacter,TotalExperience);}
+void AShooterCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>&OutLifetimeProps)const{Super::GetLifetimeReplicatedProps(OutLifetimeProps);DOREPLIFETIME(AShooterCharacter,EquippedWeapon);DOREPLIFETIME(AShooterCharacter,WeaponSlots);DOREPLIFETIME(AShooterCharacter,ActiveWeaponSlot);DOREPLIFETIME(AShooterCharacter,bIsAiming);DOREPLIFETIME(AShooterCharacter,CharacterLevel);DOREPLIFETIME(AShooterCharacter,Experience);DOREPLIFETIME(AShooterCharacter,TotalExperience);DOREPLIFETIME(AShooterCharacter,SkillPoints);DOREPLIFETIME(AShooterCharacter,UnlockedSkills);DOREPLIFETIME(AShooterCharacter,bLastLifeConsumed);DOREPLIFETIME(AShooterCharacter,LastLifeInvulnerableUntil);}

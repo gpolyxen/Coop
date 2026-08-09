@@ -37,6 +37,7 @@ private:
 	bool SpawnHealth();
 	bool FindGroundedLocation(const FVector& Around,float MinDistance,float MaxDistance,FVector& OutLocation)const;
 	AShooterCharacter* FindPlayer()const;
+	int32 GetHighestPlayerLevel()const;
 	FTimerHandle ZombieTimer;
 	FTimerHandle AmmoTimer;
 	FTimerHandle HealthTimer;

@@ -12,15 +12,91 @@
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "ShooterCharacter.h"
+#include "ZombieCharacter.h"
+#include "Camera/CameraComponent.h"
+#include "ZombieAIController.h"
+#include "EngineUtils.h"
 #include "UObject/ConstructorHelpers.h"
 
 AWeaponBase::AWeaponBase(){PrimaryActorTick.bCanEverTick=true;bReplicates=true;SetReplicateMovement(true);Mesh=CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("WorldWeaponMesh"));RootComponent=Mesh;Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);Mesh->SetOwnerNoSee(false);FirstPersonMesh=CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("FirstPersonWeaponMesh"));FirstPersonMesh->SetupAttachment(RootComponent);FirstPersonMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);FirstPersonMesh->SetVisibility(false,true);FirstPersonMesh->SetHiddenInGame(true);FirstPersonMesh->CastShadow=false;ProjectileClass=ABallisticProjectile::StaticClass();static ConstructorHelpers::FObjectFinder<UAnimMontage>HipFire(TEXT("/Game/ThirdPersonBP/Player_0/Anim/Montages/Fire_Rifle_Hip_Montage.Fire_Rifle_Hip_Montage"));if(HipFire.Succeeded())CharacterFireMontage=HipFire.Object;static ConstructorHelpers::FObjectFinder<UAnimMontage>AimFire(TEXT("/Game/ThirdPersonBP/Player_0/Anim/Montages/Fire_Rifle_ironsights_Montage.Fire_Rifle_ironsights_Montage"));if(AimFire.Succeeded())CharacterAimFireMontage=AimFire.Object;AmmoInMagazine=Stats.MagazineSize;ReserveAmmo=90;}
 void AWeaponBase::Tick(float D){Super::Tick(D);}
 FVector AWeaponBase::GetMuzzleLocation()const{static const FName MuzzleBone(TEXT("b_gun_muzzleflash"));return Mesh->DoesSocketExist(MuzzleBone)?Mesh->GetSocketLocation(MuzzleBone):Mesh->GetComponentLocation()+GetActorForwardVector()*100.f;}
 bool AWeaponBase::CanFire()const{return !bIsReloading&&AmmoInMagazine>0&&GetWorld()&&GetWorld()->GetTimeSeconds()-LastFireTime>=60./FMath::Max(1.f,Stats.RoundsPerMinute)&&ProjectileClass!=nullptr;}
-bool AWeaponBase::Fire(FVector Aim){if(!HasAuthority()){if(!CanFire())return false;ServerFire(Aim);return true;}return FireAuthoritative(Aim);}
-bool AWeaponBase::ServerFire_Validate(FVector_NetQuantizeNormal Aim){return !Aim.IsNearlyZero();}void AWeaponBase::ServerFire_Implementation(FVector_NetQuantizeNormal Aim){FireAuthoritative(Aim);}
-bool AWeaponBase::FireAuthoritative(FVector Aim){if(!CanFire())return false;LastFireTime=GetWorld()->GetTimeSeconds();--AmmoInMagazine;const FVector Muzzle=GetMuzzleLocation();const FVector Shot=FMath::VRandCone(Aim.GetSafeNormal(),FMath::DegreesToRadians(Stats.SpreadDegrees));FActorSpawnParameters P;P.Owner=GetOwner();P.Instigator=Cast<APawn>(GetOwner());ABallisticProjectile* B=GetWorld()->SpawnActor<ABallisticProjectile>(ProjectileClass,Muzzle,Shot.Rotation(),P);if(B){B->InitializeProjectile(Stats.Damage,Stats.DragCoefficient,Stats.WindInfluence,Stats.GravityScale,Stats.ProjectileLifeSeconds,GetOwner()?GetOwner()->GetInstigatorController():nullptr);B->Movement->Velocity=Shot*Stats.MuzzleVelocity;}MulticastFireEffects(Muzzle,Shot.Rotation());UAISense_Hearing::ReportNoiseEvent(GetWorld(),Muzzle,Stats.NoiseLoudness,GetOwner(),4000.f,TEXT("Gunshot"));return true;}
+bool AWeaponBase::Fire(FVector AimPoint){if(!HasAuthority()){if(!CanFire())return false;ServerFire(AimPoint);return true;}return FireAuthoritative(AimPoint);}
+bool AWeaponBase::ServerFire_Validate(FVector_NetQuantize AimPoint){return !AimPoint.ContainsNaN();}void AWeaponBase::ServerFire_Implementation(FVector_NetQuantize AimPoint){FireAuthoritative(AimPoint);}
+bool AWeaponBase::FireAuthoritative(FVector AimPoint)
+{
+	if(!CanFire())return false;
+	LastFireTime=GetWorld()->GetTimeSeconds();
+	--AmmoInMagazine;
+	const FVector Muzzle=GetMuzzleLocation();
+	if(AimPoint.IsNearlyZero())AimPoint=Muzzle+GetActorForwardVector()*100000.f;
+	const FVector Shot=FMath::VRandCone((AimPoint-Muzzle).GetSafeNormal(),FMath::DegreesToRadians(Stats.SpreadDegrees));
+	FActorSpawnParameters P;P.Owner=GetOwner();P.Instigator=Cast<APawn>(GetOwner());
+	ABallisticProjectile* B=GetWorld()->SpawnActor<ABallisticProjectile>(ProjectileClass,Muzzle,Shot.Rotation(),P);
+	if(B)
+	{
+		B->InitializeProjectile(Stats.Damage,Stats.HeadshotDamageMultiplier,Stats.LimbDamageMultiplier,Stats.DragCoefficient,Stats.WindInfluence,Stats.GravityScale,
+			Stats.ProjectileLifeSeconds,GetOwner()?GetOwner()->GetInstigatorController():nullptr);
+		if(CloseRangeHitCorrectionDistance>0.f&&FVector::DistSquared(Muzzle,AimPoint)<=FMath::Square(CloseRangeHitCorrectionDistance))
+		{
+			FHitResult IntendedHit;
+			FCollisionQueryParams Query(SCENE_QUERY_STAT(CloseRangeAimCorrection),true,GetOwner());
+			Query.AddIgnoredActor(this);
+			FVector ViewStart=Muzzle;
+			if(const AShooterCharacter* Shooter=Cast<AShooterCharacter>(GetOwner()))
+				if(Shooter->Camera)ViewStart=Shooter->Camera->GetComponentLocation();
+			const FVector ViewDirection=(AimPoint-ViewStart).GetSafeNormal();
+			if(GetWorld()->LineTraceSingleByChannel(IntendedHit,ViewStart,AimPoint+ViewDirection*12.f,ECC_Visibility,Query))
+			{
+				if(AZombieCharacter* IntendedZombie=Cast<AZombieCharacter>(IntendedHit.GetActor()))
+				{
+					USkeletalMeshComponent* ZombieMesh=IntendedZombie->GetMesh();
+					const FVector BoneTraceEnd=AimPoint+ViewDirection*300.f;
+					FHitResult SkeletalHit;
+					if(ZombieMesh&&ZombieMesh->LineTraceComponent(SkeletalHit,ViewStart,BoneTraceEnd,Query)&&!SkeletalHit.BoneName.IsNone())
+						IntendedHit=SkeletalHit;
+					if(ZombieMesh&&(IntendedHit.BoneName.IsNone()||!IntendedHit.BoneName.ToString().ToLower().Contains(TEXT("head"))))
+					{
+						FName HeadBone=NAME_None;
+						for(int32 BoneIndex=0;BoneIndex<ZombieMesh->GetNumBones();++BoneIndex)
+						{
+							const FName Candidate=ZombieMesh->GetBoneName(BoneIndex);
+							if(Candidate.ToString().ToLower().Contains(TEXT("head"))){HeadBone=Candidate;break;}
+						}
+						if(!HeadBone.IsNone())
+						{
+							const FVector HeadLocation=ZombieMesh->GetBoneLocation(HeadBone);
+							const FVector ClosestPoint=FMath::ClosestPointOnSegment(HeadLocation,ViewStart,BoneTraceEnd);
+							if(FVector::DistSquared(ClosestPoint,HeadLocation)<=FMath::Square(24.f))
+							{
+								IntendedHit.BoneName=HeadBone;
+								IntendedHit.ImpactPoint=HeadLocation;
+								IntendedHit.Location=HeadLocation;
+							}
+						}
+					}
+				}
+				B->SetCloseRangeHitCorrection(IntendedHit.GetActor(),IntendedHit.BoneName,IntendedHit.ImpactPoint);
+			}
+		}
+		B->Movement->Velocity=Shot*Stats.MuzzleVelocity;
+	}
+	MulticastFireEffects(Muzzle,Shot.Rotation());
+	constexpr float HearingRadius=4000.f;
+	UAISense_Hearing::ReportNoiseEvent(GetWorld(),Muzzle,Stats.NoiseLoudness,GetOwner(),HearingRadius,TEXT("Gunshot"));
+	// Perception listeners can be registered one frame later than a dynamically
+	// spawned controller in cooked builds. Notify the same server-side controllers
+	// explicitly so a real gunshot is never lost during that initialization window.
+	for(TActorIterator<AZombieAIController> It(GetWorld());It;++It)
+	{
+		AZombieAIController* ZombieController=*It;
+		APawn* ZombiePawn=ZombieController?ZombieController->GetPawn():nullptr;
+		if(ZombiePawn&&FVector::DistSquared(ZombiePawn->GetActorLocation(),Muzzle)<=FMath::Square(HearingRadius))
+			ZombieController->AlertToActor(GetOwner());
+	}
+	return true;
+}
 void AWeaponBase::MulticastFireEffects_Implementation(FVector_NetQuantize Muzzle,FRotator Rotation)
 {
 	static const FName MuzzleBone(TEXT("b_gun_muzzleflash"));
@@ -45,7 +121,7 @@ void AWeaponBase::MulticastFireEffects_Implementation(FVector_NetQuantize Muzzle
 			if(Montage)C->GetMesh()->GetAnimInstance()->Montage_Play(Montage);
 		}
 }
-void AWeaponBase::Reload(){if(HasAuthority())ServerReload_Implementation();else ServerReload();}bool AWeaponBase::ServerReload_Validate(){return true;}void AWeaponBase::ServerReload_Implementation(){if(bIsReloading||AmmoInMagazine>=Stats.MagazineSize||ReserveAmmo<=0)return;bIsReloading=true;GetWorldTimerManager().SetTimer(ReloadTimer,this,&AWeaponBase::FinishReload,FMath::Max(.1f,Stats.ReloadSeconds),false);}
+void AWeaponBase::Reload(){if(HasAuthority())ServerReload_Implementation();else ServerReload();}bool AWeaponBase::ServerReload_Validate(){return true;}void AWeaponBase::ServerReload_Implementation(){if(bIsReloading||AmmoInMagazine>=Stats.MagazineSize||ReserveAmmo<=0)return;bIsReloading=true;const AShooterCharacter* Shooter=Cast<AShooterCharacter>(GetOwner());const float ReloadMultiplier=Shooter?Shooter->GetReloadTimeMultiplier():1.f;GetWorldTimerManager().SetTimer(ReloadTimer,this,&AWeaponBase::FinishReload,FMath::Max(.1f,Stats.ReloadSeconds*ReloadMultiplier),false);}
 void AWeaponBase::FinishReload(){if(!HasAuthority())return;const int32 Need=Stats.MagazineSize-AmmoInMagazine,Take=FMath::Min(Need,ReserveAmmo);AmmoInMagazine+=Take;ReserveAmmo-=Take;bIsReloading=false;}
 int32 AWeaponBase::AddReserveAmmo(int32 Amount){if(!HasAuthority()||Amount<=0)return 0;const int32 Accepted=FMath::Min(Amount,FMath::Max(0,MaxReserveAmmo-ReserveAmmo));ReserveAmmo+=Accepted;return Accepted;}
 void AWeaponBase::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps)const{Super::GetLifetimeReplicatedProps(OutLifetimeProps);DOREPLIFETIME(AWeaponBase,AmmoInMagazine);DOREPLIFETIME(AWeaponBase,ReserveAmmo);DOREPLIFETIME(AWeaponBase,bIsReloading);}

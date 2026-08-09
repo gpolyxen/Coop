@@ -51,6 +51,13 @@ void AShooterHUD::DrawHUD()
 	DrawRect(FLinearColor(0.f,0.f,0.f,.7f),ExperienceX-2.f,ExperienceY-2.f,ExperienceWidth+4.f,12.f);
 	DrawRect(FLinearColor(.2f,.55f,1.f,1.f),ExperienceX,ExperienceY,ExperienceWidth*ExperienceRatio,8.f);
 	DrawText(FString::Printf(TEXT("LEVEL %d   XP %d / %d"),C->CharacterLevel,C->Experience,ExperienceNeeded),FLinearColor::White,ExperienceX,ExperienceY-25.f,GEngine->GetSmallFont(),1.f,false);
+	const FLinearColor SkillColor=C->SkillPoints>0?FLinearColor(1.f,.78f,.15f):FLinearColor(.65f,.7f,.72f);
+	DrawText(FString::Printf(TEXT("SKILL POINTS: %d  [K]     INVENTORY [I]"),C->SkillPoints),SkillColor,ExperienceX,ExperienceY-48.f,GEngine->GetSmallFont(),.9f,false);
+	if(C->IsLastLifeInvulnerable())
+	{
+		const float Remaining=FMath::Max(0.f,C->LastLifeInvulnerableUntil-GetWorld()->GetTimeSeconds());
+		DrawText(FString::Printf(TEXT("LAST LIFE  %.1f"),Remaining),FLinearColor(1.f,.2f,.1f),CenterX-80.f,CenterY-95.f,GEngine->GetMediumFont(),1.2f,false);
+	}
 
 	FString WeaponText=TEXT("E - pick up item");
 	if(C->EquippedWeapon)WeaponText=FString::Printf(TEXT("%s  %d / %d%s"),*C->EquippedWeapon->WeaponName,C->EquippedWeapon->AmmoInMagazine,C->EquippedWeapon->ReserveAmmo,C->EquippedWeapon->bIsReloading?TEXT("  RELOADING"):TEXT(""));
