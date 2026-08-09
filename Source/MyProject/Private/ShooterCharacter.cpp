@@ -1,6 +1,8 @@
 #include "ShooterCharacter.h"
 #include "WeaponBase.h"
 #include "PickupActor.h"
+#include "SaveBed.h"
+#include "ShooterGameInstance.h"
 #include "InventoryComponent.h"
 #include "HealthArmorComponent.h"
 #include "Camera/CameraComponent.h"
@@ -60,7 +62,39 @@ AShooterCharacter::AShooterCharacter()
 	LeftFirstPersonArm->SetRelativeLocation(FVector(42.f,0.f,-30.f));LeftFirstPersonArm->SetRelativeRotation(FRotator(0.f,-90.f,0.f));LeftFirstPersonArm->SetRelativeScale3D(FVector(.01f));
 	RightFirstPersonArm->SetRelativeLocation(FVector(42.f,0.f,-30.f));RightFirstPersonArm->SetRelativeRotation(FRotator(0.f,-90.f,0.f));RightFirstPersonArm->SetRelativeScale3D(FVector(.01f));
 }
-void AShooterCharacter::BeginPlay(){Super::BeginPlay();if(StimuliSource)StimuliSource->RegisterWithPerceptionSystem();if(Health)Health->OnDeath.AddDynamic(this,&AShooterCharacter::HandleDeath);FirstPersonBody->SetHiddenInGame(true);FirstPersonArms->SetHiddenInGame(true);LeftFirstPersonArm->SetHiddenInGame(true);RightFirstPersonArm->SetHiddenInGame(true);GetMesh()->SetOwnerNoSee(false);RefreshAnimationState();if(GetMesh()->DoesSocketExist(CameraSocketName)){Camera->AttachToComponent(GetMesh(),FAttachmentTransformRules::SnapToTargetNotIncludingScale,CameraSocketName);Camera->SetRelativeLocation(CameraSocketOffset);Camera->SetRelativeRotation(CameraSocketRotation);Camera->SetRelativeScale3D(CameraSocketScale);}else UE_LOG(LogTemp,Error,TEXT("Camera socket %s is missing on %s"),*CameraSocketName.ToString(),*GetNameSafe(GetMesh()));if(IsLocallyControlled())if(APlayerController* PC=Cast<APlayerController>(Controller)){PC->PlayerCameraManager->ViewPitchMin=-80.f;PC->PlayerCameraManager->ViewPitchMax=80.f;}if(FParse::Param(FCommandLine::Get(),TEXT("CodexCapture"))&&IsLocallyControlled()){bIsAiming=true;if(HasAuthority())EquipWeapon(AKA47Rifle::StaticClass());FTimerHandle CaptureTimer;GetWorldTimerManager().SetTimer(CaptureTimer,this,&AShooterCharacter::CaptureDiagnosticScreenshot,3.f,false);}}
+void AShooterCharacter::BeginPlay()
+{
+	Super::BeginPlay();
+	if(StimuliSource)StimuliSource->RegisterWithPerceptionSystem();
+	if(Health)Health->OnDeath.AddDynamic(this,&AShooterCharacter::HandleDeath);
+	FirstPersonBody->SetHiddenInGame(true);
+	FirstPersonArms->SetHiddenInGame(true);
+	LeftFirstPersonArm->SetHiddenInGame(true);
+	RightFirstPersonArm->SetHiddenInGame(true);
+	GetMesh()->SetOwnerNoSee(false);
+	RefreshAnimationState();
+	if(GetMesh()->DoesSocketExist(CameraSocketName))
+	{
+		Camera->AttachToComponent(GetMesh(),FAttachmentTransformRules::SnapToTargetNotIncludingScale,CameraSocketName);
+		Camera->SetRelativeLocation(CameraSocketOffset);
+		Camera->SetRelativeRotation(CameraSocketRotation);
+		Camera->SetRelativeScale3D(CameraSocketScale);
+	}
+	else UE_LOG(LogTemp,Error,TEXT("Camera socket %s is missing on %s"),*CameraSocketName.ToString(),*GetNameSafe(GetMesh()));
+	if(IsLocallyControlled())
+		if(APlayerController* PC=Cast<APlayerController>(Controller))
+		{
+			PC->PlayerCameraManager->ViewPitchMin=-80.f;
+			PC->PlayerCameraManager->ViewPitchMax=80.f;
+		}
+	if(FParse::Param(FCommandLine::Get(),TEXT("CodexCapture"))&&IsLocallyControlled())
+	{
+		bIsAiming=true;
+		if(HasAuthority())EquipWeapon(AKA47Rifle::StaticClass());
+		FTimerHandle CaptureTimer;
+		GetWorldTimerManager().SetTimer(CaptureTimer,this,&AShooterCharacter::CaptureDiagnosticScreenshot,3.f,false);
+	}
+}
 
 bool AShooterCharacter::IsDead()const{return Health&&Health->IsDead();}
 
@@ -97,8 +131,11 @@ void AShooterCharacter::TurnAtRate(float V){AddControllerYawInput(V*BaseTurnRate
 void AShooterCharacter::ToggleCrouch(){bIsCrouched?UnCrouch():Crouch();}
 void AShooterCharacter::StartAim(){if(!EquippedWeapon)return;bIsAiming=true;if(!HasAuthority())ServerSetAiming(true);}void AShooterCharacter::StopAim(){bIsAiming=false;if(!HasAuthority())ServerSetAiming(false);}bool AShooterCharacter::ServerSetAiming_Validate(bool){return true;}void AShooterCharacter::ServerSetAiming_Implementation(bool bNewAiming){bIsAiming=bNewAiming&&EquippedWeapon;}
 void AShooterCharacter::StartFire(){if(IsDead()||!EquippedWeapon)return;FireOnce();const float Interval=60.f/FMath::Max(1.f,EquippedWeapon->Stats.RoundsPerMinute);GetWorldTimerManager().SetTimer(FireTimer,this,&AShooterCharacter::FireOnce,Interval,true,Interval);}void AShooterCharacter::StopFire(){GetWorldTimerManager().ClearTimer(FireTimer);}void AShooterCharacter::FireOnce(){if(IsDead()||!EquippedWeapon||!EquippedWeapon->CanFire())return;const FVector ViewStart=Camera->GetComponentLocation(),ViewEnd=ViewStart+Camera->GetForwardVector()*100000.f;FHitResult Hit;FCollisionQueryParams Params(TEXT("WeaponAim"),true,this);Params.AddIgnoredActor(EquippedWeapon);const bool bHit=GetWorld()->LineTraceSingleByChannel(Hit,ViewStart,ViewEnd,ECC_Visibility,Params);const FVector AimPoint=bHit?Hit.ImpactPoint:ViewEnd;if(!EquippedWeapon->Fire((AimPoint-EquippedWeapon->GetMuzzleLocation()).GetSafeNormal()))return;RecoilPitchTarget=FMath::Clamp(RecoilPitchTarget+EquippedWeapon->RecoilPitch,0.f,4.f);RecoilYawTarget=FMath::Clamp(RecoilYawTarget+FMath::FRandRange(-EquippedWeapon->RecoilYaw,EquippedWeapon->RecoilYaw),-1.5f,1.5f);RecoilKickTarget=FMath::Clamp(RecoilKickTarget+EquippedWeapon->RecoilKickback,0.f,5.f);if(Controller){FRotator ControlRotation=Controller->GetControlRotation();ControlRotation.Pitch=FMath::ClampAngle(ControlRotation.Pitch-EquippedWeapon->RecoilPitch,-80.f,80.f);ControlRotation.Yaw+=FMath::FRandRange(-EquippedWeapon->RecoilYaw,EquippedWeapon->RecoilYaw);Controller->SetControlRotation(ControlRotation);}}void AShooterCharacter::ResetFirstPersonArmsAnimation(){if(FirstPersonIdleAnimation)FirstPersonArms->PlayAnimation(FirstPersonIdleAnimation,true);}void AShooterCharacter::Reload(){if(IsDead())return;StopFire();if(EquippedWeapon)EquippedWeapon->Reload();}void AShooterCharacter::SprintPressed(){if(!IsDead())GetCharacterMovement()->MaxWalkSpeed=SprintSpeed;}void AShooterCharacter::SprintReleased(){if(!IsDead())GetCharacterMovement()->MaxWalkSpeed=WalkSpeed;}
-void AShooterCharacter::Interact(){FHitResult H;FCollisionQueryParams P;P.AddIgnoredActor(this);const FVector A=Camera->GetComponentLocation(),B=A+Camera->GetForwardVector()*InteractionDistance;if(GetWorld()->LineTraceSingleByChannel(H,A,B,ECC_Visibility,P))if(APickupActor* Pickup=Cast<APickupActor>(H.GetActor()))ServerInteract(Pickup);}
+void AShooterCharacter::Interact(){FHitResult H;FCollisionQueryParams P;P.AddIgnoredActor(this);const FVector A=Camera->GetComponentLocation(),B=A+Camera->GetForwardVector()*InteractionDistance;if(GetWorld()->LineTraceSingleByChannel(H,A,B,ECC_Visibility,P)){if(APickupActor* Pickup=Cast<APickupActor>(H.GetActor()))ServerInteract(Pickup);else if(ASaveBed* Bed=Cast<ASaveBed>(H.GetActor()))ServerUseBed(Bed);}}
 bool AShooterCharacter::ServerInteract_Validate(APickupActor* P){return P&&FVector::DistSquared(P->GetActorLocation(),GetActorLocation())<=FMath::Square(InteractionDistance+100.f);}void AShooterCharacter::ServerInteract_Implementation(APickupActor* P){P->TryPickup(this);}
+bool AShooterCharacter::ServerUseBed_Validate(ASaveBed* Bed){return Bed&&FVector::DistSquared(Bed->GetActorLocation(),GetActorLocation())<=FMath::Square(InteractionDistance+150.f);}void AShooterCharacter::ServerUseBed_Implementation(ASaveBed* Bed){if(Bed)ClientSaveAtBed();}
+void AShooterCharacter::ClientSaveAtBed_Implementation(){if(UShooterGameInstance* GI=GetGameInstance<UShooterGameInstance>())ShowLocalNotification(GI->SavePlayerAtBed(this)?TEXT("ИГРА СОХРАНЕНА У КРОВАТИ"):TEXT("НЕ УДАЛОСЬ СОХРАНИТЬ ИГРУ"));}
+void AShooterCharacter::ShowLocalNotification(const FString& Message,float Duration){LocalNotification=Message;LocalNotificationEndTime=GetWorld()?GetWorld()->GetTimeSeconds()+FMath::Max(.1f,Duration):0.f;}
 void AShooterCharacter::EquipWeapon(TSubclassOf<AWeaponBase>C){if(HasAuthority())ServerEquipWeapon_Implementation(C);else ServerEquipWeapon(C);}bool AShooterCharacter::ServerEquipWeapon_Validate(TSubclassOf<AWeaponBase>C){return C!=nullptr;}void AShooterCharacter::ServerEquipWeapon_Implementation(TSubclassOf<AWeaponBase>C){FActorSpawnParameters P;P.Owner=this;P.Instigator=this;AWeaponBase* W=GetWorld()->SpawnActor<AWeaponBase>(C,FTransform::Identity,P);if(!W)return;if(WeaponSlots.Num()<2){WeaponSlots.Add(W);ActiveWeaponSlot=WeaponSlots.Num()-1;}else{AWeaponBase* Old=WeaponSlots[ActiveWeaponSlot];if(Old){const FVector DropLocation=GetActorLocation()+GetActorForwardVector()*100.f+FVector(0.f,0.f,45.f);AWeaponPickup* Drop=GetWorld()->SpawnActor<AWeaponPickup>(AWeaponPickup::StaticClass(),DropLocation,GetActorRotation());if(Drop){Drop->ConfigureWeaponClass(Old->GetClass());Drop->Mesh->AddImpulse((GetActorForwardVector()*350.f+FVector(0.f,0.f,180.f))*Drop->Mesh->GetMass());Drop->Mesh->AddAngularImpulseInDegrees(FVector(0.f,180.f,360.f),NAME_None,true);}Old->Destroy();}WeaponSlots[ActiveWeaponSlot]=W;}EquippedWeapon=W;OnRep_Weapon();}
 void AShooterCharacter::SwitchWeapon(float V){if(FMath::Abs(V)>.1f)ServerSwitchWeapon(V>0?1:-1);}bool AShooterCharacter::ServerSwitchWeapon_Validate(int32 D){return D==1||D==-1;}void AShooterCharacter::ServerSwitchWeapon_Implementation(int32 D){if(WeaponSlots.Num()<2)return;ActiveWeaponSlot=(ActiveWeaponSlot+D+WeaponSlots.Num())%WeaponSlots.Num();EquippedWeapon=WeaponSlots[ActiveWeaponSlot];OnRep_Weapon();}
 void AShooterCharacter::RefreshAnimationState()
@@ -106,6 +143,14 @@ void AShooterCharacter::RefreshAnimationState()
 	const TSubclassOf<UAnimInstance> DesiredAnimClass=EquippedWeapon?ArmedAnimClass:UnarmedAnimClass;
 	GetMesh()->SetAnimationMode(EAnimationMode::AnimationBlueprint);
 	if(DesiredAnimClass&&GetMesh()->GetAnimClass()!=DesiredAnimClass)GetMesh()->SetAnimInstanceClass(DesiredAnimClass);
+}
+
+void AShooterCharacter::SetActiveWeaponSlotForLoad(int32 SlotIndex)
+{
+	if(!HasAuthority()||!WeaponSlots.IsValidIndex(SlotIndex))return;
+	ActiveWeaponSlot=SlotIndex;
+	EquippedWeapon=WeaponSlots[ActiveWeaponSlot];
+	OnRep_Weapon();
 }
 
 int32 AShooterCharacter::AddAmmunition(int32 Amount)

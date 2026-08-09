@@ -1,6 +1,8 @@
 #include "ShooterGameMode.h"
 #include "ShooterCharacter.h"
 #include "ShooterHUD.h"
+#include "ShooterGameInstance.h"
+#include "SaveBed.h"
 #include "WeaponPickup.h"
 #include "StarterRifle.h"
 #include "KA47Rifle.h"
@@ -38,11 +40,23 @@ AActor* AShooterGameMode::ChoosePlayerStart_Implementation(AController* Player)
 	if(AActor* Existing=Super::ChoosePlayerStart_Implementation(Player))return Existing;
 	return EnsurePlayerStart();
 }
+void AShooterGameMode::HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer)
+{
+	Super::HandleStartingNewPlayer_Implementation(NewPlayer);
+	if(!NewPlayer)return;
+	if(UShooterGameInstance* GI=GetGameInstance<UShooterGameInstance>())
+		if(AShooterCharacter* Character=Cast<AShooterCharacter>(NewPlayer->GetPawn()))GI->ApplyPendingSave(Character);
+}
 void AShooterGameMode::BeginPlay()
 {
 	Super::BeginPlay();
 	APlayerStart* Start=Cast<APlayerStart>(EnsurePlayerStart());
 	if(!Start)return;
+	if(UShooterGameInstance* GI=GetGameInstance<UShooterGameInstance>())
+	{
+		FTransform SavedTransform;
+		if(GI->GetPendingPlayerTransform(SavedTransform))Start->SetActorLocationAndRotation(SavedTransform.GetLocation(),SavedTransform.Rotator());
+	}
 	bool bHasOpenWorldBounds=false;
 	for(TActorIterator<AOpenWorldNavBoundsVolume> It(GetWorld());It;++It){bHasOpenWorldBounds=true;break;}
 	if(!bHasOpenWorldBounds)GetWorld()->SpawnActor<AOpenWorldNavBoundsVolume>();
@@ -52,6 +66,15 @@ void AShooterGameMode::BeginPlay()
 	if(StreamingManager)StreamingManager->PrepareStartingTile(Start->GetActorLocation()+FVector(GetWorld()->OriginLocation));
 	bool bHasWind=false;for(TActorIterator<AWindField> It(GetWorld());It;++It){bHasWind=true;break;}if(!bHasWind)GetWorld()->SpawnActor<AWindField>();
 	bool bHasSpawnManager=false;for(TActorIterator<AZombieSpawnManager> It(GetWorld());It;++It){bHasSpawnManager=true;break;}if(!bHasSpawnManager)GetWorld()->SpawnActor<AZombieSpawnManager>();
+	bool bHasSaveBed=false;for(TActorIterator<ASaveBed> It(GetWorld());It;++It){bHasSaveBed=true;break;}
+	if(!bHasSaveBed)
+	{
+		FVector BedLocation=Start->GetActorLocation()-Start->GetActorForwardVector()*350.f+Start->GetActorRightVector()*420.f;
+		FHitResult GroundHit;
+		if(GetWorld()->LineTraceSingleByChannel(GroundHit,BedLocation+FVector(0.f,0.f,1500.f),BedLocation-FVector(0.f,0.f,2500.f),ECC_WorldStatic))BedLocation.Z=GroundHit.ImpactPoint.Z;
+		FActorSpawnParameters Parameters;Parameters.SpawnCollisionHandlingOverride=ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
+		GetWorld()->SpawnActor<ASaveBed>(ASaveBed::StaticClass(),BedLocation,Start->GetActorRotation(),Parameters);
+	}
 
 	bool bHasWeaponPickup=false;
 	for(TActorIterator<AWeaponPickup> It(GetWorld());It;++It){bHasWeaponPickup=true;break;}

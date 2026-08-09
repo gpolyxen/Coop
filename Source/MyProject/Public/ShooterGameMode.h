@@ -12,6 +12,7 @@ public:
 protected:
 	virtual void BeginPlay()override;
 	virtual AActor* ChoosePlayerStart_Implementation(AController* Player)override;
+	virtual void HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer)override;
 private:
 	AActor* EnsurePlayerStart();
 };

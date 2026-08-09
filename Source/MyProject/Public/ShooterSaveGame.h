@@ -1,0 +1,30 @@
+#pragma once
+
+#include "CoreMinimal.h"
+#include "GameFramework/SaveGame.h"
+#include "ShooterSaveGame.generated.h"
+
+USTRUCT(BlueprintType)
+struct FSavedWeaponData
+{
+	GENERATED_BODY()
+	UPROPERTY()FString WeaponClassPath;
+	UPROPERTY()int32 AmmoInMagazine=0;
+	UPROPERTY()int32 ReserveAmmo=0;
+};
+
+UCLASS()
+class MYPROJECT_API UShooterSaveGame : public USaveGame
+{
+	GENERATED_BODY()
+public:
+	UPROPERTY()FString MapPath=TEXT("/Game/OpenWorld/OpenWorld");
+	UPROPERTY()FTransform PlayerTransform;
+	UPROPERTY()float Health=100.f;
+	UPROPERTY()int32 CharacterLevel=1;
+	UPROPERTY()int32 Experience=0;
+	UPROPERTY()int32 TotalExperience=0;
+	UPROPERTY()TArray<FSavedWeaponData> Weapons;
+	UPROPERTY()int32 ActiveWeaponSlot=INDEX_NONE;
+	UPROPERTY()FDateTime SavedAt;
+};

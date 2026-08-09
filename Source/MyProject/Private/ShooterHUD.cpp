@@ -55,5 +55,7 @@ void AShooterHUD::DrawHUD()
 	FString WeaponText=TEXT("E - pick up item");
 	if(C->EquippedWeapon)WeaponText=FString::Printf(TEXT("%s  %d / %d%s"),*C->EquippedWeapon->WeaponName,C->EquippedWeapon->AmmoInMagazine,C->EquippedWeapon->ReserveAmmo,C->EquippedWeapon->bIsReloading?TEXT("  RELOADING"):TEXT(""));
 	DrawText(WeaponText,FLinearColor::White,Canvas->ClipX-260.f,Canvas->ClipY-80.f,GEngine->GetMediumFont(),1.2f,false);
+	if(!C->LocalNotification.IsEmpty()&&GetWorld()&&GetWorld()->GetTimeSeconds()<C->LocalNotificationEndTime)
+		DrawText(C->LocalNotification,FLinearColor(.25f,.8f,1.f),CenterX-190.f,CenterY+150.f,GEngine->GetMediumFont(),1.1f,false);
 	if(C->IsDead())DrawText(TEXT("YOU DIED"),FLinearColor::Red,CenterX-95.f,CenterY-35.f,GEngine->GetLargeFont(),1.5f,false);
 }

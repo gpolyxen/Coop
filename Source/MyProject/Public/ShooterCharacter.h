@@ -2,7 +2,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "ShooterCharacter.generated.h"
-class UCameraComponent;class USpringArmComponent;class UInventoryComponent;class UHealthArmorComponent;class UNavigationInvokerComponent;class UAIPerceptionStimuliSourceComponent;class USkeletalMeshComponent;class UStaticMeshComponent;class UBlendSpace;class UAnimMontage;class UAnimSequence;class UAnimInstance;class AWeaponBase;class APickupActor;
+class UCameraComponent;class USpringArmComponent;class UInventoryComponent;class UHealthArmorComponent;class UNavigationInvokerComponent;class UAIPerceptionStimuliSourceComponent;class USkeletalMeshComponent;class UStaticMeshComponent;class UBlendSpace;class UAnimMontage;class UAnimSequence;class UAnimInstance;class AWeaponBase;class APickupActor;class ASaveBed;
 UCLASS(Blueprintable)
 class MYPROJECT_API AShooterCharacter:public ACharacter
 {
@@ -40,6 +40,10 @@ public:
 	UFUNCTION(BlueprintCallable) void EquipWeapon(TSubclassOf<AWeaponBase> WeaponClass);
 	UFUNCTION(BlueprintCallable) int32 AddAmmunition(int32 Amount);
 	UFUNCTION(BlueprintCallable) void AddExperience(int32 Amount);
+	void SetActiveWeaponSlotForLoad(int32 SlotIndex);
+	void ShowLocalNotification(const FString& Message,float Duration=4.f);
+	UPROPERTY(VisibleAnywhere,BlueprintReadOnly,Category="UI")FString LocalNotification;
+	float LocalNotificationEndTime=0.f;
 	UFUNCTION(BlueprintPure) bool IsAiming()const{return bIsAiming;}
 	UFUNCTION(BlueprintPure) bool IsDead()const;
 	UFUNCTION(BlueprintPure) int32 GetExperienceForNextLevel()const{return BaseExperiencePerLevel+FMath::Max(0,CharacterLevel-1)*ExperienceGrowthPerLevel;}
@@ -51,6 +55,8 @@ protected:
 	UFUNCTION(Server,Reliable,WithValidation)void ServerEquipWeapon(TSubclassOf<AWeaponBase> WeaponClass);
 	UFUNCTION(Server,Reliable,WithValidation)void ServerSwitchWeapon(int32 Direction);
 	UFUNCTION(Server,Reliable,WithValidation)void ServerInteract(APickupActor* Pickup);
+	UFUNCTION(Server,Reliable,WithValidation)void ServerUseBed(ASaveBed* Bed);
+	UFUNCTION(Client,Reliable)void ClientSaveAtBed();
 	UFUNCTION(Server,Reliable,WithValidation)void ServerSetAiming(bool bNewAiming);
 	UFUNCTION()void OnRep_Weapon();
 	UFUNCTION()void HandleDeath();
