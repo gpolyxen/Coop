@@ -6,7 +6,6 @@
 class UPointLightComponent;
 class UStaticMeshComponent;
 class UTextRenderComponent;
-class URotatingMovementComponent;
 
 UCLASS(Blueprintable)
 class MYPROJECT_API AHealthPickup : public APickupActor
@@ -18,5 +17,4 @@ public:
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly)UStaticMeshComponent* CrossBar;
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly)UPointLightComponent* MarkerLight;
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly)UTextRenderComponent* MarkerText;
-	UPROPERTY(VisibleAnywhere,BlueprintReadOnly)URotatingMovementComponent* RotationMovement;
 };

@@ -5,7 +5,6 @@
 
 class UPointLightComponent;
 class UTextRenderComponent;
-class URotatingMovementComponent;
 
 UCLASS(Blueprintable)
 class MYPROJECT_API AAmmoPickup : public APickupActor
@@ -16,5 +15,4 @@ public:
 	virtual bool TryPickup(APawn* Pawn)override;
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly)UPointLightComponent* MarkerLight;
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly)UTextRenderComponent* MarkerText;
-	UPROPERTY(VisibleAnywhere,BlueprintReadOnly)URotatingMovementComponent* RotationMovement;
 };

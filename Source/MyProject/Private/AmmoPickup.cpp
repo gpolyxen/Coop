@@ -5,7 +5,6 @@
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/TextRenderComponent.h"
-#include "GameFramework/RotatingMovementComponent.h"
 #include "Materials/MaterialInterface.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -14,11 +13,8 @@ AAmmoPickup::AAmmoPickup()
 	ItemId=TEXT("RifleAmmo");
 	Quantity=45;
 	InteractionRange->SetSphereRadius(220.f);
-	Mesh->SetSimulatePhysics(false);
-	Mesh->SetEnableGravity(false);
-	Mesh->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
-	Mesh->SetCollisionResponseToAllChannels(ECR_Ignore);
-	Mesh->SetCollisionResponseToChannel(ECC_Visibility,ECR_Block);
+	Mesh->SetLinearDamping(1.5f);
+	Mesh->SetAngularDamping(3.f);
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> AmmoMesh(TEXT("/Game/StarterContent/Shapes/Shape_Cube.Shape_Cube"));
 	if(AmmoMesh.Succeeded())Mesh->SetStaticMesh(AmmoMesh.Object);
 	static ConstructorHelpers::FObjectFinder<UMaterialInterface> AmmoMaterial(TEXT("/Game/StarterContent/Materials/M_Metal_Gold.M_Metal_Gold"));
@@ -42,13 +38,11 @@ AAmmoPickup::AAmmoPickup()
 	MarkerText->SetText(FText::FromString(TEXT("AMMO")));
 	MarkerText->bAlwaysRenderAsText=true;
 
-	RotationMovement=CreateDefaultSubobject<URotatingMovementComponent>(TEXT("AmmoRotation"));
-	RotationMovement->RotationRate=FRotator(0.f,55.f,0.f);
 }
 
 bool AAmmoPickup::TryPickup(APawn* Pawn)
 {
-	if(!HasAuthority()||!Pawn||!InteractionRange->IsOverlappingActor(Pawn))return false;
+	if(!HasAuthority()||!Pawn||FVector::DistSquared(Pawn->GetActorLocation(),GetActorLocation())>FMath::Square(400.f))return false;
 	if(AShooterCharacter* Character=Cast<AShooterCharacter>(Pawn))
 	{
 		const int32 Accepted=Character->AddAmmunition(Quantity);

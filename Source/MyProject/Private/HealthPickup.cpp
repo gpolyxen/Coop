@@ -6,7 +6,6 @@
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/TextRenderComponent.h"
-#include "GameFramework/RotatingMovementComponent.h"
 #include "Materials/MaterialInterface.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -15,11 +14,8 @@ AHealthPickup::AHealthPickup()
 	ItemId=TEXT("Health");
 	Quantity=35;
 	InteractionRange->SetSphereRadius(220.f);
-	Mesh->SetSimulatePhysics(false);
-	Mesh->SetEnableGravity(false);
-	Mesh->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
-	Mesh->SetCollisionResponseToAllChannels(ECR_Ignore);
-	Mesh->SetCollisionResponseToChannel(ECC_Visibility,ECR_Block);
+	Mesh->SetLinearDamping(1.5f);
+	Mesh->SetAngularDamping(3.f);
 
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> Cube(TEXT("/Game/StarterContent/Shapes/Shape_Cube.Shape_Cube"));
 	static ConstructorHelpers::FObjectFinder<UMaterialInterface> Chrome(TEXT("/Game/StarterContent/Materials/M_Metal_Chrome.M_Metal_Chrome"));
@@ -51,13 +47,11 @@ AHealthPickup::AHealthPickup()
 	MarkerText->SetText(FText::FromString(TEXT("+ HP")));
 	MarkerText->bAlwaysRenderAsText=true;
 
-	RotationMovement=CreateDefaultSubobject<URotatingMovementComponent>(TEXT("HealthRotation"));
-	RotationMovement->RotationRate=FRotator(0.f,45.f,0.f);
 }
 
 bool AHealthPickup::TryPickup(APawn* Pawn)
 {
-	if(!HasAuthority()||!Pawn||!InteractionRange->IsOverlappingActor(Pawn))return false;
+	if(!HasAuthority()||!Pawn||FVector::DistSquared(Pawn->GetActorLocation(),GetActorLocation())>FMath::Square(400.f))return false;
 	if(AShooterCharacter* Character=Cast<AShooterCharacter>(Pawn))
 	{
 		if(Character->Health&&Character->Health->Heal(static_cast<float>(Quantity))>0.f)
