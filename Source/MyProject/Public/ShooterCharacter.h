@@ -38,8 +38,14 @@ public:
 	UPROPERTY(ReplicatedUsing=OnRep_Weapon,VisibleAnywhere,BlueprintReadOnly) TArray<AWeaponBase*> WeaponSlots;
 	UPROPERTY(Replicated,VisibleAnywhere,BlueprintReadOnly) int32 ActiveWeaponSlot=INDEX_NONE;
 	UFUNCTION(BlueprintCallable) void EquipWeapon(TSubclassOf<AWeaponBase> WeaponClass);
+	UFUNCTION(BlueprintCallable) int32 AddAmmunition(int32 Amount);
+	UFUNCTION(BlueprintCallable) void AddExperience(int32 Amount);
 	UFUNCTION(BlueprintPure) bool IsAiming()const{return bIsAiming;}
 	UFUNCTION(BlueprintPure) bool IsDead()const;
+	UFUNCTION(BlueprintPure) int32 GetExperienceForNextLevel()const{return BaseExperiencePerLevel+FMath::Max(0,CharacterLevel-1)*ExperienceGrowthPerLevel;}
+	UPROPERTY(Replicated,VisibleAnywhere,BlueprintReadOnly,Category="Progression")int32 CharacterLevel=1;
+	UPROPERTY(Replicated,VisibleAnywhere,BlueprintReadOnly,Category="Progression")int32 Experience=0;
+	UPROPERTY(Replicated,VisibleAnywhere,BlueprintReadOnly,Category="Progression")int32 TotalExperience=0;
 protected:
 	void MoveForward(float Value);void MoveRight(float Value);void TurnAtRate(float Value);void LookUpAtRate(float Value);void SwitchWeapon(float Value);void StartFire();void StopFire();void FireOnce();void StartAim();void StopAim();void Reload();void Interact();void SprintPressed();void SprintReleased();void ToggleCrouch();
 	UFUNCTION(Server,Reliable,WithValidation)void ServerEquipWeapon(TSubclassOf<AWeaponBase> WeaponClass);
@@ -48,7 +54,10 @@ protected:
 	UFUNCTION(Server,Reliable,WithValidation)void ServerSetAiming(bool bNewAiming);
 	UFUNCTION()void OnRep_Weapon();
 	UFUNCTION()void HandleDeath();
+	void RefreshAnimationState();
 	UPROPERTY(EditDefaultsOnly,Category="Movement")float WalkSpeed=450.f;UPROPERTY(EditDefaultsOnly,Category="Movement")float SprintSpeed=700.f;UPROPERTY(EditDefaultsOnly,Category="Movement")float BaseTurnRate=45.f;UPROPERTY(EditDefaultsOnly,Category="Interaction")float InteractionDistance=300.f;UPROPERTY(EditDefaultsOnly,Category="Aim")float HipFOV=90.f;UPROPERTY(EditDefaultsOnly,Category="Aim")float AimFOV=75.f;UPROPERTY(Replicated)bool bIsAiming=false;FTimerHandle FireTimer;
+	UPROPERTY(EditDefaultsOnly,Category="Progression",meta=(ClampMin="1"))int32 BaseExperiencePerLevel=100;
+	UPROPERTY(EditDefaultsOnly,Category="Progression",meta=(ClampMin="0"))int32 ExperienceGrowthPerLevel=50;
 	void CaptureDiagnosticScreenshot();
 	void ResetFirstPersonArmsAnimation();
 	FVector ArmsBaseLocation=FVector(-20.f,8.f,-98.f);

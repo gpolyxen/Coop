@@ -41,6 +41,8 @@ struct MYPROJECT_API FWeaponStats
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta=(ClampMin="0.01")) float ProjectileMassGrams = 8.f;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta=(ClampMin="0.0")) float DragCoefficient = 0.25f;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta=(ClampMin="0.0")) float WindInfluence = 1.f;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta=(ClampMin="0.0")) float GravityScale = 1.f;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta=(ClampMin="1.0")) float ProjectileLifeSeconds = 12.f;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta=(ClampMin="0.0")) float RoundsPerMinute = 600.f;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta=(ClampMin="1")) int32 MagazineSize = 30;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta=(ClampMin="0.0")) float ReloadSeconds = 2.2f;

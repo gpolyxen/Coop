@@ -5,7 +5,10 @@
 #include "StarterRifle.h"
 #include "KA47Rifle.h"
 #include "SMG11Weapon.h"
+#include "ASValRifle.h"
 #include "ZombieCharacter.h"
+#include "ZombieSpawnManager.h"
+#include "WindField.h"
 #include "OpenWorldStreamingManager.h"
 #include "OpenWorldNavBoundsVolume.h"
 #include "GameFramework/PlayerStart.h"
@@ -14,10 +17,13 @@
 #include "NavigationSystem.h"
 #include "NavMesh/NavMeshBoundsVolume.h"
 #include "NavigationInvokerComponent.h"
+#include "UObject/ConstructorHelpers.h"
 
 AShooterGameMode::AShooterGameMode()
 {
 	DefaultPawnClass=AShooterCharacter::StaticClass();
+	static ConstructorHelpers::FClassFinder<AShooterCharacter> ConfigurablePlayer(TEXT("/Game/ThirdPersonBP/Player_0/BP_ShooterCharacter"));
+	if(ConfigurablePlayer.Succeeded())DefaultPawnClass=ConfigurablePlayer.Class;
 	HUDClass=AShooterHUD::StaticClass();
 }
 AActor* AShooterGameMode::EnsurePlayerStart()
@@ -44,6 +50,8 @@ void AShooterGameMode::BeginPlay()
 	for(TActorIterator<AOpenWorldStreamingManager> It(GetWorld());It;++It){StreamingManager=*It;break;}
 	if(!StreamingManager)StreamingManager=GetWorld()->SpawnActor<AOpenWorldStreamingManager>();
 	if(StreamingManager)StreamingManager->PrepareStartingTile(Start->GetActorLocation()+FVector(GetWorld()->OriginLocation));
+	bool bHasWind=false;for(TActorIterator<AWindField> It(GetWorld());It;++It){bHasWind=true;break;}if(!bHasWind)GetWorld()->SpawnActor<AWindField>();
+	bool bHasSpawnManager=false;for(TActorIterator<AZombieSpawnManager> It(GetWorld());It;++It){bHasSpawnManager=true;break;}if(!bHasSpawnManager)GetWorld()->SpawnActor<AZombieSpawnManager>();
 
 	bool bHasWeaponPickup=false;
 	for(TActorIterator<AWeaponPickup> It(GetWorld());It;++It){bHasWeaponPickup=true;break;}
@@ -51,12 +59,12 @@ void AShooterGameMode::BeginPlay()
 	{
 		FVector Base=Start->GetActorLocation()+Start->GetActorForwardVector()*300.f;
 		Base.Z=100.f;
-		const TSubclassOf<AWeaponBase> Classes[3]={AStarterRifle::StaticClass(),AKA47Rifle::StaticClass(),ASMG11Weapon::StaticClass()};
-		for(int32 Index=0;Index<3;++Index)
+		const TSubclassOf<AWeaponBase> Classes[4]={AStarterRifle::StaticClass(),AKA47Rifle::StaticClass(),ASMG11Weapon::StaticClass(),AASValRifle::StaticClass()};
+		for(int32 Index=0;Index<4;++Index)
 		{
 			FActorSpawnParameters SpawnParameters;
 			SpawnParameters.SpawnCollisionHandlingOverride=ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-			const FVector SpawnLocation=Base+Start->GetActorRightVector()*(Index-1)*180.f;
+			const FVector SpawnLocation=Base+Start->GetActorRightVector()*(Index-1.5f)*180.f;
 			AWeaponPickup* Pickup=GetWorld()->SpawnActor<AWeaponPickup>(AWeaponPickup::StaticClass(),SpawnLocation,FRotator(0,90,0),SpawnParameters);
 			if(Pickup)
 			{
@@ -64,27 +72,6 @@ void AShooterGameMode::BeginPlay()
 				UE_LOG(LogTemp,Display,TEXT("Spawned initial weapon pickup %d at %s"),Index,*SpawnLocation.ToString());
 			}
 			else UE_LOG(LogTemp,Error,TEXT("Failed to spawn initial weapon pickup %d"),Index);
-		}
-	}
-
-	bool bHasZombie=false;
-	for(TActorIterator<AZombieCharacter> It(GetWorld());It;++It){bHasZombie=true;break;}
-	if(!bHasZombie)
-	{
-		FActorSpawnParameters SpawnParameters;
-		SpawnParameters.SpawnCollisionHandlingOverride=ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-		FVector SpawnLocation=Start->GetActorLocation()+Start->GetActorForwardVector()*1800.f;
-		SpawnLocation.Z=100.f;
-		FVector LookDirection=Start->GetActorLocation()-SpawnLocation;
-		LookDirection.Z=0.f;
-		const FRotator SpawnRotation=LookDirection.IsNearlyZero()?Start->GetActorRotation():LookDirection.Rotation();
-		if(GetWorld()->SpawnActor<AZombieCharacter>(AZombieCharacter::StaticClass(),SpawnLocation,SpawnRotation,SpawnParameters))
-		{
-			UE_LOG(LogTemp,Display,TEXT("Spawned initial zombie at %s"),*SpawnLocation.ToString());
-		}
-		else
-		{
-			UE_LOG(LogTemp,Error,TEXT("Failed to spawn initial zombie"));
 		}
 	}
 

@@ -1,6 +1,7 @@
 #include "ZombieCharacter.h"
 
 #include "ZombieAIController.h"
+#include "ShooterCharacter.h"
 #include "HealthArmorComponent.h"
 #include "Animation/AnimSequence.h"
 #include "Components/CapsuleComponent.h"
@@ -150,7 +151,16 @@ float AZombieCharacter::TakeDamage(float DamageAmount,const FDamageEvent& Damage
 		AActor* Attacker=EventInstigator?EventInstigator->GetPawn():DamageCauser;
 		ZombieController->AlertToActor(Attacker);
 	}
-	if(bHeadshot||LethalProgress>=.999f)Die(bHeadshot,HitBone,ShotDirection,HitLocation);
+	if(bHeadshot||LethalProgress>=.999f)
+	{
+		if(AShooterCharacter* Killer=EventInstigator?Cast<AShooterCharacter>(EventInstigator->GetPawn()):nullptr)
+		{
+			const int32 Reward=bHeadshot?20:10;
+			Killer->AddExperience(Reward);
+			UE_LOG(LogTemp,Display,TEXT("Player %s earned %d XP for %s kill"),*Killer->GetName(),Reward,bHeadshot?TEXT("headshot"):TEXT("zombie"));
+		}
+		Die(bHeadshot,HitBone,ShotDirection,HitLocation);
+	}
 	return AppliedDamage;
 }
 
