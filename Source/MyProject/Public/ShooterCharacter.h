@@ -8,7 +8,7 @@ class MYPROJECT_API AShooterCharacter:public ACharacter
 {
 	GENERATED_BODY()
 public:
-	AShooterCharacter();virtual void BeginPlay()override;virtual void Tick(float DeltaSeconds)override;virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)override;virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps)const override;
+	AShooterCharacter();virtual void BeginPlay()override;virtual void PossessedBy(AController* NewController)override;virtual void OnRep_Controller()override;virtual void Tick(float DeltaSeconds)override;virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)override;virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps)const override;
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly) USpringArmComponent* CameraBoom;
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly) UCameraComponent* Camera;
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly)USkeletalMeshComponent* FirstPersonArms;
@@ -51,6 +51,7 @@ public:
 	UPROPERTY(Replicated,VisibleAnywhere,BlueprintReadOnly,Category="Progression")int32 Experience=0;
 	UPROPERTY(Replicated,VisibleAnywhere,BlueprintReadOnly,Category="Progression")int32 TotalExperience=0;
 protected:
+	void RestoreLocalGameplayInput();
 	void MoveForward(float Value);void MoveRight(float Value);void TurnAtRate(float Value);void LookUpAtRate(float Value);void SwitchWeapon(float Value);void StartFire();void StopFire();void FireOnce();void StartAim();void StopAim();void Reload();void Interact();void SprintPressed();void SprintReleased();void ToggleCrouch();
 	UFUNCTION(Server,Reliable,WithValidation)void ServerEquipWeapon(TSubclassOf<AWeaponBase> WeaponClass);
 	UFUNCTION(Server,Reliable,WithValidation)void ServerSwitchWeapon(int32 Direction);

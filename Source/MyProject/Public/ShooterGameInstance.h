@@ -41,6 +41,7 @@ public:
 
 private:
 	void SetStatus(const FString& NewStatus);
+	void PrepareForGameplayTravel();
 	void CreateLanSession();
 	void OnCreateSessionComplete(FName SessionName,bool bSuccess);
 	void OnDestroySessionComplete(FName SessionName,bool bSuccess);

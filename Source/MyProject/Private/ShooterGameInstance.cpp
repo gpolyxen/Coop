@@ -4,6 +4,7 @@
 #include "ShooterCharacter.h"
 #include "ShooterSaveGame.h"
 #include "WeaponBase.h"
+#include "Blueprint/WidgetLayoutLibrary.h"
 #include "Engine/Engine.h"
 #include "Engine/LocalPlayer.h"
 #include "GameFramework/PlayerController.h"
@@ -38,6 +39,22 @@ void UShooterGameInstance::SetStatus(const FString& NewStatus)
 	UE_LOG(LogTemp,Display,TEXT("Menu: %s"),*NewStatus);
 }
 
+void UShooterGameInstance::PrepareForGameplayTravel()
+{
+	UWidgetLayoutLibrary::RemoveAllWidgets(this);
+	if(APlayerController* PC=GetFirstLocalPlayerController())
+	{
+		PC->bShowMouseCursor=false;
+		PC->bEnableClickEvents=false;
+		PC->bEnableMouseOverEvents=false;
+		PC->SetIgnoreMoveInput(false);
+		PC->SetIgnoreLookInput(false);
+		PC->SetPause(false);
+		FInputModeGameOnly InputMode;
+		PC->SetInputMode(InputMode);
+	}
+}
+
 bool UShooterGameInstance::HasSaveGame()const
 {
 	return UGameplayStatics::DoesSaveGameExist(SaveSlot,0);
@@ -47,6 +64,7 @@ void UShooterGameInstance::StartNewGame()
 {
 	PendingSave=nullptr;
 	if(HasSaveGame())UGameplayStatics::DeleteGameInSlot(SaveSlot,0);
+	PrepareForGameplayTravel();
 	UGameplayStatics::OpenLevel(this,FName(*GameMap));
 }
 
@@ -54,6 +72,7 @@ void UShooterGameInstance::ContinueGame()
 {
 	PendingSave=Cast<UShooterSaveGame>(UGameplayStatics::LoadGameFromSlot(SaveSlot,0));
 	if(!PendingSave){SetStatus(TEXT("Сохранение не найдено"));return;}
+	PrepareForGameplayTravel();
 	UGameplayStatics::OpenLevel(this,FName(*PendingSave->MapPath));
 }
 
@@ -154,6 +173,7 @@ void UShooterGameInstance::OnCreateSessionComplete(FName,bool bSuccess)
 	if(SessionInterface.IsValid())SessionInterface->ClearOnCreateSessionCompleteDelegate_Handle(CreateSessionHandle);
 	if(!bSuccess){SetStatus(TEXT("Не удалось создать LAN-сессию"));return;}
 	SetStatus(TEXT("LAN-сессия создана"));
+	PrepareForGameplayTravel();
 	if(UWorld* World=GetWorld())World->ServerTravel(GameMap+TEXT("?listen"));
 }
 
@@ -218,6 +238,7 @@ void UShooterGameInstance::OnJoinSessionComplete(FName,EOnJoinSessionCompleteRes
 	if(Result!=EOnJoinSessionCompleteResult::Success){SetStatus(TEXT("Не удалось подключиться"));return;}
 	FString Address;
 	if(!SessionInterface->GetResolvedConnectString(NAME_GameSession,Address)){SetStatus(TEXT("Адрес сервера не получен"));return;}
+	PrepareForGameplayTravel();
 	if(APlayerController* PC=GetFirstLocalPlayerController())PC->ClientTravel(Address,TRAVEL_Absolute);
 }
 

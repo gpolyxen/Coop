@@ -94,6 +94,34 @@ void AShooterCharacter::BeginPlay()
 		FTimerHandle CaptureTimer;
 		GetWorldTimerManager().SetTimer(CaptureTimer,this,&AShooterCharacter::CaptureDiagnosticScreenshot,3.f,false);
 	}
+	RestoreLocalGameplayInput();
+}
+
+void AShooterCharacter::PossessedBy(AController* NewController)
+{
+	Super::PossessedBy(NewController);
+	RestoreLocalGameplayInput();
+}
+
+void AShooterCharacter::OnRep_Controller()
+{
+	Super::OnRep_Controller();
+	RestoreLocalGameplayInput();
+}
+
+void AShooterCharacter::RestoreLocalGameplayInput()
+{
+	if(!IsLocallyControlled())return;
+	if(APlayerController* PC=Cast<APlayerController>(Controller))
+	{
+		PC->bShowMouseCursor=false;
+		PC->bEnableClickEvents=false;
+		PC->bEnableMouseOverEvents=false;
+		PC->SetIgnoreMoveInput(false);
+		PC->SetIgnoreLookInput(false);
+		FInputModeGameOnly InputMode;
+		PC->SetInputMode(InputMode);
+	}
 }
 
 bool AShooterCharacter::IsDead()const{return Health&&Health->IsDead();}
