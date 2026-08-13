@@ -21,7 +21,7 @@ public:
 	virtual float TakeDamage(float DamageAmount,const FDamageEvent& DamageEvent,AController* EventInstigator,AActor* DamageCauser) override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
-	UFUNCTION(BlueprintCallable) bool TryAttack(AActor* Target);
+	UFUNCTION(BlueprintCallable) virtual bool TryAttack(AActor* Target);
 	UFUNCTION(BlueprintPure) bool IsDead() const { return bIsDead; }
 	UFUNCTION(BlueprintPure) bool IsAttacking() const { return bIsAttacking; }
 
@@ -45,17 +45,23 @@ public:
 
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Damage") float HeadDetachImpulse=35000.f;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Damage",meta=(ClampMin="1.0")) float MaxCombatHealth=100.f;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Rewards",meta=(ClampMin="0")) int32 KillExperience=10;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Rewards",meta=(ClampMin="0")) int32 HeadshotBonusExperience=10;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Loot",meta=(ClampMin="0.0",ClampMax="1.0")) float LootBagDropChance=.18f;
 	UPROPERTY(Replicated,VisibleAnywhere,BlueprintReadOnly,Category="Damage") float CombatHealth=100.f;
 	UPROPERTY(Replicated,VisibleAnywhere,BlueprintReadOnly,Category="Damage") int32 HeadHits=0;
 	UPROPERTY(Replicated,VisibleAnywhere,BlueprintReadOnly,Category="Damage") int32 TorsoHits=0;
 	UPROPERTY(Replicated,VisibleAnywhere,BlueprintReadOnly,Category="Damage") int32 LimbHits=0;
 	UPROPERTY(Replicated,VisibleAnywhere,BlueprintReadOnly,Category="Damage") float LethalProgress=0.f;
 
+protected:
+	virtual void PerformAttackHit();
+	TWeakObjectPtr<AActor> PendingAttackTarget;
+
 private:
 	double LastAttackTime=-1000.;
 	UPROPERTY(Replicated) bool bIsDead=false;
 	UPROPERTY(ReplicatedUsing=OnRep_IsAttacking) bool bIsAttacking=false;
-	TWeakObjectPtr<AActor> PendingAttackTarget;
 	UPROPERTY(Transient) UAnimationAsset* CurrentAnimation=nullptr;
 	bool bLocomotionMoving=false;
 	float SmoothedLocomotionSpeed=0.f;
@@ -67,7 +73,6 @@ private:
 	FName ResolveHeadBone(FName PreferredBone)const;
 	void UpdateLocomotionAnimation();
 	void PlayZombieAnimation(UAnimationAsset* Animation,bool bLooping,float PlayRate);
-	void PerformAttackHit();
 	void FinishAttack();
 	void Die(bool bHeadshot,FName HitBone,const FVector& ShotDirection,const FVector& HitLocation);
 

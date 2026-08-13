@@ -19,5 +19,8 @@ ABruteZombieCharacter::ABruteZombieCharacter()
 	AttackCooldown=2.5f;
 	AttackPlayRate=1.05f;
 	HeadDetachImpulse=48000.f;
+	KillExperience=75;
+	HeadshotBonusExperience=25;
+	LootBagDropChance=.55f;
 	if(Health)Health->MaxHealth=4800.f;
 }

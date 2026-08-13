@@ -4,29 +4,43 @@
 #include "BruteZombieCharacter.h"
 #include "HealthPickup.h"
 #include "RunnerZombieCharacter.h"
+#include "SpitterZombieCharacter.h"
 #include "ShooterCharacter.h"
 #include "ZombieCharacter.h"
 #include "NavigationInvokerComponent.h"
 #include "NavigationSystem.h"
 #include "EngineUtils.h"
 #include "Engine/World.h"
+#include "GameFramework/GameStateBase.h"
+#include "Net/UnrealNetwork.h"
 #include "TimerManager.h"
 
 AZombieSpawnManager::AZombieSpawnManager()
 {
 	PrimaryActorTick.bCanEverTick=false;
-	bReplicates=false;
+	bReplicates=true;bAlwaysRelevant=true;SetReplicateMovement(false);
 }
 
 void AZombieSpawnManager::BeginPlay()
 {
 	Super::BeginPlay();
 	if(!HasAuthority())return;
-	GetWorldTimerManager().SetTimer(ZombieTimer,this,&AZombieSpawnManager::MaintainZombiePopulation,SpawnInterval,true,.75f);
+	PreparationEndServerTime=GetWorld()->GetTimeSeconds()+PreparationDuration;
+	for(TActorIterator<AZombieCharacter> It(GetWorld());It;++It)It->Destroy();
+	GetWorldTimerManager().SetTimer(ZombieTimer,this,&AZombieSpawnManager::MaintainZombiePopulation,SpawnInterval,true,PreparationDuration);
 	GetWorldTimerManager().SetTimer(InitialSuppliesTimer,this,&AZombieSpawnManager::SpawnInitialSupplies,1.25f,false);
 	GetWorldTimerManager().SetTimer(AmmoTimer,this,&AZombieSpawnManager::TrySpawnAmmunition,AmmoSpawnInterval,true,7.f);
 	GetWorldTimerManager().SetTimer(HealthTimer,this,&AZombieSpawnManager::TrySpawnHealth,HealthSpawnInterval,true,8.f);
 }
+
+float AZombieSpawnManager::GetPreparationRemaining()const
+{
+	if(!GetWorld())return 0.f;
+	const AGameStateBase* State=GetWorld()->GetGameState();
+	const float Now=State?State->GetServerWorldTimeSeconds():GetWorld()->GetTimeSeconds();
+	return FMath::Max(0.f,PreparationEndServerTime-Now);
+}
+void AZombieSpawnManager::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps)const{Super::GetLifetimeReplicatedProps(OutLifetimeProps);DOREPLIFETIME(AZombieSpawnManager,PreparationEndServerTime);}
 
 AShooterCharacter* AZombieSpawnManager::FindPlayer()const
 {
@@ -66,21 +80,26 @@ void AZombieSpawnManager::MaintainZombiePopulation()
 {
 	AShooterCharacter* Player=FindPlayer();
 	if(!Player)return;
-	int32 LivingZombies=0,LivingRunners=0,LivingBrutes=0;
+	int32 LivingZombies=0,LivingRunners=0,LivingBrutes=0,LivingSpitters=0;
 	for(TActorIterator<AZombieCharacter> It(GetWorld());It;++It)if(!It->IsDead())
 	{
 		++LivingZombies;
 		if(It->IsA<ABruteZombieCharacter>())++LivingBrutes;
+		else if(It->IsA<ASpitterZombieCharacter>())++LivingSpitters;
 		else if(It->IsA<ARunnerZombieCharacter>())++LivingRunners;
 	}
-	const int32 ToSpawn=FMath::Min(SpawnBatchSize,FMath::Max(0,MaxAliveZombies-LivingZombies));
 	const int32 HighestPlayerLevel=GetHighestPlayerLevel();
+	const int32 TargetPopulation=FMath::Clamp(MaxAliveZombies+FMath::Max(0,HighestPlayerLevel-1)*ZombiesPerPlayerLevel,MaxAliveZombies,AbsoluteMaxAliveZombies);
+	const int32 ToSpawn=FMath::Min(SpawnBatchSize,FMath::Max(0,TargetPopulation-LivingZombies));
 	const int32 FiveLevelMilestones=HighestPlayerLevel/5;
 	const float RunnerChance=FiveLevelMilestones>0?FMath::Clamp(.4f+(FiveLevelMilestones-1)*.05f,.4f,.75f):0.f;
 	const int32 TenLevelMilestones=HighestPlayerLevel/10;
 	const float BruteChance=TenLevelMilestones>0?FMath::Clamp(.15f+(TenLevelMilestones-1)*.04f,.15f,.45f):0.f;
 	const int32 MinimumBrutes=FMath::Clamp(TenLevelMilestones,0,3);
 	const int32 MinimumRunners=FiveLevelMilestones>0?1:0;
+	const int32 FifteenLevelMilestones=HighestPlayerLevel/15;
+	const float SpitterChance=FifteenLevelMilestones>0?FMath::Clamp(.18f+(FifteenLevelMilestones-1)*.04f,.18f,.45f):0.f;
+	const int32 MinimumSpitters=FMath::Clamp(FifteenLevelMilestones,0,3);
 	for(int32 Index=0;Index<ToSpawn;++Index)
 	{
 		FVector SpawnLocation;
@@ -90,18 +109,20 @@ void AZombieSpawnManager::MaintainZombiePopulation()
 		FActorSpawnParameters Parameters;
 		Parameters.SpawnCollisionHandlingOverride=ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
 		const bool bSpawnBrute=LivingBrutes<MinimumBrutes||FMath::FRand()<BruteChance;
-		const bool bSpawnRunner=!bSpawnBrute&&(LivingRunners<MinimumRunners||FMath::FRand()<RunnerChance);
-		TSubclassOf<AZombieCharacter> ZombieClass=bSpawnBrute?ABruteZombieCharacter::StaticClass():(bSpawnRunner?ARunnerZombieCharacter::StaticClass():AZombieCharacter::StaticClass());
+		const bool bSpawnSpitter=!bSpawnBrute&&(LivingSpitters<MinimumSpitters||FMath::FRand()<SpitterChance);
+		const bool bSpawnRunner=!bSpawnBrute&&!bSpawnSpitter&&(LivingRunners<MinimumRunners||FMath::FRand()<RunnerChance);
+		TSubclassOf<AZombieCharacter> ZombieClass=bSpawnBrute?ABruteZombieCharacter::StaticClass():(bSpawnSpitter?ASpitterZombieCharacter::StaticClass():(bSpawnRunner?ARunnerZombieCharacter::StaticClass():AZombieCharacter::StaticClass()));
 		AZombieCharacter* Zombie=GetWorld()->SpawnActor<AZombieCharacter>(ZombieClass,SpawnLocation,ToPlayer.Rotation(),Parameters);
 		if(Zombie)
 		{
 			if(bSpawnBrute)++LivingBrutes;
+			else if(bSpawnSpitter)++LivingSpitters;
 			else if(bSpawnRunner)++LivingRunners;
 			if(!Zombie->GetController())Zombie->SpawnDefaultController();
 			if(UNavigationSystemV1* Navigation=UNavigationSystemV1::GetCurrent(GetWorld()))
 				if(Zombie->NavigationInvoker)Zombie->NavigationInvoker->RegisterWithNavigationSystem(*Navigation);
 			UE_LOG(LogTemp,Display,TEXT("Spawned %s zombie at %s (%d/%d alive, player level %d), controller=%s"),
-				bSpawnBrute?TEXT("brute"):(bSpawnRunner?TEXT("runner"):TEXT("roaming")),*SpawnLocation.ToCompactString(),LivingZombies+Index+1,MaxAliveZombies,
+				bSpawnBrute?TEXT("brute"):(bSpawnSpitter?TEXT("spitter"):(bSpawnRunner?TEXT("runner"):TEXT("roaming"))),*SpawnLocation.ToCompactString(),LivingZombies+Index+1,TargetPopulation,
 				HighestPlayerLevel,*GetNameSafe(Zombie->GetController()));
 		}
 	}

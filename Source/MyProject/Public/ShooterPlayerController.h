@@ -19,6 +19,7 @@ private:
 	void TogglePauseMenu();
 	void ToggleInventory();
 	void ToggleSkillTree();
+	void ToggleBuildingMenu();
 	void OpenGameplayPanel(TSubclassOf<UUserWidget> WidgetClass);
 	UPROPERTY(Transient)UUserWidget* ActiveGameplayPanel=nullptr;
 };

@@ -2,6 +2,8 @@
 #include "ShooterCharacter.h"
 #include "HealthArmorComponent.h"
 #include "WeaponBase.h"
+#include "ZombieSpawnManager.h"
+#include "EngineUtils.h"
 #include "Engine/Canvas.h"
 #include "Engine/Engine.h"
 
@@ -13,6 +15,17 @@ void AShooterHUD::DrawHUD()
 	if(!C)return;
 
 	const float CenterX=Canvas->ClipX*.5f,CenterY=Canvas->ClipY*.5f;
+	for(TActorIterator<AZombieSpawnManager> It(GetWorld());It;++It)
+	{
+		const float Remaining=It->GetPreparationRemaining();
+		if(Remaining>0.f){DrawText(FString::Printf(TEXT("ПОДГОТОВКА К ВОЛНЕ: %02d"),FMath::CeilToInt(Remaining)),FLinearColor(1.f,.78f,.12f),CenterX-155.f,24.f,GEngine->GetLargeFont(),1.15f,false);break;}
+	}
+	if(C->IsBuilding())
+	{
+		const FLinearColor BuildColor=C->IsBuildPreviewValid()?FLinearColor(.2f,1.f,.3f):FLinearColor(1.f,.18f,.08f);
+		DrawText(FString::Printf(TEXT("СТРОИТЕЛЬСТВО: %s"),*C->GetSelectedBuildName()),BuildColor,CenterX-175.f,70.f,GEngine->GetMediumFont(),1.15f,false);
+		DrawText(C->IsBuildPreviewValid()?TEXT("ЛКМ: ПОСТАВИТЬ   R: ПОВЕРНУТЬ 90°   ПКМ: ОТМЕНА"):TEXT("МЕСТО ЗАНЯТО ИЛИ ПОВЕРХНОСТЬ НЕРОВНАЯ"),BuildColor,CenterX-245.f,100.f,GEngine->GetSmallFont(),1.f,false);
+	}
 	const bool bScoped=C->EquippedWeapon&&C->IsAiming()&&C->EquippedWeapon->bUseScopeOverlay;
 	if(bScoped)
 	{
@@ -45,6 +58,10 @@ void AShooterHUD::DrawHUD()
 		DrawRect(FLinearColor::LerpUsingHSV(FLinearColor::Red,FLinearColor::Green,HealthRatio),BarX,BarY,BarWidth*HealthRatio,BarHeight);
 		DrawText(FString::Printf(TEXT("HP  %.0f / %.0f"),C->Health->Health,MaxHealth),FLinearColor::White,BarX,BarY-28.f,GEngine->GetMediumFont(),1.f,false);
 	}
+	const float StaminaX=36.f,StaminaY=Canvas->ClipY-42.f,StaminaWidth=260.f,StaminaHeight=10.f;
+	DrawRect(FLinearColor(0.f,0.f,0.f,.7f),StaminaX-2.f,StaminaY-2.f,StaminaWidth+4.f,StaminaHeight+4.f);
+	DrawRect(C->HasSkill(EShooterSkill::Marathon)?FLinearColor(.2f,.8f,1.f):FLinearColor(1.f,.72f,.12f),StaminaX,StaminaY,StaminaWidth*C->GetStaminaRatio(),StaminaHeight);
+	DrawText(C->HasSkill(EShooterSkill::Marathon)?TEXT("STAMINA: MARATHON"):FString::Printf(TEXT("STAMINA %.0f / %.0f"),C->Stamina,C->MaxStamina),FLinearColor::White,StaminaX,StaminaY-20.f,GEngine->GetSmallFont(),.8f,false);
 	const int32 ExperienceNeeded=FMath::Max(1,C->GetExperienceForNextLevel());
 	const float ExperienceRatio=FMath::Clamp(static_cast<float>(C->Experience)/ExperienceNeeded,0.f,1.f);
 	const float ExperienceX=36.f,ExperienceY=Canvas->ClipY-122.f,ExperienceWidth=260.f;

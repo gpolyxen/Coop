@@ -2,6 +2,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "ShooterTypes.h"
+#include "BuildTypes.h"
 #include "ShooterCharacter.generated.h"
 class UCameraComponent;class USpringArmComponent;class USceneComponent;class UInventoryComponent;class UHealthArmorComponent;class UNavigationInvokerComponent;class UAIPerceptionStimuliSourceComponent;class USkeletalMeshComponent;class UStaticMeshComponent;class UBlendSpace;class UAnimMontage;class UAnimSequence;class UAnimInstance;class AWeaponBase;class APickupActor;class ASaveBed;
 UCLASS(Blueprintable)
@@ -41,6 +42,12 @@ public:
 	UPROPERTY(Replicated,VisibleAnywhere,BlueprintReadOnly) int32 ActiveWeaponSlot=INDEX_NONE;
 	UFUNCTION(BlueprintCallable) void EquipWeapon(TSubclassOf<AWeaponBase> WeaponClass);
 	UFUNCTION(BlueprintCallable) int32 AddAmmunition(int32 Amount);
+	UFUNCTION(BlueprintPure) bool CanCraftBed()const;
+	UFUNCTION(BlueprintPure) bool IsBuildingBed()const{return SelectedBuildPiece==EBuildPieceType::Bed;}
+	UFUNCTION(BlueprintPure) bool IsBuilding()const{return SelectedBuildPiece!=EBuildPieceType::None;}
+	UFUNCTION(BlueprintPure) bool IsBuildPreviewValid()const{return bBuildPreviewValid;}
+	UFUNCTION(BlueprintPure) FString GetSelectedBuildName()const;
+	UFUNCTION(BlueprintCallable) void BeginBuildPlacement(EBuildPieceType PieceType);
 	UFUNCTION(BlueprintCallable) void AddExperience(int32 Amount);
 	UFUNCTION(BlueprintCallable) bool PurchaseSkill(EShooterSkill Skill);
 	UFUNCTION(BlueprintPure) bool HasSkill(EShooterSkill Skill)const{return UnlockedSkills.Contains(Skill);}
@@ -71,20 +78,34 @@ public:
 	UPROPERTY(Replicated,VisibleAnywhere,BlueprintReadOnly,Category="Progression")TArray<EShooterSkill> UnlockedSkills;
 	UPROPERTY(Replicated,VisibleAnywhere,BlueprintReadOnly,Category="Progression")bool bLastLifeConsumed=false;
 	UPROPERTY(Replicated,VisibleAnywhere,BlueprintReadOnly,Category="Progression")float LastLifeInvulnerableUntil=0.f;
+	UPROPERTY(Replicated,VisibleAnywhere,BlueprintReadOnly,Category="Stamina")float Stamina=100.f;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Stamina")float MaxStamina=100.f;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Stamina")float SprintStaminaPerSecond=18.f;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Stamina")float JumpStaminaCost=20.f;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Stamina")float StaminaRecoveryPerSecond=16.f;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Stamina")float StaminaRecoveryDelay=1.25f;
+	UFUNCTION(BlueprintPure)float GetStaminaRatio()const{return MaxStamina>0.f?FMath::Clamp(Stamina/MaxStamina,0.f,1.f):0.f;}
 protected:
 	void RestoreLocalGameplayInput();
-	void MoveForward(float Value);void MoveRight(float Value);void TurnAtRate(float Value);void LookUpAtRate(float Value);void SwitchWeapon(float Value);void StartFire();void StopFire();void FireOnce();void StartAim();void StopAim();void Reload();void Interact();void SprintPressed();void SprintReleased();void ToggleCrouch();
+	void MoveForward(float Value);void MoveRight(float Value);void TurnAtRate(float Value);void LookUpAtRate(float Value);void SwitchWeapon(float Value);void StartFire();void StopFire();void FireOnce();void StartAim();void StopAim();void Reload();void Interact();void SprintPressed();void SprintReleased();void JumpPressed();void JumpReleased();void ToggleCrouch();void UpdateBuildPreview();void ConfirmBuildPlacement();void CancelBuildMode();void RotateBuildPreview();
 	UFUNCTION(Server,Reliable,WithValidation)void ServerEquipWeapon(TSubclassOf<AWeaponBase> WeaponClass);
 	UFUNCTION(Server,Reliable,WithValidation)void ServerSwitchWeapon(int32 Direction);
 	UFUNCTION(Server,Reliable,WithValidation)void ServerInteract(APickupActor* Pickup);
 	UFUNCTION(Server,Reliable,WithValidation)void ServerUseBed(ASaveBed* Bed);
+	UFUNCTION(Server,Reliable,WithValidation)void ServerToggleGate(class AWoodGate* Gate);
 	UFUNCTION(Client,Reliable)void ClientSaveAtBed();
 	UFUNCTION(Server,Reliable,WithValidation)void ServerSetAiming(bool bNewAiming);
+	UFUNCTION(Server,Reliable,WithValidation)void ServerSetSprinting(bool bNewSprinting);
+	UFUNCTION(Server,Reliable,WithValidation)void ServerTryJump();
+	UFUNCTION(Server,Reliable,WithValidation)void ServerPlaceBuildPiece(EBuildPieceType PieceType,FVector_NetQuantize Location,FRotator Rotation);
+	UFUNCTION(Client,Reliable)void ClientBuildPlacementResult(EBuildPieceType PieceType,bool bPlaced,bool bCanContinue);
 	UFUNCTION(Server,Reliable,WithValidation)void ServerPurchaseSkill(EShooterSkill Skill);
 	UFUNCTION()void OnRep_Weapon();
 	UFUNCTION()void HandleDeath();
 	void RefreshAnimationState();
 	UPROPERTY(EditDefaultsOnly,Category="Movement")float WalkSpeed=450.f;UPROPERTY(EditDefaultsOnly,Category="Movement")float SprintSpeed=700.f;UPROPERTY(EditDefaultsOnly,Category="Movement")float BaseTurnRate=45.f;UPROPERTY(EditDefaultsOnly,Category="Interaction")float InteractionDistance=300.f;UPROPERTY(EditDefaultsOnly,Category="Aim")float HipFOV=90.f;UPROPERTY(EditDefaultsOnly,Category="Aim")float AimFOV=75.f;UPROPERTY(Replicated)bool bIsAiming=false;FTimerHandle FireTimer;
+	UPROPERTY(Replicated)bool bWantsToSprint=false;
+	float LastStaminaUseTime=-1000.f;
 	UPROPERTY(EditDefaultsOnly,Category="Progression",meta=(ClampMin="1"))int32 BaseExperiencePerLevel=100;
 	UPROPERTY(EditDefaultsOnly,Category="Progression",meta=(ClampMin="0"))int32 ExperienceGrowthPerLevel=50;
 	void CaptureDiagnosticScreenshot();
@@ -107,4 +128,8 @@ protected:
 	FRotator ArmsHipRotation=FRotator(0.f,-10.f,0.f);
 	FRotator ArmsAimRotation=FRotator(0.f,-10.f,0.f);
 	float RecoilPitchCurrent=0.f,RecoilPitchTarget=0.f,RecoilYawCurrent=0.f,RecoilYawTarget=0.f,RecoilKickCurrent=0.f,RecoilKickTarget=0.f;
+	EBuildPieceType SelectedBuildPiece=EBuildPieceType::None;
+	bool bBuildPreviewValid=false;
+	int32 BuildRotationQuarterTurns=0;
+	UPROPERTY(Transient)AActor* BuildPreview=nullptr;
 };

@@ -144,3 +144,26 @@ void USkillTreeWidget::NativeTick(const FGeometry& MyGeometry,float InDeltaTime)
 void USkillTreeWidget::Refresh(){if(AShooterCharacter* Character=GetCharacter(this)){if(PointsText)PointsText->SetText(FText::FromString(FString::Printf(TEXT("ДОСТУПНО ОЧКОВ: %d"),Character->SkillPoints)));for(USkillTreeEntryWidget* Entry:Entries)if(Entry)Entry->Refresh();}}
 void USkillTreeWidget::CloseClicked(){if(AShooterPlayerController* PC=Cast<AShooterPlayerController>(GetOwningPlayer()))PC->CloseGameplayPanel();}
 FReply USkillTreeWidget::NativeOnKeyDown(const FGeometry& InGeometry,const FKeyEvent& Event){if(Event.GetKey()==EKeys::K||Event.GetKey()==EKeys::Escape){CloseClicked();return FReply::Handled();}return Super::NativeOnKeyDown(InGeometry,Event);}
+
+void UBuildingMenuWidget::NativeOnInitialized()
+{
+	Super::NativeOnInitialized();bIsFocusable=true;
+	UVerticalBox* Panel=CreatePanel(WidgetTree,FText::FromString(TEXT("СТРОИТЕЛЬСТВО  [B]")),700.f);
+	Content=WidgetTree->ConstructWidget<UVerticalBox>();if(UVerticalBoxSlot* ContentSlot=Panel->AddChildToVerticalBox(Content))ContentSlot->SetPadding(FMargin(8.f));
+	UButton* Close=MakeButton(WidgetTree,FText::FromString(TEXT("ЗАКРЫТЬ")));Close->OnClicked.AddDynamic(this,&UBuildingMenuWidget::CloseClicked);
+	if(UVerticalBoxSlot* CloseSlot=Panel->AddChildToVerticalBox(Close))CloseSlot->SetPadding(FMargin(5.f,18.f,5.f,2.f));ShowCategories();
+}
+void UBuildingMenuWidget::ShowCategories()
+{
+	Content->ClearChildren();
+	UTextBlock* Hint=MakeText(WidgetTree,FText::FromString(TEXT("ВЫБЕРИТЕ РАЗДЕЛ")),20,FLinearColor(.65f,.85f,1.f),ETextJustify::Center);Content->AddChildToVerticalBox(Hint);
+	UButton* Furniture=MakeButton(WidgetTree,FText::FromString(TEXT("МЕБЕЛЬ\nКровати и предметы быта")));Furniture->OnClicked.AddDynamic(this,&UBuildingMenuWidget::FurnitureClicked);Content->AddChildToVerticalBox(Furniture);
+	UButton* Defense=MakeButton(WidgetTree,FText::FromString(TEXT("ЗАЩИТА\nСтены и ворота")));Defense->OnClicked.AddDynamic(this,&UBuildingMenuWidget::DefenseClicked);Content->AddChildToVerticalBox(Defense);
+}
+void UBuildingMenuWidget::ShowFurniture(){Content->ClearChildren();UButton* Bed=MakeButton(WidgetTree,FText::FromString(TEXT("КРОВАТЬ\n10 палок + 10 верёвок\nСохранение игры")));Bed->OnClicked.AddDynamic(this,&UBuildingMenuWidget::BedClicked);Content->AddChildToVerticalBox(Bed);UButton* Back=MakeButton(WidgetTree,FText::FromString(TEXT("НАЗАД К РАЗДЕЛАМ")));Back->OnClicked.AddDynamic(this,&UBuildingMenuWidget::BackClicked);Content->AddChildToVerticalBox(Back);}
+void UBuildingMenuWidget::ShowDefense(){Content->ClearChildren();UButton* Wall=MakeButton(WidgetTree,FText::FromString(TEXT("ДЕРЕВЯННАЯ СТЕНА\n6 палок | 350 HP | модуль 3 м")));Wall->OnClicked.AddDynamic(this,&UBuildingMenuWidget::WallClicked);Content->AddChildToVerticalBox(Wall);UButton* Gate=MakeButton(WidgetTree,FText::FromString(TEXT("ДЕРЕВЯННЫЕ ВОРОТА\n12 палок + 4 верёвки | 500 HP | модуль 3 м")));Gate->OnClicked.AddDynamic(this,&UBuildingMenuWidget::GateClicked);Content->AddChildToVerticalBox(Gate);UButton* Floor=MakeButton(WidgetTree,FText::FromString(TEXT("ДЕРЕВЯННЫЙ ПОЛ\n5 палок | площадка 3 x 3 м")));Floor->OnClicked.AddDynamic(this,&UBuildingMenuWidget::FloorClicked);Content->AddChildToVerticalBox(Floor);UButton* Stairs=MakeButton(WidgetTree,FText::FromString(TEXT("ДЕРЕВЯННАЯ ЛЕСТНИЦА\n8 палок | подъём на один этаж")));Stairs->OnClicked.AddDynamic(this,&UBuildingMenuWidget::StairsClicked);Content->AddChildToVerticalBox(Stairs);UButton* Back=MakeButton(WidgetTree,FText::FromString(TEXT("НАЗАД К РАЗДЕЛАМ")));Back->OnClicked.AddDynamic(this,&UBuildingMenuWidget::BackClicked);Content->AddChildToVerticalBox(Back);}
+void UBuildingMenuWidget::SelectBuildPiece(EBuildPieceType Type){if(AShooterCharacter* Character=GetCharacter(this))Character->BeginBuildPlacement(Type);CloseClicked();}
+void UBuildingMenuWidget::FurnitureClicked(){ShowFurniture();}void UBuildingMenuWidget::DefenseClicked(){ShowDefense();}void UBuildingMenuWidget::BackClicked(){ShowCategories();}
+void UBuildingMenuWidget::BedClicked(){SelectBuildPiece(EBuildPieceType::Bed);}void UBuildingMenuWidget::WallClicked(){SelectBuildPiece(EBuildPieceType::WoodWall);}void UBuildingMenuWidget::GateClicked(){SelectBuildPiece(EBuildPieceType::WoodGate);}void UBuildingMenuWidget::FloorClicked(){SelectBuildPiece(EBuildPieceType::WoodFloor);}void UBuildingMenuWidget::StairsClicked(){SelectBuildPiece(EBuildPieceType::WoodStairs);}
+void UBuildingMenuWidget::CloseClicked(){if(AShooterPlayerController* PC=Cast<AShooterPlayerController>(GetOwningPlayer()))PC->CloseGameplayPanel();}
+FReply UBuildingMenuWidget::NativeOnKeyDown(const FGeometry& G,const FKeyEvent& E){if(E.GetKey()==EKeys::B||E.GetKey()==EKeys::Escape){CloseClicked();return FReply::Handled();}return Super::NativeOnKeyDown(G,E);}

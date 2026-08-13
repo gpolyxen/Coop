@@ -3,6 +3,8 @@
 #include "ZombieAIController.h"
 #include "BloodBurstActor.h"
 #include "HeadGibActor.h"
+#include "LootBagPickup.h"
+#include "BuildableStructure.h"
 #include "ShooterCharacter.h"
 #include "HealthArmorComponent.h"
 #include "Animation/AnimSequence.h"
@@ -189,7 +191,7 @@ float AZombieCharacter::TakeDamage(float DamageAmount,const FDamageEvent& Damage
 	{
 		if(AShooterCharacter* Killer=EventInstigator?Cast<AShooterCharacter>(EventInstigator->GetPawn()):nullptr)
 		{
-			const int32 Reward=bHeadshot?20:10;
+			const int32 Reward=KillExperience+(bHeadshot?HeadshotBonusExperience:0);
 			Killer->AddExperience(Reward);
 			UE_LOG(LogTemp,Display,TEXT("Player %s earned %d XP for %s kill"),*Killer->GetName(),Reward,bHeadshot?TEXT("headshot"):TEXT("zombie"));
 		}
@@ -212,7 +214,13 @@ void AZombieCharacter::MulticastBloodImpact_Implementation(FVector_NetQuantize H
 bool AZombieCharacter::TryAttack(AActor* Target)
 {
 	if(!HasAuthority()||bIsDead||bIsAttacking||!Target)return false;
-	if(FVector::DistSquared(Target->GetActorLocation(),GetActorLocation())>FMath::Square(AttackRange))return false;
+	FVector AttackPoint=Target->GetActorLocation();
+	if(Cast<ABuildableStructure>(Target))
+	{
+		const FBox Bounds=Target->GetComponentsBoundingBox();const FVector Here=GetActorLocation();
+		AttackPoint=FVector(FMath::Clamp(Here.X,Bounds.Min.X,Bounds.Max.X),FMath::Clamp(Here.Y,Bounds.Min.Y,Bounds.Max.Y),FMath::Clamp(Here.Z,Bounds.Min.Z,Bounds.Max.Z));
+	}
+	if(FVector::DistSquared(AttackPoint,GetActorLocation())>FMath::Square(AttackRange))return false;
 	const double Now=GetWorld()->GetTimeSeconds();
 	if(Now-LastAttackTime<AttackCooldown)return false;
 
@@ -238,7 +246,13 @@ void AZombieCharacter::PerformAttackHit()
 {
 	if(!HasAuthority()||bIsDead||!bIsAttacking||!PendingAttackTarget.IsValid())return;
 	AActor* Target=PendingAttackTarget.Get();
-	FVector ToTarget=Target->GetActorLocation()-GetActorLocation();
+	FVector TargetPoint=Target->GetActorLocation();
+	if(Cast<ABuildableStructure>(Target))
+	{
+		const FBox Bounds=Target->GetComponentsBoundingBox();const FVector Here=GetActorLocation();
+		TargetPoint=FVector(FMath::Clamp(Here.X,Bounds.Min.X,Bounds.Max.X),FMath::Clamp(Here.Y,Bounds.Min.Y,Bounds.Max.Y),FMath::Clamp(Here.Z,Bounds.Min.Z,Bounds.Max.Z));
+	}
+	FVector ToTarget=TargetPoint-GetActorLocation();
 	const float Distance2D=ToTarget.Size2D();
 	ToTarget.Z=0.f;
 	if(Distance2D>AttackRange+35.f||ToTarget.IsNearlyZero())return;
@@ -248,7 +262,7 @@ void AZombieCharacter::PerformAttackHit()
 	FHitResult ObstacleHit;
 	FCollisionQueryParams Query(SCENE_QUERY_STAT(ZombieAttack),false,this);
 	const FVector TraceStart=GetActorLocation()+FVector(0.f,0.f,45.f);
-	const FVector TraceEnd=Target->GetActorLocation()+FVector(0.f,0.f,35.f);
+	const FVector TraceEnd=TargetPoint+FVector(0.f,0.f,35.f);
 	if(GetWorld()->LineTraceSingleByChannel(ObstacleHit,TraceStart,TraceEnd,ECC_Visibility,Query))
 	{
 		AActor* HitActor=ObstacleHit.GetActor();
@@ -260,6 +274,10 @@ void AZombieCharacter::PerformAttackHit()
 		const float AppliedDamage=TargetHealth->ApplyDamage(AttackDamage,GetController(),this);
 		if(AppliedDamage>0.f)UE_LOG(LogTemp,Display,TEXT("Zombie %s melee hit %s: %.0f damage, %.0f health remaining"),*GetName(),*GetNameSafe(Target),AppliedDamage,TargetHealth->Health);
 		if(ACharacter* HitCharacter=Cast<ACharacter>(Target))HitCharacter->LaunchCharacter(AttackDirection*90.f+FVector(0.f,0.f,35.f),false,false);
+	}
+	else if(ABuildableStructure* Structure=Cast<ABuildableStructure>(Target))
+	{
+		Structure->TakeDamage(FMath::Max(20.f,AttackDamage*1.35f),FDamageEvent(),GetController(),this);
 	}
 }
 
@@ -281,6 +299,13 @@ void AZombieCharacter::Die(bool bHeadshot,FName HitBone,const FVector& ShotDirec
 	GetWorldTimerManager().ClearTimer(AttackFinishTimer);
 	const FVector Impulse=ShotDirection.GetSafeNormal()*HeadDetachImpulse;
 	MulticastDie(bHeadshot,HitBone,Impulse,HitLocation);
+	if(HasAuthority()&&GetWorld()&&FMath::FRand()<=LootBagDropChance)
+	{
+		FActorSpawnParameters Parameters;
+		Parameters.SpawnCollisionHandlingOverride=ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
+		const FVector DropLocation=GetActorLocation()+FVector(0.f,0.f,45.f);
+		GetWorld()->SpawnActor<ALootBagPickup>(ALootBagPickup::StaticClass(),DropLocation,FRotator::ZeroRotator,Parameters);
+	}
 	SetLifeSpan(20.f);
 }
 

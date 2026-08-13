@@ -88,7 +88,10 @@ AP9Weapon::AP9Weapon()
 	Stats.WindInfluence=.8f;
 	Stats.GravityScale=1.f;
 	Stats.ProjectileLifeSeconds=8.f;
-	CloseRangeHitCorrectionDistance=450.f;
+	// Preserve the camera-selected skeletal bone across pistol/muzzle parallax.
+	// The projectile must still physically hit that same zombie, so this does not
+	// turn near misses into hits; it only makes two accurate head hits reliable.
+	CloseRangeHitCorrectionDistance=1600.f;
 	AmmoInMagazine=Stats.MagazineSize;
 	ReserveAmmo=45;
 	MaxReserveAmmo=90;

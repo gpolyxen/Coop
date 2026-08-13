@@ -68,7 +68,7 @@ bool AWeaponBase::FireAuthoritative(FVector AimPoint)
 						{
 							const FVector HeadLocation=ZombieMesh->GetBoneLocation(HeadBone);
 							const FVector ClosestPoint=FMath::ClosestPointOnSegment(HeadLocation,ViewStart,BoneTraceEnd);
-							if(FVector::DistSquared(ClosestPoint,HeadLocation)<=FMath::Square(24.f))
+							if(FVector::DistSquared(ClosestPoint,HeadLocation)<=FMath::Square(32.f))
 							{
 								IntendedHit.BoneName=HeadBone;
 								IntendedHit.ImpactPoint=HeadLocation;

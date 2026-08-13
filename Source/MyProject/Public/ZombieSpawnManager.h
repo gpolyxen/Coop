@@ -13,8 +13,15 @@ class MYPROJECT_API AZombieSpawnManager : public AActor
 public:
 	AZombieSpawnManager();
 	virtual void BeginPlay()override;
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps)const override;
+	UFUNCTION(BlueprintPure)float GetPreparationRemaining()const;
+	UFUNCTION(BlueprintPure)bool IsPreparing()const{return GetPreparationRemaining()>0.f;}
+	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="Zombie Spawning",meta=(ClampMin="0"))float PreparationDuration=60.f;
+	UPROPERTY(Replicated,VisibleAnywhere,BlueprintReadOnly,Category="Zombie Spawning")float PreparationEndServerTime=0.f;
 
 	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="Zombie Spawning",meta=(ClampMin="1"))int32 MaxAliveZombies=8;
+	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="Zombie Spawning",meta=(ClampMin="0"))int32 ZombiesPerPlayerLevel=1;
+	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="Zombie Spawning",meta=(ClampMin="8"))int32 AbsoluteMaxAliveZombies=40;
 	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="Zombie Spawning",meta=(ClampMin="1"))int32 SpawnBatchSize=2;
 	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="Zombie Spawning",meta=(ClampMin="0.5"))float SpawnInterval=4.f;
 	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="Zombie Spawning",meta=(ClampMin="300"))float MinimumSpawnDistance=1300.f;

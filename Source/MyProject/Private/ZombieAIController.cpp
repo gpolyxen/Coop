@@ -2,6 +2,7 @@
 #include "ZombieCharacter.h"
 #include "ShooterCharacter.h"
 #include "HealthArmorComponent.h"
+#include "BuildableStructure.h"
 #include "Perception/AIPerceptionComponent.h"
 #include "Perception/AISenseConfig_Sight.h"
 #include "Perception/AISenseConfig_Hearing.h"
@@ -366,6 +367,11 @@ void AZombieAIController::Tick(float DeltaSeconds)
 		else
 		{
 			const float Distance=FVector::Dist(Zombie->GetActorLocation(),Target->GetActorLocation());
+			FHitResult StructureHit;FCollisionQueryParams StructureQuery(SCENE_QUERY_STAT(ZombieStructureBlock),false,Zombie);StructureQuery.AddIgnoredActor(Target.Get());
+			const FVector StructureStart=Zombie->GetActorLocation()+FVector(0,0,55);const FVector StructureDirection=(Target->GetActorLocation()-Zombie->GetActorLocation()).GetSafeNormal2D();
+			const FVector StructureEnd=StructureStart+StructureDirection*FMath::Max(80.f,Zombie->AttackRange-5.f);
+			if(GetWorld()->SweepSingleByChannel(StructureHit,StructureStart,StructureEnd,FQuat::Identity,ECC_WorldStatic,FCollisionShape::MakeSphere(35.f),StructureQuery))
+				if(ABuildableStructure* Structure=Cast<ABuildableStructure>(StructureHit.GetActor())){StopMovement();Zombie->TryAttack(Structure);return;}
 			if(FVector::DistSquared2D(Zombie->GetActorLocation(),LastChaseProgressLocation)>FMath::Square(25.f))
 			{
 				LastChaseProgressLocation=Zombie->GetActorLocation();

@@ -2,6 +2,7 @@
 #include "WeaponBase.h"
 #include "PickupActor.h"
 #include "SaveBed.h"
+#include "BuildableStructure.h"
 #include "ShooterGameInstance.h"
 #include "InventoryComponent.h"
 #include "HealthArmorComponent.h"
@@ -12,6 +13,7 @@
 #include "Camera/PlayerCameraManager.h"
 #include "Components/InputComponent.h"
 #include "Components/SceneComponent.h"
+#include "Components/LightComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Net/UnrealNetwork.h"
@@ -76,6 +78,7 @@ void AShooterCharacter::BeginPlay()
 	if(StimuliSource)StimuliSource->RegisterWithPerceptionSystem();
 	if(Health)Health->OnDeath.AddDynamic(this,&AShooterCharacter::HandleDeath);
 	ApplyUnlockedSkillEffects();
+	if(HasAuthority()&&Inventory&&Inventory->Items.Num()==0){Inventory->MaxWeight=FMath::Max(Inventory->MaxWeight,500.f);Inventory->AddItem(TEXT("Wood"),250);Inventory->AddItem(TEXT("Rope"),60);}
 	FirstPersonBody->SetHiddenInGame(true);
 	FirstPersonArms->SetHiddenInGame(true);
 	LeftFirstPersonArm->SetHiddenInGame(true);
@@ -155,6 +158,19 @@ void AShooterCharacter::CaptureDiagnosticScreenshot()
 void AShooterCharacter::Tick(float D)
 {
 	Super::Tick(D);
+	if(HasAuthority()&&!IsDead())
+	{
+		if(HasSkill(EShooterSkill::Marathon))Stamina=MaxStamina;
+		else
+		{
+			const bool bDraining=bWantsToSprint&&GetVelocity().Size2D()>10.f&&GetCharacterMovement()->IsMovingOnGround();
+			if(bDraining){Stamina=FMath::Max(0.f,Stamina-SprintStaminaPerSecond*D);LastStaminaUseTime=GetWorld()->GetTimeSeconds();}
+			else if(GetWorld()->GetTimeSeconds()-LastStaminaUseTime>=StaminaRecoveryDelay)Stamina=FMath::Min(MaxStamina,Stamina+StaminaRecoveryPerSecond*D);
+			if(Stamina<=0.f)bWantsToSprint=false;
+		}
+		GetCharacterMovement()->MaxWalkSpeed=bWantsToSprint&&(HasSkill(EShooterSkill::Marathon)||Stamina>0.f)?SprintSpeed*(HasSkill(EShooterSkill::Marathon)?1.15f:1.f):WalkSpeed;
+	}
+	else if(!HasAuthority()&&Stamina<=0.f)GetCharacterMovement()->MaxWalkSpeed=WalkSpeed;
 	const bool bWeaponAim=bIsAiming&&EquippedWeapon;
 	const float DesiredFOV=bWeaponAim?EquippedWeapon->WeaponAimFOV:HipFOV;
 	Camera->SetFieldOfView(FMath::FInterpTo(Camera->FieldOfView,DesiredFOV,D,12.f));
@@ -178,14 +194,16 @@ void AShooterCharacter::Tick(float D)
 	const float Direction=FMath::RadiansToDegrees(FMath::Atan2(LocalVelocity.Y,LocalVelocity.X));
 	auto UpdateAnim=[this,Direction](UAnimInstance* Anim){if(!Anim)return;auto SetFloat=[Anim](const TCHAR* Name,float Value){if(FFloatProperty* P=FindFProperty<FFloatProperty>(Anim->GetClass(),Name))P->SetPropertyValue_InContainer(Anim,Value);};auto SetBool=[Anim](const TCHAR* Name,bool Value){if(FBoolProperty* P=FindFProperty<FBoolProperty>(Anim->GetClass(),Name))P->SetPropertyValue_InContainer(Anim,Value);};const bool bHasWeapon=EquippedWeapon!=nullptr;SetFloat(TEXT("Speed"),GetVelocity().Size2D());SetFloat(TEXT("Direction"),Direction);SetBool(TEXT("IsAiming"),bHasWeapon&&bIsAiming);SetBool(TEXT("IsAiming?"),bHasWeapon&&bIsAiming);SetBool(TEXT("Is Aiming?"),bHasWeapon&&bIsAiming);SetBool(TEXT("HasWeapon"),bHasWeapon);SetBool(TEXT("Has Weapon?"),bHasWeapon);SetBool(TEXT("Crouching"),bIsCrouched);SetBool(TEXT("Jumping"),GetCharacterMovement()->IsFalling());FObjectPropertyBase* PlayerProperty=FindFProperty<FObjectPropertyBase>(Anim->GetClass(),TEXT("As BP Player"));if(!PlayerProperty)PlayerProperty=FindFProperty<FObjectPropertyBase>(Anim->GetClass(),TEXT("AsBPPlayer"));if(PlayerProperty)PlayerProperty->SetObjectPropertyValue_InContainer(Anim,this);if(UFunction* CalculateRotation=Anim->FindFunction(TEXT("CalculateRotation")))Anim->ProcessEvent(CalculateRotation,nullptr);};UpdateAnim(GetMesh()->GetAnimInstance());
 	UpdateDedicatedFirstPersonRigAnimation();
+	if(IsBuilding())UpdateBuildPreview();
 }
-void AShooterCharacter::SetupPlayerInputComponent(UInputComponent* I){Super::SetupPlayerInputComponent(I);check(I);I->BindAxis("MoveForward",this,&AShooterCharacter::MoveForward);I->BindAxis("MoveRight",this,&AShooterCharacter::MoveRight);I->BindAxis("SwitchWeapon",this,&AShooterCharacter::SwitchWeapon);I->BindAxis("Turn",this,&APawn::AddControllerYawInput);I->BindAxis("LookUp",this,&APawn::AddControllerPitchInput);I->BindAxis("TurnRate",this,&AShooterCharacter::TurnAtRate);I->BindAxis("LookUpRate",this,&AShooterCharacter::LookUpAtRate);I->BindAction("Jump",IE_Pressed,this,&ACharacter::Jump);I->BindAction("Jump",IE_Released,this,&ACharacter::StopJumping);I->BindAction("Crouch",IE_Pressed,this,&AShooterCharacter::ToggleCrouch);I->BindAction("Aim",IE_Pressed,this,&AShooterCharacter::StartAim);I->BindAction("Aim",IE_Released,this,&AShooterCharacter::StopAim);I->BindAction("Fire",IE_Pressed,this,&AShooterCharacter::StartFire);I->BindAction("Fire",IE_Released,this,&AShooterCharacter::StopFire);I->BindAction("Reload",IE_Pressed,this,&AShooterCharacter::Reload);I->BindAction("Interact",IE_Pressed,this,&AShooterCharacter::Interact);I->BindAction("Sprint",IE_Pressed,this,&AShooterCharacter::SprintPressed);I->BindAction("Sprint",IE_Released,this,&AShooterCharacter::SprintReleased);}
+void AShooterCharacter::SetupPlayerInputComponent(UInputComponent* I){Super::SetupPlayerInputComponent(I);check(I);I->BindAxis("MoveForward",this,&AShooterCharacter::MoveForward);I->BindAxis("MoveRight",this,&AShooterCharacter::MoveRight);I->BindAxis("SwitchWeapon",this,&AShooterCharacter::SwitchWeapon);I->BindAxis("Turn",this,&APawn::AddControllerYawInput);I->BindAxis("LookUp",this,&APawn::AddControllerPitchInput);I->BindAxis("TurnRate",this,&AShooterCharacter::TurnAtRate);I->BindAxis("LookUpRate",this,&AShooterCharacter::LookUpAtRate);I->BindAction("Jump",IE_Pressed,this,&AShooterCharacter::JumpPressed);I->BindAction("Jump",IE_Released,this,&AShooterCharacter::JumpReleased);I->BindAction("Crouch",IE_Pressed,this,&AShooterCharacter::ToggleCrouch);I->BindAction("Aim",IE_Pressed,this,&AShooterCharacter::StartAim);I->BindAction("Aim",IE_Released,this,&AShooterCharacter::StopAim);I->BindAction("Fire",IE_Pressed,this,&AShooterCharacter::StartFire);I->BindAction("Fire",IE_Released,this,&AShooterCharacter::StopFire);I->BindAction("Reload",IE_Pressed,this,&AShooterCharacter::Reload);I->BindAction("Interact",IE_Pressed,this,&AShooterCharacter::Interact);I->BindAction("Sprint",IE_Pressed,this,&AShooterCharacter::SprintPressed);I->BindAction("Sprint",IE_Released,this,&AShooterCharacter::SprintReleased);I->BindAction("CancelBuild",IE_Pressed,this,&AShooterCharacter::CancelBuildMode);}
 void AShooterCharacter::MoveForward(float V){if(Controller&&V!=0)AddMovementInput(FRotationMatrix(FRotator(0,Controller->GetControlRotation().Yaw,0)).GetUnitAxis(EAxis::X),V);}void AShooterCharacter::MoveRight(float V){if(Controller&&V!=0)AddMovementInput(FRotationMatrix(FRotator(0,Controller->GetControlRotation().Yaw,0)).GetUnitAxis(EAxis::Y),V);}
 void AShooterCharacter::TurnAtRate(float V){AddControllerYawInput(V*BaseTurnRate*GetWorld()->GetDeltaSeconds());}void AShooterCharacter::LookUpAtRate(float V){AddControllerPitchInput(V*BaseTurnRate*GetWorld()->GetDeltaSeconds());}
 void AShooterCharacter::ToggleCrouch(){bIsCrouched?UnCrouch():Crouch();}
-void AShooterCharacter::StartAim(){if(!EquippedWeapon)return;bIsAiming=true;if(!HasAuthority())ServerSetAiming(true);}void AShooterCharacter::StopAim(){bIsAiming=false;if(!HasAuthority())ServerSetAiming(false);}bool AShooterCharacter::ServerSetAiming_Validate(bool){return true;}void AShooterCharacter::ServerSetAiming_Implementation(bool bNewAiming){bIsAiming=bNewAiming&&EquippedWeapon;}
+void AShooterCharacter::StartAim(){if(IsBuilding()||!EquippedWeapon)return;bIsAiming=true;if(!HasAuthority())ServerSetAiming(true);}void AShooterCharacter::StopAim(){bIsAiming=false;if(!HasAuthority())ServerSetAiming(false);}bool AShooterCharacter::ServerSetAiming_Validate(bool){return true;}void AShooterCharacter::ServerSetAiming_Implementation(bool bNewAiming){bIsAiming=bNewAiming&&EquippedWeapon;}
 void AShooterCharacter::StartFire()
 {
+	if(IsBuilding()){ConfirmBuildPlacement();return;}
 	if(IsDead()||!EquippedWeapon)return;
 	FireOnce();
 	if(!EquippedWeapon->bAutomatic)return;
@@ -194,6 +212,132 @@ void AShooterCharacter::StartFire()
 }
 
 void AShooterCharacter::StopFire(){GetWorldTimerManager().ClearTimer(FireTimer);}
+
+bool AShooterCharacter::CanCraftBed()const{return Inventory&&Inventory->HasItems(TEXT("Wood"),10,TEXT("Rope"),10);}
+FString AShooterCharacter::GetSelectedBuildName()const
+{
+	switch(SelectedBuildPiece){case EBuildPieceType::Bed:return TEXT("КРОВАТЬ");case EBuildPieceType::WoodWall:return TEXT("ДЕРЕВЯННАЯ СТЕНА");case EBuildPieceType::WoodGate:return TEXT("ДЕРЕВЯННЫЕ ВОРОТА");case EBuildPieceType::WoodFloor:return TEXT("ДЕРЕВЯННЫЙ ПОЛ");case EBuildPieceType::WoodStairs:return TEXT("ДЕРЕВЯННАЯ ЛЕСТНИЦА");default:return FString();}
+}
+void AShooterCharacter::BeginBuildPlacement(EBuildPieceType PieceType)
+{
+	CancelBuildMode();if(!Inventory||PieceType==EBuildPieceType::None)return;
+	const int32 RequiredWood=PieceType==EBuildPieceType::Bed?10:PieceType==EBuildPieceType::WoodWall?6:PieceType==EBuildPieceType::WoodGate?12:PieceType==EBuildPieceType::WoodFloor?5:8;
+	const int32 RequiredRope=PieceType==EBuildPieceType::Bed?10:PieceType==EBuildPieceType::WoodGate?4:0;
+	const bool bAffordable=Inventory->GetQuantity(TEXT("Wood"))>=RequiredWood&&Inventory->GetQuantity(TEXT("Rope"))>=RequiredRope;
+	if(!bAffordable){ShowLocalNotification(TEXT("НЕДОСТАТОЧНО МАТЕРИАЛОВ"));return;}
+	SelectedBuildPiece=PieceType;StopFire();StopAim();
+	FActorSpawnParameters PreviewParameters;PreviewParameters.SpawnCollisionHandlingOverride=ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	UClass* PreviewClass=PieceType==EBuildPieceType::Bed?ASaveBed::StaticClass():PieceType==EBuildPieceType::WoodWall?AWoodWall::StaticClass():PieceType==EBuildPieceType::WoodGate?AWoodGate::StaticClass():PieceType==EBuildPieceType::WoodFloor?AWoodFloor::StaticClass():AWoodStairs::StaticClass();
+	BuildPreview=GetWorld()->SpawnActor<AActor>(PreviewClass,GetActorLocation(),GetActorRotation(),PreviewParameters);
+	if(BuildPreview){BuildPreview->SetReplicates(false);BuildPreview->SetActorEnableCollision(false);TArray<ULightComponent*> Lights;BuildPreview->GetComponents<ULightComponent>(Lights);for(ULightComponent* Light:Lights)if(Light)Light->SetVisibility(false);}
+	BuildRotationQuarterTurns=0;UpdateBuildPreview();ShowLocalNotification(TEXT("ЛКМ — ПОСТАВИТЬ    R — ПОВЕРНУТЬ 90°    ПКМ — ОТМЕНА"),8.f);
+}
+void AShooterCharacter::UpdateBuildPreview()
+{
+	if(!IsBuilding()||!Camera||!BuildPreview)return;
+	FHitResult Hit;FCollisionQueryParams Query(SCENE_QUERY_STAT(BuildPreview),false,this);Query.AddIgnoredActor(BuildPreview);
+	const FVector Start=Camera->GetComponentLocation(),End=Start+Camera->GetForwardVector()*600.f;
+	const bool bHasHit=GetWorld()->LineTraceSingleByChannel(Hit,Start,End,ECC_Visibility,Query);
+	FVector Location=bHasHit?Hit.ImpactPoint:End;FRotator Rotation(0.f,FMath::GridSnap(Controller?Controller->GetControlRotation().Yaw:0.f,90.f)+BuildRotationQuarterTurns*90.f,0.f);
+	FCollisionQueryParams GroundQuery(SCENE_QUERY_STAT(BuildPreviewGround),false,this);GroundQuery.AddIgnoredActor(BuildPreview);for(TActorIterator<ABuildableStructure> It(GetWorld());It;++It)GroundQuery.AddIgnoredActor(*It);
+	FCollisionObjectQueryParams GroundObjects;GroundObjects.AddObjectTypesToQuery(ECC_WorldStatic);
+	FHitResult GroundHit;const bool bGroundHit=GetWorld()->LineTraceSingleByObjectType(GroundHit,Location+FVector(0,0,1500.f),Location-FVector(0,0,3000.f),GroundObjects,GroundQuery)&&GroundHit.ImpactNormal.Z>=.35f;
+	if(bGroundHit)Location.Z=GroundHit.ImpactPoint.Z;
+	bBuildPreviewValid=bGroundHit;
+	if(SelectedBuildPiece!=EBuildPieceType::Bed)
+	{
+		ABuildableStructure* DirectStructure=bHasHit?Cast<ABuildableStructure>(Hit.GetActor()):nullptr;
+		float BestScore=FLT_MAX;
+		FVector BestLocation=Location;
+		FRotator BestRotation=Rotation;
+		bool bFoundSnap=false;
+		for(TActorIterator<ABuildableStructure> It(GetWorld());It;++It)
+		{
+			if(*It==BuildPreview)continue;
+			const FRotator CandidateRotation(0.f,It->GetActorRotation().Yaw+BuildRotationQuarterTurns*90.f,0.f);
+			const FVector NewAlong=CandidateRotation.RotateVector(FVector::RightVector).GetSafeNormal2D();
+			const FVector NewForward=CandidateRotation.RotateVector(FVector::ForwardVector).GetSafeNormal2D();
+			TArray<FVector> Points;It->GetSnapPoints(Points);
+			for(const FVector& Point:Points)
+			{
+				TArray<FVector> Candidates;Candidates.Add(Point+NewAlong*150.f);Candidates.Add(Point-NewAlong*150.f);
+				if(SelectedBuildPiece==EBuildPieceType::WoodFloor){Candidates.Add(Point+NewForward*150.f);Candidates.Add(Point-NewForward*150.f);}
+				for(const FVector& Candidate:Candidates)
+				{
+					if(FVector::DistSquared(Candidate,It->GetActorLocation())<FMath::Square(200.f))continue;
+					const float CandidateDistanceSq=FVector::DistSquared(Location,Candidate);
+					const float Score=CandidateDistanceSq+(DirectStructure==*It?-FMath::Square(500.f):0.f);
+					if((DirectStructure==*It||CandidateDistanceSq<=FMath::Square(500.f))&&Score<BestScore){BestScore=Score;BestLocation=Candidate;BestRotation=CandidateRotation;bFoundSnap=true;}
+				}
+			}
+		}
+		if(bFoundSnap){Location=BestLocation;Rotation=BestRotation;bBuildPreviewValid=true;}
+	}
+	BuildPreview->SetActorLocationAndRotation(Location,Rotation);
+}
+void AShooterCharacter::RotateBuildPreview(){if(IsBuilding()){BuildRotationQuarterTurns=(BuildRotationQuarterTurns+1)%4;UpdateBuildPreview();ShowLocalNotification(TEXT("ПОВОРОТ: 90°"),1.f);}}
+void AShooterCharacter::CancelBuildMode(){if(IsBuilding()){SelectedBuildPiece=EBuildPieceType::None;bBuildPreviewValid=false;BuildRotationQuarterTurns=0;if(BuildPreview){BuildPreview->Destroy();BuildPreview=nullptr;}ShowLocalNotification(TEXT("СТРОИТЕЛЬСТВО ОТМЕНЕНО"));}}
+void AShooterCharacter::ConfirmBuildPlacement()
+{
+	if(!IsBuilding()||!BuildPreview)return;
+	const EBuildPieceType Piece=SelectedBuildPiece;const FVector Location=BuildPreview->GetActorLocation();const FRotator Rotation=BuildPreview->GetActorRotation();
+	ServerPlaceBuildPiece(Piece,Location,Rotation);
+}
+bool AShooterCharacter::ServerPlaceBuildPiece_Validate(EBuildPieceType Piece,FVector_NetQuantize Location,FRotator){return Piece!=EBuildPieceType::None&&FVector::DistSquared(Location,GetActorLocation())<=FMath::Square(1000.f);}
+void AShooterCharacter::ServerPlaceBuildPiece_Implementation(EBuildPieceType Piece,FVector_NetQuantize Location,FRotator Rotation)
+{
+	if(!Inventory)return;const int32 WoodCost=Piece==EBuildPieceType::Bed?10:Piece==EBuildPieceType::WoodWall?6:Piece==EBuildPieceType::WoodGate?12:Piece==EBuildPieceType::WoodFloor?5:8;const int32 RopeCost=Piece==EBuildPieceType::Bed?10:(Piece==EBuildPieceType::WoodGate?4:0);
+	if(Inventory->GetQuantity(TEXT("Wood"))<WoodCost||Inventory->GetQuantity(TEXT("Rope"))<RopeCost){ClientBuildPlacementResult(Piece,false,false);return;}
+	FCollisionQueryParams Query(SCENE_QUERY_STAT(ServerBuildPlacement),false,this);
+	FVector FinalLocation=Location;FRotator FinalRotation=Rotation;ABuildableStructure* SnapParent=nullptr;
+	if(Piece!=EBuildPieceType::Bed)
+	{
+		float BestDistanceSq=FMath::Square(80.f);
+		for(TActorIterator<ABuildableStructure> It(GetWorld());It;++It)
+		{
+			TArray<FVector> Points;It->GetSnapPoints(Points);
+			const FVector NewAlong=FinalRotation.RotateVector(FVector::RightVector).GetSafeNormal2D();
+			const FVector NewForward=FinalRotation.RotateVector(FVector::ForwardVector).GetSafeNormal2D();
+			for(const FVector& Point:Points)
+			{
+				TArray<FVector> Candidates;Candidates.Add(Point+NewAlong*150.f);Candidates.Add(Point-NewAlong*150.f);if(Piece==EBuildPieceType::WoodFloor){Candidates.Add(Point+NewForward*150.f);Candidates.Add(Point-NewForward*150.f);}
+				for(const FVector& Candidate:Candidates){if(FVector::DistSquared(Candidate,It->GetActorLocation())<FMath::Square(200.f))continue;const float DistanceSq=FVector::DistSquared(FinalLocation,Candidate);if(DistanceSq<BestDistanceSq){BestDistanceSq=DistanceSq;FinalLocation=Candidate;SnapParent=*It;}}
+			}
+		}
+	}
+	if(SnapParent)Query.AddIgnoredActor(SnapParent);
+	else
+	{
+		FHitResult Ground;FCollisionQueryParams GroundQuery(SCENE_QUERY_STAT(ServerBuildGround),false,this);for(TActorIterator<ABuildableStructure> It(GetWorld());It;++It)GroundQuery.AddIgnoredActor(*It);FCollisionObjectQueryParams GroundObjects;GroundObjects.AddObjectTypesToQuery(ECC_WorldStatic);
+		if(!GetWorld()->LineTraceSingleByObjectType(Ground,FinalLocation+FVector(0,0,1500),FinalLocation-FVector(0,0,3000),GroundObjects,GroundQuery)||Ground.ImpactNormal.Z<.35f){UE_LOG(LogTemp,Warning,TEXT("Build rejected: no ground for piece %d at %s"),static_cast<int32>(Piece),*FinalLocation.ToCompactString());ClientBuildPlacementResult(Piece,false,true);return;}
+		FinalLocation=Ground.ImpactPoint;
+	}
+	FActorSpawnParameters Parameters;Parameters.SpawnCollisionHandlingOverride=ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	UClass* BuildClass=Piece==EBuildPieceType::Bed?ASaveBed::StaticClass():Piece==EBuildPieceType::WoodWall?AWoodWall::StaticClass():Piece==EBuildPieceType::WoodGate?AWoodGate::StaticClass():Piece==EBuildPieceType::WoodFloor?AWoodFloor::StaticClass():AWoodStairs::StaticClass();
+	if(GetWorld()->SpawnActor<AActor>(BuildClass,FinalLocation,FinalRotation,Parameters))
+	{
+		UE_LOG(LogTemp,Display,TEXT("Build placed: piece %d at %s rotation %s snapped=%s"),static_cast<int32>(Piece),*FinalLocation.ToCompactString(),*FinalRotation.ToCompactString(),SnapParent?TEXT("true"):TEXT("false"));
+		Inventory->RemoveItem(TEXT("Wood"),WoodCost);if(RopeCost>0)Inventory->RemoveItem(TEXT("Rope"),RopeCost);
+		const bool bCanContinue=Inventory->GetQuantity(TEXT("Wood"))>=WoodCost&&Inventory->GetQuantity(TEXT("Rope"))>=RopeCost;
+		ClientBuildPlacementResult(Piece,true,bCanContinue);
+	}
+	else ClientBuildPlacementResult(Piece,false,true);
+}
+void AShooterCharacter::ClientBuildPlacementResult_Implementation(EBuildPieceType Piece,bool bPlaced,bool bCanContinue)
+{
+	if(!bPlaced)
+	{
+		if(!bCanContinue){if(BuildPreview){BuildPreview->Destroy();BuildPreview=nullptr;}SelectedBuildPiece=EBuildPieceType::None;bBuildPreviewValid=false;ShowLocalNotification(TEXT("МАТЕРИАЛЫ ЗАКОНЧИЛИСЬ"),3.f);}
+		else ShowLocalNotification(TEXT("ЗДЕСЬ НЕЛЬЗЯ ПОСТАВИТЬ"),2.f);
+		return;
+	}
+	if(SelectedBuildPiece!=Piece)return;
+	if(!bCanContinue)
+	{
+		if(BuildPreview){BuildPreview->Destroy();BuildPreview=nullptr;}SelectedBuildPiece=EBuildPieceType::None;bBuildPreviewValid=false;ShowLocalNotification(TEXT("ПОСТРОЕНО. МАТЕРИАЛЫ ЗАКОНЧИЛИСЬ"),3.f);return;
+	}
+	UpdateBuildPreview();ShowLocalNotification(TEXT("ПОСТРОЕНО — МОЖНО СТАВИТЬ СЛЕДУЮЩИЙ ЭЛЕМЕНТ"),1.5f);
+}
 
 void AShooterCharacter::FireOnce()
 {
@@ -227,6 +371,7 @@ void AShooterCharacter::ResetFirstPersonArmsAnimation()
 
 void AShooterCharacter::Reload()
 {
+	if(IsBuilding()){RotateBuildPreview();return;}
 	if(IsDead())return;
 	StopFire();
 	if(!EquippedWeapon)return;
@@ -237,8 +382,12 @@ void AShooterCharacter::Reload()
 	if(bCanStartReload)PlayDedicatedFirstPersonRigAction(EquippedWeapon->FirstPersonRigReloadAnimation);
 }
 
-void AShooterCharacter::SprintPressed(){if(!IsDead())GetCharacterMovement()->MaxWalkSpeed=SprintSpeed*(HasSkill(EShooterSkill::Marathon)?1.15f:1.f);}
-void AShooterCharacter::SprintReleased(){if(!IsDead())GetCharacterMovement()->MaxWalkSpeed=WalkSpeed;}
+void AShooterCharacter::SprintPressed(){if(IsDead())return;bWantsToSprint=HasSkill(EShooterSkill::Marathon)||Stamina>0.f;if(bWantsToSprint)GetCharacterMovement()->MaxWalkSpeed=SprintSpeed*(HasSkill(EShooterSkill::Marathon)?1.15f:1.f);if(!HasAuthority())ServerSetSprinting(bWantsToSprint);}
+void AShooterCharacter::SprintReleased(){bWantsToSprint=false;GetCharacterMovement()->MaxWalkSpeed=WalkSpeed;if(!HasAuthority())ServerSetSprinting(false);}
+bool AShooterCharacter::ServerSetSprinting_Validate(bool){return true;}void AShooterCharacter::ServerSetSprinting_Implementation(bool bNewSprinting){bWantsToSprint=bNewSprinting&&(HasSkill(EShooterSkill::Marathon)||Stamina>0.f);}
+void AShooterCharacter::JumpPressed(){if(IsDead()||GetCharacterMovement()->IsFalling())return;if(HasAuthority())ServerTryJump_Implementation();else ServerTryJump();}
+void AShooterCharacter::JumpReleased(){StopJumping();}
+bool AShooterCharacter::ServerTryJump_Validate(){return true;}void AShooterCharacter::ServerTryJump_Implementation(){if(IsDead()||GetCharacterMovement()->IsFalling())return;if(!HasSkill(EShooterSkill::Marathon)){if(Stamina<JumpStaminaCost)return;Stamina-=JumpStaminaCost;LastStaminaUseTime=GetWorld()->GetTimeSeconds();}Jump();}
 
 bool AShooterCharacter::IsDedicatedFirstPersonRigActive()const
 {
@@ -330,9 +479,26 @@ void AShooterCharacter::UpdateDedicatedFirstPersonRigAnimation()
 	bFirstPersonRigLooping=true;
 	FirstPersonArms->PlayAnimation(DesiredAnimation,true);
 }
-void AShooterCharacter::Interact(){FHitResult H;FCollisionQueryParams P;P.AddIgnoredActor(this);const FVector A=Camera->GetComponentLocation(),B=A+Camera->GetForwardVector()*InteractionDistance;if(GetWorld()->LineTraceSingleByChannel(H,A,B,ECC_Visibility,P)){if(APickupActor* Pickup=Cast<APickupActor>(H.GetActor()))ServerInteract(Pickup);else if(ASaveBed* Bed=Cast<ASaveBed>(H.GetActor()))ServerUseBed(Bed);}}
+void AShooterCharacter::Interact()
+{
+	FHitResult H;FCollisionQueryParams P;P.AddIgnoredActor(this);const FVector A=Camera->GetComponentLocation(),B=A+Camera->GetForwardVector()*InteractionDistance;
+	if(GetWorld()->LineTraceSingleByChannel(H,A,B,ECC_Visibility,P))
+	{
+		if(ASaveBed* Bed=Cast<ASaveBed>(H.GetActor())){ServerUseBed(Bed);return;}
+		if(AWoodGate* Gate=Cast<AWoodGate>(H.GetActor())){ServerToggleGate(Gate);return;}
+		if(APickupActor* Pickup=Cast<APickupActor>(H.GetActor())){ServerInteract(Pickup);return;}
+	}
+	APickupActor* NearestPickup=nullptr;float NearestDistanceSq=FMath::Square(InteractionDistance+75.f);
+	for(TActorIterator<APickupActor> It(GetWorld());It;++It)
+	{
+		const float DistanceSq=FVector::DistSquared(GetActorLocation(),It->GetActorLocation());
+		if(DistanceSq<NearestDistanceSq){NearestDistanceSq=DistanceSq;NearestPickup=*It;}
+	}
+	if(NearestPickup)ServerInteract(NearestPickup);
+}
 bool AShooterCharacter::ServerInteract_Validate(APickupActor* P){return P&&FVector::DistSquared(P->GetActorLocation(),GetActorLocation())<=FMath::Square(InteractionDistance+100.f);}void AShooterCharacter::ServerInteract_Implementation(APickupActor* P){P->TryPickup(this);}
 bool AShooterCharacter::ServerUseBed_Validate(ASaveBed* Bed){return Bed&&FVector::DistSquared(Bed->GetActorLocation(),GetActorLocation())<=FMath::Square(InteractionDistance+150.f);}void AShooterCharacter::ServerUseBed_Implementation(ASaveBed* Bed){if(Bed)ClientSaveAtBed();}
+bool AShooterCharacter::ServerToggleGate_Validate(AWoodGate* Gate){return Gate&&FVector::DistSquared(Gate->GetActorLocation(),GetActorLocation())<=FMath::Square(InteractionDistance+100.f);}void AShooterCharacter::ServerToggleGate_Implementation(AWoodGate* Gate){if(Gate)Gate->TryToggle(this);}
 void AShooterCharacter::ClientSaveAtBed_Implementation(){if(UShooterGameInstance* GI=GetGameInstance<UShooterGameInstance>())ShowLocalNotification(GI->SavePlayerAtBed(this)?TEXT("ИГРА СОХРАНЕНА У КРОВАТИ"):TEXT("НЕ УДАЛОСЬ СОХРАНИТЬ ИГРУ"));}
 void AShooterCharacter::ShowLocalNotification(const FString& Message,float Duration){LocalNotification=Message;LocalNotificationEndTime=GetWorld()?GetWorld()->GetTimeSeconds()+FMath::Max(.1f,Duration):0.f;}
 void AShooterCharacter::EquipWeapon(TSubclassOf<AWeaponBase>C){if(HasAuthority())ServerEquipWeapon_Implementation(C);else ServerEquipWeapon(C);}bool AShooterCharacter::ServerEquipWeapon_Validate(TSubclassOf<AWeaponBase>C){return C!=nullptr;}void AShooterCharacter::ServerEquipWeapon_Implementation(TSubclassOf<AWeaponBase>C){FActorSpawnParameters P;P.Owner=this;P.Instigator=this;AWeaponBase* W=GetWorld()->SpawnActor<AWeaponBase>(C,FTransform::Identity,P);if(!W)return;if(WeaponSlots.Num()<2){WeaponSlots.Add(W);ActiveWeaponSlot=WeaponSlots.Num()-1;}else{AWeaponBase* Old=WeaponSlots[ActiveWeaponSlot];if(Old){const FVector DropLocation=GetActorLocation()+GetActorForwardVector()*100.f+FVector(0.f,0.f,45.f);AWeaponPickup* Drop=GetWorld()->SpawnActor<AWeaponPickup>(AWeaponPickup::StaticClass(),DropLocation,GetActorRotation());if(Drop){Drop->ConfigureWeaponClass(Old->GetClass());Drop->Mesh->AddImpulse((GetActorForwardVector()*350.f+FVector(0.f,0.f,180.f))*Drop->Mesh->GetMass());Drop->Mesh->AddAngularImpulseInDegrees(FVector(0.f,180.f,360.f),NAME_None,true);}Old->Destroy();}WeaponSlots[ActiveWeaponSlot]=W;}EquippedWeapon=W;OnRep_Weapon();}
@@ -385,6 +551,7 @@ int32 AShooterCharacter::GetSkillCost(EShooterSkill Skill)const
 {
 	switch(Skill)
 	{
+	case EShooterSkill::Marathon:return 5;
 	case EShooterSkill::CombatMedic:case EShooterSkill::DeepPockets:return 2;
 	case EShooterSkill::LastLife:return 3;
 	default:return 1;
@@ -412,7 +579,7 @@ FText AShooterCharacter::GetSkillDescription(EShooterSkill Skill)const
 	switch(Skill)
 	{
 	case EShooterSkill::QuickReload:return FText::FromString(TEXT("Перезарядка оружия быстрее на 28%."));
-	case EShooterSkill::Marathon:return FText::FromString(TEXT("Скорость бесконечного спринта выше на 15%."));
+	case EShooterSkill::Marathon:return FText::FromString(TEXT("Бег и прыжки больше не расходуют стамину; скорость спринта выше на 15%."));
 	case EShooterSkill::Vitality:return FText::FromString(TEXT("Максимальное здоровье увеличено на 25."));
 	case EShooterSkill::SteadyAim:return FText::FromString(TEXT("Вертикальная и горизонтальная отдача меньше на 22%."));
 	case EShooterSkill::Scavenger:return FText::FromString(TEXT("Подбираемые боеприпасы дают на 25% больше патронов."));
@@ -462,7 +629,8 @@ void AShooterCharacter::ApplyUnlockedSkillEffects()
 		Health->MaxHealth=HasSkill(EShooterSkill::Vitality)?125.f:100.f;
 		if(HasAuthority()&&Health->Health>0.f&&Health->MaxHealth>OldMax)Health->Health=FMath::Min(Health->MaxHealth,Health->Health+Health->MaxHealth-OldMax);
 	}
-	if(Inventory)Inventory->MaxWeight=HasSkill(EShooterSkill::DeepPockets)?60.f:45.f;
+	if(Inventory)Inventory->MaxWeight=HasSkill(EShooterSkill::DeepPockets)?650.f:500.f;
+	if(HasSkill(EShooterSkill::Marathon))Stamina=MaxStamina;
 }
 
 bool AShooterCharacter::IsLastLifeInvulnerable()const
@@ -509,4 +677,4 @@ void AShooterCharacter::OnRep_Weapon()
 		Weapon->FirstPersonMesh->SetVisibility(false,true);
 	}
 }
-void AShooterCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>&OutLifetimeProps)const{Super::GetLifetimeReplicatedProps(OutLifetimeProps);DOREPLIFETIME(AShooterCharacter,EquippedWeapon);DOREPLIFETIME(AShooterCharacter,WeaponSlots);DOREPLIFETIME(AShooterCharacter,ActiveWeaponSlot);DOREPLIFETIME(AShooterCharacter,bIsAiming);DOREPLIFETIME(AShooterCharacter,CharacterLevel);DOREPLIFETIME(AShooterCharacter,Experience);DOREPLIFETIME(AShooterCharacter,TotalExperience);DOREPLIFETIME(AShooterCharacter,SkillPoints);DOREPLIFETIME(AShooterCharacter,UnlockedSkills);DOREPLIFETIME(AShooterCharacter,bLastLifeConsumed);DOREPLIFETIME(AShooterCharacter,LastLifeInvulnerableUntil);}
+void AShooterCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>&OutLifetimeProps)const{Super::GetLifetimeReplicatedProps(OutLifetimeProps);DOREPLIFETIME(AShooterCharacter,EquippedWeapon);DOREPLIFETIME(AShooterCharacter,WeaponSlots);DOREPLIFETIME(AShooterCharacter,ActiveWeaponSlot);DOREPLIFETIME(AShooterCharacter,bIsAiming);DOREPLIFETIME(AShooterCharacter,bWantsToSprint);DOREPLIFETIME(AShooterCharacter,Stamina);DOREPLIFETIME(AShooterCharacter,CharacterLevel);DOREPLIFETIME(AShooterCharacter,Experience);DOREPLIFETIME(AShooterCharacter,TotalExperience);DOREPLIFETIME(AShooterCharacter,SkillPoints);DOREPLIFETIME(AShooterCharacter,UnlockedSkills);DOREPLIFETIME(AShooterCharacter,bLastLifeConsumed);DOREPLIFETIME(AShooterCharacter,LastLifeInvulnerableUntil);}

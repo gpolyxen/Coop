@@ -13,5 +13,8 @@ ARunnerZombieCharacter::ARunnerZombieCharacter()
 	AttackCooldown=1.65f;
 	AttackPlayRate=1.5f;
 	MaxCombatHealth=170.f;
+	KillExperience=25;
+	HeadshotBonusExperience=15;
+	LootBagDropChance=.25f;
 	if(Health)Health->MaxHealth=1700.f;
 }

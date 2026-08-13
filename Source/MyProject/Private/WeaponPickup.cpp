@@ -47,4 +47,4 @@ void AWeaponPickup::ConfigureWeaponClass(TSubclassOf<AWeaponBase> C)
 	}
 	if(M)Mesh->SetStaticMesh(M);
 }
-bool AWeaponPickup::TryPickup(APawn* P){if(!HasAuthority()||!P||!InteractionRange->IsOverlappingActor(P))return false;if(AShooterCharacter*C=Cast<AShooterCharacter>(P)){C->EquipWeapon(WeaponClass);Destroy();return true;}return false;}
+bool AWeaponPickup::TryPickup(APawn* P){if(!HasAuthority()||!P||FVector::DistSquared(P->GetActorLocation(),GetActorLocation())>FMath::Square(400.f))return false;if(AShooterCharacter*C=Cast<AShooterCharacter>(P)){C->EquipWeapon(WeaponClass);Destroy();return true;}return false;}

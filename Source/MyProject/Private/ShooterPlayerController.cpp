@@ -14,6 +14,7 @@ void AShooterPlayerController::SetupInputComponent()
 	PauseBinding.bExecuteWhenPaused=true;
 	InputComponent->BindAction(TEXT("Inventory"),IE_Pressed,this,&AShooterPlayerController::ToggleInventory);
 	InputComponent->BindAction(TEXT("SkillTree"),IE_Pressed,this,&AShooterPlayerController::ToggleSkillTree);
+	InputComponent->BindAction(TEXT("BuildBed"),IE_Pressed,this,&AShooterPlayerController::ToggleBuildingMenu);
 }
 
 void AShooterPlayerController::TogglePauseMenu()
@@ -43,6 +44,12 @@ void AShooterPlayerController::ToggleSkillTree()
 	if(IsGameplayPanelOpen()){CloseGameplayPanel();return;}
 	if(UShooterGameInstance* GI=GetGameInstance<UShooterGameInstance>())if(GI->IsPauseMenuOpen())return;
 	OpenGameplayPanel(USkillTreeWidget::StaticClass());
+}
+void AShooterPlayerController::ToggleBuildingMenu()
+{
+	if(IsGameplayPanelOpen()){CloseGameplayPanel();return;}
+	if(UShooterGameInstance* GI=GetGameInstance<UShooterGameInstance>())if(GI->IsPauseMenuOpen())return;
+	OpenGameplayPanel(UBuildingMenuWidget::StaticClass());
 }
 
 void AShooterPlayerController::OpenGameplayPanel(TSubclassOf<UUserWidget> WidgetClass)
