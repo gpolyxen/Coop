@@ -7,7 +7,11 @@ ARunnerZombieCharacter::ARunnerZombieCharacter()
 {
 	GetCharacterMovement()->MaxWalkSpeed=580.f;
 	GetCharacterMovement()->RotationRate=FRotator(0.f,540.f,0.f);
-	GetMesh()->SetRelativeScale3D(FVector(.94f,.94f,1.03f));
+	GetMesh()->SetRelativeScale3D(FVector(.82f,.82f,1.12f));
+	bUseVisualVariant=true;
+	VariantBodyColor=FLinearColor(1.f,.48f,.5f,1.f);
+	VariantPantsColor=FLinearColor(.62f,.28f,.32f,1.f);
+	VariantTopColor=FLinearColor(1.f,.38f,.42f,1.f);
 	WalkAnimationPlayRate=2.15f;
 	AttackDamage=22.f;
 	AttackCooldown=1.65f;

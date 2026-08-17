@@ -9,6 +9,11 @@
 ASpitterZombieCharacter::ASpitterZombieCharacter()
 {
 	GetCharacterMovement()->MaxWalkSpeed=250.f;
+	GetMesh()->SetRelativeScale3D(FVector(1.03f));
+	bUseVisualVariant=true;
+	VariantBodyColor=FLinearColor(.58f,1.f,.34f,1.f);
+	VariantPantsColor=FLinearColor(.32f,.62f,.22f,1.f);
+	VariantTopColor=FLinearColor(.46f,.86f,.28f,1.f);
 	AttackRange=1250.f;
 	AttackCooldown=3.2f;
 	AttackHitDelay=.62f;

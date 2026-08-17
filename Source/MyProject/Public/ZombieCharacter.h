@@ -8,6 +8,7 @@ class UAnimSequence;
 class UAnimationAsset;
 class UHealthArmorComponent;
 class UNavigationInvokerComponent;
+class UMaterialInterface;
 
 UCLASS(Blueprintable)
 class MYPROJECT_API AZombieCharacter : public ACharacter
@@ -42,6 +43,10 @@ public:
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation") float StartWalkingSpeed=28.f;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation") float StopWalkingSpeed=8.f;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation") float LocomotionSmoothingSpeed=7.f;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Visual Variant") bool bUseVisualVariant=false;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Visual Variant") FLinearColor VariantBodyColor=FLinearColor(.42f,.38f,.3f,1.f);
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Visual Variant") FLinearColor VariantPantsColor=FLinearColor(.08f,.06f,.04f,1.f);
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Visual Variant") FLinearColor VariantTopColor=FLinearColor(.32f,.3f,.25f,1.f);
 
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Damage") float HeadDetachImpulse=35000.f;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Damage",meta=(ClampMin="1.0")) float MaxCombatHealth=100.f;
@@ -63,6 +68,8 @@ private:
 	UPROPERTY(Replicated) bool bIsDead=false;
 	UPROPERTY(ReplicatedUsing=OnRep_IsAttacking) bool bIsAttacking=false;
 	UPROPERTY(Transient) UAnimationAsset* CurrentAnimation=nullptr;
+	UPROPERTY() UMaterialInterface* VisualVariantBodyMaterial=nullptr;
+	UPROPERTY() UMaterialInterface* VisualVariantClothesMaterial=nullptr;
 	bool bLocomotionMoving=false;
 	float SmoothedLocomotionSpeed=0.f;
 	FTimerHandle AttackHitTimer;
@@ -72,6 +79,7 @@ private:
 	static bool IsLimbBone(FName BoneName);
 	FName ResolveHeadBone(FName PreferredBone)const;
 	void UpdateLocomotionAnimation();
+	void ApplyVisualVariant();
 	void PlayZombieAnimation(UAnimationAsset* Animation,bool bLooping,float PlayRate);
 	void FinishAttack();
 	void Die(bool bHeadshot,FName HitBone,const FVector& ShotDirection,const FVector& HitLocation);

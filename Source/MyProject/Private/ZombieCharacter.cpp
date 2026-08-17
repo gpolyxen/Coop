@@ -11,6 +11,8 @@
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/SkeletalMesh.h"
+#include "Materials/MaterialInstanceDynamic.h"
+#include "Materials/MaterialInterface.h"
 #include "Engine/World.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "NavigationInvokerComponent.h"
@@ -49,6 +51,12 @@ AZombieCharacter::AZombieCharacter()
 		GetMesh()->SetRelativeLocation(FVector(0.f,0.f,-90.f));
 		GetMesh()->SetRelativeRotation(FRotator(0.f,-90.f,0.f));
 	}
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> VariantBodyMaterial(
+		TEXT("/Game/ThirdPersonBP/Bot/VariantMaterials/M_ZombieVariant_Body.M_ZombieVariant_Body"));
+	if(VariantBodyMaterial.Succeeded())VisualVariantBodyMaterial=VariantBodyMaterial.Object;
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> VariantClothesMaterial(
+		TEXT("/Game/ThirdPersonBP/Bot/VariantMaterials/M_ZombieVariant_Clothes.M_ZombieVariant_Clothes"));
+	if(VariantClothesMaterial.Succeeded())VisualVariantClothesMaterial=VariantClothesMaterial.Object;
 	static ConstructorHelpers::FObjectFinder<UAnimSequence> IdleAsset(TEXT("/Game/ThirdPersonBP/Bot/bot_animations/Zombie_Idle_Anim.Zombie_Idle_Anim"));
 	if(IdleAsset.Succeeded())IdleAnimation=IdleAsset.Object;
 	static ConstructorHelpers::FObjectFinder<UAnimSequence> WalkAsset(TEXT("/Game/ThirdPersonBP/Bot/bot_animations/Zombie_Walk__1__Anim.Zombie_Walk__1__Anim"));
@@ -66,7 +74,23 @@ void AZombieCharacter::BeginPlay()
 		if(NavigationInvoker)NavigationInvoker->RegisterWithNavigationSystem(*Navigation);
 	UE_LOG(LogTemp,Display,TEXT("Zombie %s began play; authority=%s controller=%s"),
 		*GetName(),HasAuthority()?TEXT("true"):TEXT("false"),*GetNameSafe(Controller));
+	ApplyVisualVariant();
 	UpdateLocomotionAnimation();
+}
+
+void AZombieCharacter::ApplyVisualVariant()
+{
+	if(!bUseVisualVariant||!GetMesh()||!VisualVariantBodyMaterial||!VisualVariantClothesMaterial)return;
+	const FLinearColor Colors[]={VariantBodyColor,VariantPantsColor,VariantTopColor};
+	const int32 MaterialCount=FMath::Min(GetMesh()->GetNumMaterials(),3);
+	for(int32 Slot=0;Slot<MaterialCount;++Slot)
+	{
+		UMaterialInterface* ParentMaterial=Slot==0?VisualVariantBodyMaterial:VisualVariantClothesMaterial;
+		if(UMaterialInstanceDynamic* Material=GetMesh()->CreateDynamicMaterialInstance(Slot,ParentMaterial))
+		{
+			Material->SetVectorParameterValue(TEXT("TintColor"),Colors[Slot]);
+		}
+	}
 }
 
 void AZombieCharacter::Tick(float DeltaSeconds)

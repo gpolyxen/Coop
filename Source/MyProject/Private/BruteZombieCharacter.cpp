@@ -10,6 +10,10 @@ ABruteZombieCharacter::ABruteZombieCharacter()
 	GetCapsuleComponent()->SetCapsuleSize(58.f,125.f);
 	GetMesh()->SetRelativeLocation(FVector(0.f,0.f,-125.f));
 	GetMesh()->SetRelativeScale3D(FVector(1.4f));
+	bUseVisualVariant=true;
+	VariantBodyColor=FLinearColor(.55f,.68f,1.f,1.f);
+	VariantPantsColor=FLinearColor(.3f,.38f,.62f,1.f);
+	VariantTopColor=FLinearColor(.48f,.58f,.86f,1.f);
 	GetCharacterMovement()->MaxWalkSpeed=225.f;
 	GetCharacterMovement()->RotationRate=FRotator(0.f,180.f,0.f);
 	WalkAnimationPlayRate=1.05f;
