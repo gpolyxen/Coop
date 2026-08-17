@@ -3,10 +3,15 @@
 #include "Components/SceneComponent.h"
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/PointLightComponent.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
+#include "OpenWorldStreamingManager.h"
 #include "Net/UnrealNetwork.h"
 #include "UObject/ConstructorHelpers.h"
 #include "EngineUtils.h"
+#include "NavigationSystem.h"
+#include "NavLinkComponent.h"
 
 ABuildableStructure::ABuildableStructure()
 {
@@ -97,7 +102,7 @@ AWoodGate::AWoodGate()
 	DoorPieces->AddInstance(FTransform(FRotator(-32.f,0,0),FVector(0,0,105),FVector(.22f,2.75f,.13f)));
 }
 bool AWoodGate::TryToggle(AActor* User){if(!HasAuthority()||!User||FVector::DistSquared(User->GetActorLocation(),GetActorLocation())>FMath::Square(350.f))return false;bOpen=!bOpen;OnRep_Open();return true;}
-void AWoodGate::OnRep_Open(){if(DoorPieces){DoorPieces->SetRelativeRotation(bOpen?FRotator(0,90,0):FRotator::ZeroRotator);DoorPieces->SetCollisionEnabled(bOpen?ECollisionEnabled::NoCollision:ECollisionEnabled::QueryAndPhysics);}}
+void AWoodGate::OnRep_Open(){if(DoorPieces){DoorPieces->SetRelativeRotation(bOpen?FRotator(0,90,0):FRotator::ZeroRotator);DoorPieces->SetCollisionEnabled(bOpen?ECollisionEnabled::NoCollision:ECollisionEnabled::QueryAndPhysics);UNavigationSystemV1::UpdateComponentInNavOctree(*DoorPieces);}}
 void AWoodGate::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps)const{Super::GetLifetimeReplicatedProps(OutLifetimeProps);DOREPLIFETIME(AWoodGate,bOpen);}
 
 AWoodFloor::AWoodFloor()
@@ -165,6 +170,12 @@ AWoodStairs::AWoodStairs()
 	Pieces=CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("StairPieces"));Pieces->SetupAttachment(SceneRoot);
 	if(CubeAsset.Succeeded())Pieces->SetStaticMesh(CubeAsset.Object);if(WoodAsset.Succeeded())Pieces->SetMaterial(0,WoodAsset.Object);Pieces->SetCollisionProfileName(TEXT("BlockAll"));
 	for(int32 Step=0;Step<10;++Step)Pieces->AddInstance(FTransform(FRotator::ZeroRotator,FVector(0.f,-135.f+Step*30.f,11.f+Step*22.f),FVector(1.8f,.3f,.22f)));
+	// A physical hidden ramp blocks the player's capsule.  A navigation link gives
+	// Recast the same bottom-to-top connection without adding collision to stairs.
+	NavigationLink=CreateDefaultSubobject<UNavLinkComponent>(TEXT("StairNavigationLink"));NavigationLink->SetupAttachment(SceneRoot);
+	FNavigationLink StairLink(FVector(0.f,-150.f,15.f),FVector(0.f,150.f,220.f));
+	StairLink.Direction=ENavLinkDirection::BothWays;StairLink.SnapRadius=120.f;StairLink.bUseSnapHeight=true;StairLink.SnapHeight=180.f;
+	NavigationLink->Links.Add(StairLink);
 }
 void AWoodStairs::GetSnapPoints(TArray<FVector>& OutPoints)const
 {
@@ -181,4 +192,53 @@ AWoodPillar::AWoodPillar()
 	Piece=CreateDefaultSubobject<UStaticMeshComponent>(TEXT("PillarPiece"));Piece->SetupAttachment(SceneRoot);
 	if(CubeAsset.Succeeded())Piece->SetStaticMesh(CubeAsset.Object);if(WoodAsset.Succeeded())Piece->SetMaterial(0,WoodAsset.Object);
 	Piece->SetCollisionProfileName(TEXT("BlockAll"));Piece->SetRelativeLocation(FVector(0.f,0.f,110.f));Piece->SetRelativeScale3D(FVector(.28f,.28f,2.2f));
+}
+
+AWallTorch::AWallTorch()
+{
+	MaxStructureHealth=80.f;StructureHealth=80.f;HalfModuleLength=0.f;bNeedsFoundationSupport=true;
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> Cylinder(TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> Cube(TEXT("/Engine/BasicShapes/Cube.Cube"));
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> Sphere(TEXT("/Engine/BasicShapes/Sphere.Sphere"));
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> BasicMaterial(TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
+	Pole=CreateDefaultSubobject<UStaticMeshComponent>(TEXT("TorchPole"));Pole->SetupAttachment(SceneRoot);
+	if(Cylinder.Succeeded())Pole->SetStaticMesh(Cylinder.Object);if(BasicMaterial.Succeeded())Pole->SetMaterial(0,BasicMaterial.Object);
+	Pole->SetRelativeLocation(FVector(0.f,0.f,-24.f));Pole->SetRelativeScale3D(FVector(.055f,.055f,.72f));Pole->SetCollisionProfileName(TEXT("BlockAll"));
+	Bracket=CreateDefaultSubobject<UStaticMeshComponent>(TEXT("WallBracket"));Bracket->SetupAttachment(SceneRoot);
+	if(Cube.Succeeded())Bracket->SetStaticMesh(Cube.Object);if(BasicMaterial.Succeeded())Bracket->SetMaterial(0,BasicMaterial.Object);
+	Bracket->SetRelativeLocation(FVector(-18.f,0.f,-45.f));Bracket->SetRelativeScale3D(FVector(.36f,.07f,.07f));Bracket->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	Flame=CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Flame"));Flame->SetupAttachment(SceneRoot);
+	if(Sphere.Succeeded())Flame->SetStaticMesh(Sphere.Object);if(BasicMaterial.Succeeded())Flame->SetMaterial(0,BasicMaterial.Object);
+	Flame->SetRelativeLocation(FVector(0.f,0.f,52.f));Flame->SetRelativeScale3D(FVector(.12f,.12f,.2f));Flame->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	TorchLight=CreateDefaultSubobject<UPointLightComponent>(TEXT("TorchLight"));TorchLight->SetupAttachment(SceneRoot);
+	TorchLight->SetRelativeLocation(FVector(12.f,0.f,58.f));TorchLight->SetLightColor(FLinearColor(1.f,.32f,.055f));TorchLight->SetIntensity(5600.f);TorchLight->SetAttenuationRadius(1250.f);TorchLight->SetCastShadows(false);Flame->SetCastShadow(false);
+}
+
+void AWallTorch::BeginPlay()
+{
+	Super::BeginPlay();
+	auto Tint=[](UStaticMeshComponent* Component,const FLinearColor& Color){if(UMaterialInstanceDynamic* Material=Component?Component->CreateAndSetMaterialInstanceDynamic(0):nullptr)Material->SetVectorParameterValue(TEXT("Color"),Color);};
+	Tint(Pole,FLinearColor(.12f,.035f,.008f));Tint(Bracket,FLinearColor(.08f,.025f,.006f));Tint(Flame,FLinearColor(1.f,.08f,.005f));
+	UpdateTorchLight();
+}
+
+void AWallTorch::Tick(float DeltaSeconds){Super::Tick(DeltaSeconds);UpdateTorchLight();}
+
+void AWallTorch::UpdateTorchLight()
+{
+	const bool bLit=!bConstructionPreview&&!bCollapsing;
+	if(TorchLight){TorchLight->SetVisibility(bLit,true);if(bLit&&GetWorld())TorchLight->SetIntensity(5300.f+FMath::Sin(GetWorld()->GetTimeSeconds()*8.7f)*300.f);}
+	if(Flame)Flame->SetVisibility(bLit,true);
+}
+
+bool AWallTorch::HasStructuralSupport()const
+{
+	if(!GetWorld())return false;
+	for(TActorIterator<ABuildableStructure> It(GetWorld());It;++It)
+	{
+		if(It->IsConstructionPreview()||It->IsCollapsing()||!(It->IsA<AWoodWall>()||It->IsA<AWoodGate>()))continue;
+		const FVector Local=It->GetActorTransform().InverseTransformPosition(GetActorLocation());
+		if(FMath::Abs(Local.X)<=75.f&&FMath::Abs(Local.Y)<=175.f&&Local.Z>=-20.f&&Local.Z<=250.f)return true;
+	}
+	return false;
 }

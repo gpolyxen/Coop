@@ -6,6 +6,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "Components/TextRenderComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "Net/UnrealNetwork.h"
 #include "Materials/MaterialInterface.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -67,6 +68,16 @@ ALootBagPickup::ALootBagPickup()
 void ALootBagPickup::BeginPlay()
 {
 	Super::BeginPlay();
+	if(HasAuthority())
+	{
+		RemainingWood=FMath::RandRange(MinWood,MaxWood);
+		RemainingRope=FMath::RandRange(MinRope,MaxRope);
+		RemainingMedicine=FMath::FRand()<=MedicineChance?1:0;
+		RemainingBandages=FMath::FRand()<=BandageChance?FMath::RandRange(1,FMath::Max(1,MaxBandages)):0;
+		RemainingLeather=FMath::FRand()<=LeatherChance?FMath::RandRange(1,FMath::Max(1,MaxLeather)):0;
+		RemainingCloth=FMath::FRand()<=ClothChance?FMath::RandRange(1,FMath::Max(1,MaxCloth)):0;
+		RemainingGasoline=FMath::FRand()<=GasolineChance?1:0;
+	}
 	auto Tint=[this](UStaticMeshComponent* Component,const FLinearColor& Color)
 	{
 		if(!Component)return;
@@ -86,22 +97,25 @@ bool ALootBagPickup::TryPickup(APawn* Pawn)
 	if(FVector::DistSquared(Pawn->GetActorLocation(),GetActorLocation())>FMath::Square(PickupDistance))return false;
 	UInventoryComponent* Inventory=Pawn->FindComponentByClass<UInventoryComponent>();
 	if(!Inventory)return false;
-	const int32 Wood=FMath::RandRange(MinWood,MaxWood);
-	const int32 Rope=FMath::RandRange(MinRope,MaxRope);
-	if(!Inventory->CanAddItems(TEXT("Wood"),Wood,TEXT("Rope"),Rope))return false;
-	Inventory->AddItem(TEXT("Wood"),Wood);
-	Inventory->AddItem(TEXT("Rope"),Rope);
-	const int32 Medicine=FMath::FRand()<=MedicineChance?1:0;
-	const int32 Bandages=FMath::FRand()<=BandageChance?FMath::RandRange(1,FMath::Max(1,MaxBandages)):0;
-	const int32 Leather=FMath::FRand()<=LeatherChance?FMath::RandRange(1,FMath::Max(1,MaxLeather)):0;
-	int32 AddedMedicine=0,AddedBandages=0,AddedLeather=0;
-	if(Inventory->CanAddItems(TEXT("Medicine"),Medicine,TEXT("Bandage"),Bandages))
+	auto Take=[Inventory](FName Id,int32& Remaining){const int32 Added=Inventory->AddItemPartial(Id,Remaining);Remaining-=Added;return Added;};
+	const int32 AddedWood=Take(TEXT("Wood"),RemainingWood),AddedRope=Take(TEXT("Rope"),RemainingRope);
+	const int32 AddedMedicine=Take(TEXT("Medicine"),RemainingMedicine),AddedBandages=Take(TEXT("Bandage"),RemainingBandages);
+	const int32 AddedLeather=Take(TEXT("Leather"),RemainingLeather),AddedCloth=Take(TEXT("Cloth"),RemainingCloth),AddedGasoline=Take(TEXT("Gasoline"),RemainingGasoline);
+	const int32 TotalAdded=AddedWood+AddedRope+AddedMedicine+AddedBandages+AddedLeather+AddedCloth+AddedGasoline;
+	if(AShooterCharacter* Shooter=Cast<AShooterCharacter>(Pawn))
 	{
-		if(Medicine>0&&Inventory->AddItem(TEXT("Medicine"),Medicine))AddedMedicine=Medicine;
-		if(Bandages>0&&Inventory->AddItem(TEXT("Bandage"),Bandages))AddedBandages=Bandages;
+		FString Message=TotalAdded>0?FString::Printf(TEXT("ВЗЯТО: ПАЛКИ +%d, ВЕРЕВКИ +%d"),AddedWood,AddedRope):TEXT("ИНВЕНТАРЬ ЗАПОЛНЕН — СОДЕРЖИМОЕ ОСТАЛОСЬ В МЕШКЕ");
+		if(AddedMedicine)Message+=TEXT(", МЕДИКАМЕНТ +1");if(AddedBandages)Message+=FString::Printf(TEXT(", БИНТЫ +%d"),AddedBandages);if(AddedLeather)Message+=FString::Printf(TEXT(", КОЖА +%d"),AddedLeather);if(AddedCloth)Message+=FString::Printf(TEXT(", ТКАНЬ +%d"),AddedCloth);if(AddedGasoline)Message+=TEXT(", БЕНЗИН +1");
+		Shooter->ShowLocalNotification(Message);
 	}
-	if(Leather>0&&Inventory->CanAddItems(TEXT("Leather"),Leather,NAME_None,0)&&Inventory->AddItem(TEXT("Leather"),Leather))AddedLeather=Leather;
-	if(AShooterCharacter* Shooter=Cast<AShooterCharacter>(Pawn))Shooter->ShowLocalNotification(FString::Printf(TEXT("НАЙДЕНО: ПАЛКИ +%d, ВЕРЕВКИ +%d%s%s%s"),Wood,Rope,AddedMedicine?TEXT(", МЕДИКАМЕНТ +1"):TEXT(""),AddedBandages?*FString::Printf(TEXT(", БИНТЫ +%d"),AddedBandages):TEXT(""),AddedLeather?*FString::Printf(TEXT(", КОЖА +%d"),AddedLeather):TEXT("")));
-	Destroy();
-	return true;
+	const bool bEmpty=RemainingWood+RemainingRope+RemainingMedicine+RemainingBandages+RemainingLeather+RemainingCloth+RemainingGasoline<=0;
+	if(bEmpty)Destroy();else ForceNetUpdate();
+	return TotalAdded>0;
+}
+
+void ALootBagPickup::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps)const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+	DOREPLIFETIME(ALootBagPickup,RemainingWood);DOREPLIFETIME(ALootBagPickup,RemainingRope);DOREPLIFETIME(ALootBagPickup,RemainingMedicine);
+	DOREPLIFETIME(ALootBagPickup,RemainingBandages);DOREPLIFETIME(ALootBagPickup,RemainingLeather);DOREPLIFETIME(ALootBagPickup,RemainingCloth);DOREPLIFETIME(ALootBagPickup,RemainingGasoline);
 }

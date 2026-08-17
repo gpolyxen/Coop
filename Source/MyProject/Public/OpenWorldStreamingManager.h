@@ -20,12 +20,20 @@ public:
 	AOpenWorldStreamingManager();
 	virtual void BeginPlay()override;
 	virtual void Tick(float DeltaSeconds)override;
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps)const override;
 	void PrepareStartingTile(const FVector& AbsoluteLocation);
+	UFUNCTION(BlueprintPure,Category="Time Of Day")bool IsNightTime()const{return bIsNight;}
+	UFUNCTION(BlueprintPure,Category="Time Of Day")float GetTimeHours()const{return CurrentTimeHours;}
+	UFUNCTION(BlueprintPure,Category="Time Of Day")FText GetTimePeriodName()const;
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly)USceneComponent* SceneRoot;
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly,Category="Environment")UDirectionalLightComponent* Sun;
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly,Category="Environment")USkyAtmosphereComponent* Atmosphere;
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly,Category="Environment")USkyLightComponent* SkyLight;
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly,Category="Environment")UExponentialHeightFogComponent* HeightFog;
+	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="Time Of Day",meta=(ClampMin="60.0"))float RealSecondsPerGameDay=1440.f;
+	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="Time Of Day",meta=(ClampMin="0.0",ClampMax="24.0"))float StartingTimeHours=8.f;
+	UPROPERTY(ReplicatedUsing=OnRep_TimeOfDay,VisibleAnywhere,BlueprintReadOnly,Category="Time Of Day")float CurrentTimeHours=8.f;
+	UPROPERTY(ReplicatedUsing=OnRep_TimeOfDay,VisibleAnywhere,BlueprintReadOnly,Category="Time Of Day")bool bIsNight=false;
 
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Open World")FString TileLevelPackage=TEXT("/Game/OpenWorld/Tiles/OpenWorldTile");
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Open World",meta=(ClampMin="1000.0"))float TileSize=20000.f;
@@ -49,4 +57,6 @@ private:
 	FIntPoint LocationToTile(const FVector& AbsoluteLocation)const;
 	FVector TileToLocalLocation(const FIntPoint& Coordinate)const;
 	FString MakeInstanceName(const FIntPoint& Coordinate)const;
+	void ApplyTimeOfDay();
+	UFUNCTION()void OnRep_TimeOfDay();
 };

@@ -3,6 +3,7 @@
 #include "HealthArmorComponent.h"
 #include "WeaponBase.h"
 #include "ZombieSpawnManager.h"
+#include "OpenWorldStreamingManager.h"
 #include "EngineUtils.h"
 #include "Engine/Canvas.h"
 #include "Engine/Engine.h"
@@ -15,6 +16,14 @@ void AShooterHUD::DrawHUD()
 	if(!C)return;
 
 	const float CenterX=Canvas->ClipX*.5f,CenterY=Canvas->ClipY*.5f;
+	for(TActorIterator<AOpenWorldStreamingManager> It(GetWorld());It;++It)
+	{
+		const float Hours=It->GetTimeHours();const int32 Hour=FMath::FloorToInt(Hours)%24;const int32 Minute=FMath::FloorToInt((Hours-Hour)*60.f)%60;
+		const FLinearColor TimeColor=It->IsNightTime()?FLinearColor(.45f,.62f,1.f):FLinearColor(1.f,.82f,.3f);
+		DrawText(FString::Printf(TEXT("%02d:%02d  %s"),Hour,Minute,*It->GetTimePeriodName().ToString()),TimeColor,Canvas->ClipX-255.f,25.f,GEngine->GetMediumFont(),1.05f,false);
+		if(It->IsNightTime())DrawText(TEXT("НОЧЬ: ЗОМБИ УСИЛЕНЫ"),FLinearColor(1.f,.18f,.12f),Canvas->ClipX-285.f,53.f,GEngine->GetSmallFont(),.95f,false);
+		break;
+	}
 	for(TActorIterator<AZombieSpawnManager> It(GetWorld());It;++It)
 	{
 		const float Remaining=It->GetPreparationRemaining();

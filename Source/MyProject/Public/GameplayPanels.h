@@ -104,9 +104,9 @@ protected:
 	virtual void NativeOnInitialized()override;
 	virtual FReply NativeOnKeyDown(const FGeometry& InGeometry,const FKeyEvent& InKeyEvent)override;
 private:
-	void ShowCategories();void ShowFurniture();void ShowDefense();void SelectBuildPiece(EBuildPieceType Type);
-	UFUNCTION()void FurnitureClicked();UFUNCTION()void DefenseClicked();UFUNCTION()void BackClicked();
-	UFUNCTION()void BedClicked();UFUNCTION()void ChestClicked();UFUNCTION()void WallClicked();UFUNCTION()void GateClicked();UFUNCTION()void FloorClicked();UFUNCTION()void StairsClicked();UFUNCTION()void PillarClicked();UFUNCTION()void CloseClicked();
+	void ShowCategories();void ShowFurniture();void ShowDefense();void ShowLighting();void SelectBuildPiece(EBuildPieceType Type);
+	UFUNCTION()void FurnitureClicked();UFUNCTION()void DefenseClicked();UFUNCTION()void LightingClicked();UFUNCTION()void BackClicked();
+	UFUNCTION()void BedClicked();UFUNCTION()void ChestClicked();UFUNCTION()void WallClicked();UFUNCTION()void GateClicked();UFUNCTION()void FloorClicked();UFUNCTION()void StairsClicked();UFUNCTION()void PillarClicked();UFUNCTION()void TorchClicked();UFUNCTION()void CloseClicked();
 	UPROPERTY()UVerticalBox* Content=nullptr;
 };
 

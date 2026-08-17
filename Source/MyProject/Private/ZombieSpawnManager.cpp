@@ -7,6 +7,7 @@
 #include "SpitterZombieCharacter.h"
 #include "ShooterCharacter.h"
 #include "ZombieCharacter.h"
+#include "BuildableStructure.h"
 #include "NavigationInvokerComponent.h"
 #include "NavigationSystem.h"
 #include "EngineUtils.h"
@@ -58,11 +59,12 @@ int32 AZombieSpawnManager::GetHighestPlayerLevel()const
 
 bool AZombieSpawnManager::FindGroundedLocation(const FVector& Around,float MinDistance,float MaxDistance,FVector& OutLocation)const
 {
-	for(int32 Attempt=0;Attempt<12;++Attempt)
+	for(int32 Attempt=0;Attempt<24;++Attempt)
 	{
 		const float Angle=FMath::FRandRange(0.f,2.f*PI);
 		const float Distance=FMath::FRandRange(MinDistance,MaxDistance);
 		FVector Candidate=Around+FVector(FMath::Cos(Angle),FMath::Sin(Angle),0.f)*Distance;
+		if(IsNearPlayerConstruction(Candidate))continue;
 		FHitResult GroundHit;
 		FCollisionQueryParams Query(SCENE_QUERY_STAT(DynamicSpawnGround),false,this);
 		const FVector TraceStart=Candidate+FVector(0.f,0.f,2000.f);
@@ -72,6 +74,17 @@ bool AZombieSpawnManager::FindGroundedLocation(const FVector& Around,float MinDi
 			OutLocation=GroundHit.ImpactPoint;
 			return true;
 		}
+	}
+	return false;
+}
+
+bool AZombieSpawnManager::IsNearPlayerConstruction(const FVector& Location)const
+{
+	if(!GetWorld())return false;
+	for(TActorIterator<ABuildableStructure> It(GetWorld());It;++It)
+	{
+		if(It->IsConstructionPreview()||It->IsCollapsing()||It->IsA<AWallTorch>())continue;
+		if(FVector::DistSquared2D(Location,It->GetActorLocation())<FMath::Square(ConstructionExclusionRadius))return true;
 	}
 	return false;
 }

@@ -28,6 +28,7 @@ public:
 	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="Zombie Spawning",meta=(ClampMin="500"))float MaximumSpawnDistance=3000.f;
 	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="Supplies",meta=(ClampMin="100"))float MinimumSupplyDistance=350.f;
 	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="Supplies",meta=(ClampMin="300"))float MaximumSupplyDistance=1200.f;
+	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="Spawning",meta=(ClampMin="100"))float ConstructionExclusionRadius=550.f;
 	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="Ammunition",meta=(ClampMin="0.0",ClampMax="1.0"))float AmmoSpawnChance=.75f;
 	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="Ammunition",meta=(ClampMin="1"))int32 MaxAmmoPickups=6;
 	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="Ammunition",meta=(ClampMin="2.0"))float AmmoSpawnInterval=8.f;
@@ -43,6 +44,7 @@ private:
 	bool SpawnAmmunition();
 	bool SpawnHealth();
 	bool FindGroundedLocation(const FVector& Around,float MinDistance,float MaxDistance,FVector& OutLocation)const;
+	bool IsNearPlayerConstruction(const FVector& Location)const;
 	AShooterCharacter* FindPlayer()const;
 	int32 GetHighestPlayerLevel()const;
 	FTimerHandle ZombieTimer;

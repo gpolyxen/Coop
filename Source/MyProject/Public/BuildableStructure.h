@@ -7,6 +7,8 @@
 class USceneComponent;
 class UInstancedStaticMeshComponent;
 class UStaticMeshComponent;
+class UPointLightComponent;
+class UNavLinkComponent;
 
 UCLASS(Abstract,Blueprintable)
 class MYPROJECT_API ABuildableStructure : public AActor
@@ -24,6 +26,7 @@ public:
 	UPROPERTY(Replicated,VisibleAnywhere,BlueprintReadOnly,Category="Construction")float StructureHealth=350.f;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Construction")float HalfModuleLength=150.f;
 	void SetConstructionPreview(bool bPreview){bConstructionPreview=bPreview;}
+	bool IsConstructionPreview()const{return bConstructionPreview;}
 	bool IsCollapsing()const{return bCollapsing;}
 protected:
 	virtual bool HasStructuralSupport()const;
@@ -72,6 +75,7 @@ class MYPROJECT_API AWoodStairs : public ABuildableStructure
 	GENERATED_BODY()
 public:AWoodStairs();virtual void GetSnapPoints(TArray<FVector>& OutPoints)const override;
 	UPROPERTY(VisibleAnywhere)UInstancedStaticMeshComponent* Pieces;
+	UPROPERTY(VisibleAnywhere)UNavLinkComponent* NavigationLink;
 };
 
 UCLASS()
@@ -80,4 +84,20 @@ class MYPROJECT_API AWoodPillar : public ABuildableStructure
 	GENERATED_BODY()
 public:AWoodPillar();
 	UPROPERTY(VisibleAnywhere)UStaticMeshComponent* Piece;
+};
+
+UCLASS()
+class MYPROJECT_API AWallTorch : public ABuildableStructure
+{
+	GENERATED_BODY()
+public:
+	AWallTorch();
+	virtual void BeginPlay()override;
+	virtual void Tick(float DeltaSeconds)override;
+	UPROPERTY(VisibleAnywhere,BlueprintReadOnly)UStaticMeshComponent* Pole;
+	UPROPERTY(VisibleAnywhere,BlueprintReadOnly)UStaticMeshComponent* Bracket;
+	UPROPERTY(VisibleAnywhere,BlueprintReadOnly)UStaticMeshComponent* Flame;
+	UPROPERTY(VisibleAnywhere,BlueprintReadOnly)UPointLightComponent* TorchLight;
+protected:virtual bool HasStructuralSupport()const override;
+private:void UpdateTorchLight();
 };

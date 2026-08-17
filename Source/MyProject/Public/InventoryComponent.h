@@ -15,6 +15,7 @@ public:
 	UInventoryComponent();
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	UFUNCTION(BlueprintCallable) bool AddItem(FName ItemId, int32 Quantity);
+	UFUNCTION(BlueprintCallable) int32 AddItemPartial(FName ItemId, int32 RequestedQuantity);
 	UFUNCTION(BlueprintCallable) bool RemoveItem(FName ItemId, int32 Quantity);
 	UFUNCTION(BlueprintCallable) bool UpgradeCapacity(int32 NewMaxSlots);
 	UFUNCTION(BlueprintPure) int32 GetQuantity(FName ItemId) const;

@@ -20,6 +20,7 @@ protected:virtual void OnPossess(APawn* InPawn)override;
 	void SteerToward(const FVector& Destination);
 	bool TryJumpObstacle(const FVector& Destination);
 	bool TryStartDetour(const FVector& Destination);
+	bool TryAttackBlockingStructure(const FVector& Destination);
 	void ResetNavigationRecovery();
 	TWeakObjectPtr<AActor> Target;
 	FVector LastKnownLocation;

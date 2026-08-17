@@ -212,6 +212,8 @@ bool AZombieAIController::TryStartDetour(const FVector& Destination)
 	if(!Forward.Normalize())return false;
 	const FVector Right=FVector::CrossProduct(FVector::UpVector,Forward).GetSafeNormal();
 	const FVector Start=Zombie->GetActorLocation();
+	FNavLocation ProjectedDestination;
+	if(!Navigation->ProjectPointToNavigation(Destination,ProjectedDestination,FVector(220.f,220.f,350.f)))return false;
 	const float Side=DetourSearchRadius;
 	const float Ahead=DetourSearchRadius*.55f;
 	TArray<FVector> Candidates;
@@ -232,6 +234,8 @@ bool AZombieAIController::TryStartDetour(const FVector& Destination)
 		if(!Navigation->ProjectPointToNavigation(Candidate,Projected,FVector(180.f,180.f,300.f)))continue;
 		UNavigationPath* Path=UNavigationSystemV1::FindPathToLocationSynchronously(GetWorld(),Start,Projected.Location,Zombie);
 		if(!Path||!Path->IsValid()||Path->IsPartial())continue;
+		UNavigationPath* DestinationPath=UNavigationSystemV1::FindPathToLocationSynchronously(GetWorld(),Projected.Location,ProjectedDestination.Location,Zombie);
+		if(!DestinationPath||!DestinationPath->IsValid()||DestinationPath->IsPartial())continue;
 		const float Score=FVector::DistSquared2D(Projected.Location,Destination)+FVector::DistSquared2D(Projected.Location,Start)*.2f;
 		if(Score<BestScore)
 		{
@@ -250,6 +254,32 @@ bool AZombieAIController::TryStartDetour(const FVector& Destination)
 	NextPathRefreshTime=DetourExpireTime;
 	UE_LOG(LogTemp,Display,TEXT("Zombie %s uses a NavMesh detour"),*GetNameSafe(Zombie));
 	return true;
+}
+
+bool AZombieAIController::TryAttackBlockingStructure(const FVector& Destination)
+{
+	AZombieCharacter* Zombie=Cast<AZombieCharacter>(GetPawn());
+	if(!Zombie||!GetWorld()||GetWorld()->GetTimeSeconds()-LastChaseProgressTime<StuckRecoveryDelay*1.5f)return false;
+	if(UNavigationSystemV1* Navigation=UNavigationSystemV1::GetCurrent(GetWorld()))
+	{
+		FNavLocation ProjectedDestination;
+		if(Navigation->ProjectPointToNavigation(Destination,ProjectedDestination,FVector(220.f,220.f,350.f)))
+			if(UNavigationPath* Path=UNavigationSystemV1::FindPathToLocationSynchronously(GetWorld(),Zombie->GetActorLocation(),ProjectedDestination.Location,Zombie))
+				if(Path->IsValid()&&!Path->IsPartial())return false;
+	}
+	FVector Direction=Destination-Zombie->GetActorLocation();Direction.Z=0.f;if(!Direction.Normalize())return false;
+	const FVector Start=Zombie->GetActorLocation()+FVector(0.f,0.f,60.f),End=Start+Direction*FMath::Max(100.f,Zombie->AttackRange+25.f);
+	FCollisionQueryParams Query(SCENE_QUERY_STAT(ZombieBlockingStructure),false,Zombie);if(Target.IsValid())Query.AddIgnoredActor(Target.Get());
+	TArray<FHitResult> Hits;
+	if(!GetWorld()->SweepMultiByChannel(Hits,Start,End,FQuat::Identity,ECC_WorldStatic,FCollisionShape::MakeSphere(38.f),Query))return false;
+	for(const FHitResult& Hit:Hits)
+	{
+		ABuildableStructure* Structure=Cast<ABuildableStructure>(Hit.GetActor());
+		if(!Structure||Structure->IsCollapsing()||Structure->IsA<AWoodStairs>()||Structure->IsA<AWoodFloor>()||Structure->IsA<AWallTorch>())continue;
+		StopMovement();
+		return Zombie->TryAttack(Structure);
+	}
+	return false;
 }
 
 void AZombieAIController::SteerToward(const FVector& Destination)
@@ -367,11 +397,6 @@ void AZombieAIController::Tick(float DeltaSeconds)
 		else
 		{
 			const float Distance=FVector::Dist(Zombie->GetActorLocation(),Target->GetActorLocation());
-			FHitResult StructureHit;FCollisionQueryParams StructureQuery(SCENE_QUERY_STAT(ZombieStructureBlock),false,Zombie);StructureQuery.AddIgnoredActor(Target.Get());
-			const FVector StructureStart=Zombie->GetActorLocation()+FVector(0,0,55);const FVector StructureDirection=(Target->GetActorLocation()-Zombie->GetActorLocation()).GetSafeNormal2D();
-			const FVector StructureEnd=StructureStart+StructureDirection*FMath::Max(80.f,Zombie->AttackRange-5.f);
-			if(GetWorld()->SweepSingleByChannel(StructureHit,StructureStart,StructureEnd,FQuat::Identity,ECC_WorldStatic,FCollisionShape::MakeSphere(35.f),StructureQuery))
-				if(ABuildableStructure* Structure=Cast<ABuildableStructure>(StructureHit.GetActor())){StopMovement();Zombie->TryAttack(Structure);return;}
 			if(FVector::DistSquared2D(Zombie->GetActorLocation(),LastChaseProgressLocation)>FMath::Square(25.f))
 			{
 				LastChaseProgressLocation=Zombie->GetActorLocation();
@@ -410,6 +435,7 @@ void AZombieAIController::Tick(float DeltaSeconds)
 				if(Now-LastChaseProgressTime>=StuckRecoveryDelay)
 				{
 					if(TryStartDetour(Destination))return;
+					if(TryAttackBlockingStructure(Destination))return;
 					LastChaseProgressLocation=Zombie->GetActorLocation();
 					LastChaseProgressTime=Now;
 					StopMovement();
@@ -426,6 +452,7 @@ void AZombieAIController::Tick(float DeltaSeconds)
 					NextPathRefreshTime=Now+PathRefreshInterval;
 					if(MoveResult==EPathFollowingRequestResult::Failed&&!TryStartDetour(Destination))
 					{
+						if(TryAttackBlockingStructure(Destination))return;
 						ForceSteeringUntil=Now+StuckRecoveryDelay;
 						SteerToward(Destination);
 					}

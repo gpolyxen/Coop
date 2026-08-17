@@ -42,6 +42,17 @@ bool UInventoryComponent::AddItem(FName Id, int32 Quantity)
 	OnInventoryChanged.Broadcast();
 	return true;
 }
+int32 UInventoryComponent::AddItemPartial(FName Id,int32 RequestedQuantity)
+{
+	if(!GetOwner()->HasAuthority()||RequestedQuantity<=0||Id.IsNone())return 0;
+	int32 Low=0,High=RequestedQuantity;
+	while(Low<High)
+	{
+		const int32 Middle=Low+(High-Low+1)/2;
+		if(CanAddItems(Id,Middle,NAME_None,0))Low=Middle;else High=Middle-1;
+	}
+	return Low>0&&AddItem(Id,Low)?Low:0;
+}
 bool UInventoryComponent::RemoveItem(FName Id,int32 Quantity){if(!GetOwner()->HasAuthority()||Quantity<=0||GetQuantity(Id)<Quantity)return false;for(int32 i=Items.Num()-1;i>=0&&Quantity>0;--i)if(Items[i].ItemId==Id){const int32 Removed=FMath::Min(Quantity,Items[i].Quantity);Items[i].Quantity-=Removed;Quantity-=Removed;if(Items[i].Quantity==0)Items.RemoveAt(i);}OnInventoryChanged.Broadcast();return true;}
 bool UInventoryComponent::UpgradeCapacity(int32 NewMaxSlots){if(!GetOwner()->HasAuthority()||NewMaxSlots<=MaxSlots)return false;MaxSlots=FMath::Clamp(NewMaxSlots,6,20);OnInventoryChanged.Broadcast();return true;}
 void UInventoryComponent::OnRep_Items(){OnInventoryChanged.Broadcast();}

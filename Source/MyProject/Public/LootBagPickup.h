@@ -12,6 +12,7 @@ public:
 	ALootBagPickup();
 	virtual void BeginPlay() override;
 	virtual bool TryPickup(APawn* Pawn) override;
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps)const override;
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly,Category="Loot") UStaticMeshComponent* BagTop;
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly,Category="Loot") UStaticMeshComponent* RopeTie;
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly,Category="Loot") UStaticMeshComponent* StickA;
@@ -26,4 +27,14 @@ public:
 	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category="Loot") int32 MaxBandages=2;
 	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category="Loot",meta=(ClampMin="0.0",ClampMax="1.0")) float LeatherChance=.42f;
 	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category="Loot") int32 MaxLeather=2;
+	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category="Loot",meta=(ClampMin="0.0",ClampMax="1.0")) float ClothChance=.38f;
+	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category="Loot") int32 MaxCloth=2;
+	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category="Loot",meta=(ClampMin="0.0",ClampMax="1.0")) float GasolineChance=.18f;
+	UPROPERTY(Replicated,VisibleAnywhere,BlueprintReadOnly,Category="Loot")int32 RemainingWood=0;
+	UPROPERTY(Replicated,VisibleAnywhere,BlueprintReadOnly,Category="Loot")int32 RemainingRope=0;
+	UPROPERTY(Replicated,VisibleAnywhere,BlueprintReadOnly,Category="Loot")int32 RemainingMedicine=0;
+	UPROPERTY(Replicated,VisibleAnywhere,BlueprintReadOnly,Category="Loot")int32 RemainingBandages=0;
+	UPROPERTY(Replicated,VisibleAnywhere,BlueprintReadOnly,Category="Loot")int32 RemainingLeather=0;
+	UPROPERTY(Replicated,VisibleAnywhere,BlueprintReadOnly,Category="Loot")int32 RemainingCloth=0;
+	UPROPERTY(Replicated,VisibleAnywhere,BlueprintReadOnly,Category="Loot")int32 RemainingGasoline=0;
 };

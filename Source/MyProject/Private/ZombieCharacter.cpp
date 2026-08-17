@@ -7,6 +7,7 @@
 #include "BuildableStructure.h"
 #include "ShooterCharacter.h"
 #include "HealthArmorComponent.h"
+#include "OpenWorldStreamingManager.h"
 #include "Animation/AnimSequence.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -14,6 +15,7 @@
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "NavigationInvokerComponent.h"
 #include "NavigationSystem.h"
@@ -68,6 +70,11 @@ AZombieCharacter::AZombieCharacter()
 void AZombieCharacter::BeginPlay()
 {
 	Super::BeginPlay();
+	BaseMaxCombatHealth=MaxCombatHealth;
+	BaseAttackDamage=AttackDamage;
+	BaseWalkSpeed=GetCharacterMovement()->MaxWalkSpeed;
+	BaseWalkAnimationPlayRate=WalkAnimationPlayRate;
+	BaseComponentMaxHealth=Health?Health->MaxHealth:1000.f;
 	if(HasAuthority())CombatHealth=MaxCombatHealth;
 	if(HasAuthority()&&!Controller)SpawnDefaultController();
 	if(UNavigationSystemV1* Navigation=UNavigationSystemV1::GetCurrent(GetWorld()))
@@ -75,6 +82,7 @@ void AZombieCharacter::BeginPlay()
 	UE_LOG(LogTemp,Display,TEXT("Zombie %s began play; authority=%s controller=%s"),
 		*GetName(),HasAuthority()?TEXT("true"):TEXT("false"),*GetNameSafe(Controller));
 	ApplyVisualVariant();
+	UpdateNightEmpowerment();
 	UpdateLocomotionAnimation();
 }
 
@@ -97,6 +105,7 @@ void AZombieCharacter::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 	if(bIsDead)return;
+	if(GetWorld()&&GetWorld()->GetTimeSeconds()>=NextNightStateCheck){NextNightStateCheck=GetWorld()->GetTimeSeconds()+1.f;UpdateNightEmpowerment();}
 	SmoothedLocomotionSpeed=FMath::FInterpTo(SmoothedLocomotionSpeed,GetVelocity().Size2D(),DeltaSeconds,LocomotionSmoothingSpeed);
 	if(bIsAttacking)
 	{
@@ -113,6 +122,33 @@ void AZombieCharacter::Tick(float DeltaSeconds)
 		return;
 	}
 	UpdateLocomotionAnimation();
+}
+
+void AZombieCharacter::UpdateNightEmpowerment()
+{
+	if(!GetWorld())return;
+	for(TActorIterator<AOpenWorldStreamingManager> It(GetWorld());It;++It)
+	{
+		ApplyNightEmpowerment(It->IsNightTime());
+		return;
+	}
+}
+
+void AZombieCharacter::ApplyNightEmpowerment(bool bEnable)
+{
+	if(bNightEmpowered==bEnable)return;
+	const float OldMaximum=FMath::Max(1.f,MaxCombatHealth);
+	const float HealthRatio=FMath::Clamp(CombatHealth/OldMaximum,0.f,1.f);
+	bNightEmpowered=bEnable;
+	const float HealthMultiplier=bEnable?1.6f:1.f;
+	MaxCombatHealth=BaseMaxCombatHealth*HealthMultiplier;
+	AttackDamage=BaseAttackDamage*(bEnable?1.4f:1.f);
+	GetCharacterMovement()->MaxWalkSpeed=BaseWalkSpeed*(bEnable?1.55f:1.f);
+	WalkAnimationPlayRate=BaseWalkAnimationPlayRate*(bEnable?1.25f:1.f);
+	if(Health)Health->MaxHealth=BaseComponentMaxHealth*HealthMultiplier;
+	if(HasAuthority())CombatHealth=MaxCombatHealth*HealthRatio;
+	UE_LOG(LogTemp,Display,TEXT("Zombie %s night empowerment %s: HP %.0f, speed %.0f, damage %.0f"),
+		*GetName(),bEnable?TEXT("ON"):TEXT("OFF"),MaxCombatHealth,GetCharacterMovement()->MaxWalkSpeed,AttackDamage);
 }
 
 void AZombieCharacter::PlayZombieAnimation(UAnimationAsset* Animation,bool bLooping,float PlayRate)

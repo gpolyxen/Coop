@@ -12,6 +12,7 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/WorldSettings.h"
+#include "Net/UnrealNetwork.h"
 
 AOpenWorldStreamingManager::AOpenWorldStreamingManager()
 {
@@ -19,6 +20,7 @@ AOpenWorldStreamingManager::AOpenWorldStreamingManager()
 	PrimaryActorTick.TickInterval=.5f;
 	bReplicates=true;
 	bAlwaysRelevant=true;
+	NetUpdateFrequency=2.f;
 	SetReplicateMovement(false);
 	SceneRoot=CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
 	RootComponent=SceneRoot;
@@ -43,6 +45,12 @@ AOpenWorldStreamingManager::AOpenWorldStreamingManager()
 void AOpenWorldStreamingManager::BeginPlay()
 {
 	Super::BeginPlay();
+	if(HasAuthority())
+	{
+		CurrentTimeHours=FMath::Fmod(FMath::Max(0.f,StartingTimeHours),24.f);
+		bIsNight=CurrentTimeHours>=21.f||CurrentTimeHours<5.f;
+	}
+	ApplyTimeOfDay();
 	if(AWorldSettings* Settings=GetWorld()->GetWorldSettings())Settings->bEnableWorldBoundsChecks=false;
 	EnsureBootstrapTile();
 	UpdateStreaming();
@@ -51,10 +59,54 @@ void AOpenWorldStreamingManager::BeginPlay()
 void AOpenWorldStreamingManager::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+	if(HasAuthority())
+	{
+		CurrentTimeHours=FMath::Fmod(CurrentTimeHours+DeltaSeconds*24.f/FMath::Max(60.f,RealSecondsPerGameDay),24.f);
+		const bool bNewNight=CurrentTimeHours>=21.f||CurrentTimeHours<5.f;
+		if(bNewNight!=bIsNight){bIsNight=bNewNight;ForceNetUpdate();}
+	}
+	ApplyTimeOfDay();
 	MaybeRebaseOrigin();
 	EnsureBootstrapTile();
 	UpdateStreaming();
 	CreateGeometryForLoadedTiles();
+}
+
+void AOpenWorldStreamingManager::OnRep_TimeOfDay(){ApplyTimeOfDay();}
+
+FText AOpenWorldStreamingManager::GetTimePeriodName()const
+{
+	if(CurrentTimeHours>=5.f&&CurrentTimeHours<10.f)return FText::FromString(TEXT("УТРО"));
+	if(CurrentTimeHours>=10.f&&CurrentTimeHours<17.f)return FText::FromString(TEXT("ДЕНЬ"));
+	if(CurrentTimeHours>=17.f&&CurrentTimeHours<21.f)return FText::FromString(TEXT("ВЕЧЕР"));
+	return FText::FromString(TEXT("НОЧЬ"));
+}
+
+void AOpenWorldStreamingManager::ApplyTimeOfDay()
+{
+	if(!Sun||!SkyLight||!HeightFog)return;
+	const float SolarRadians=(CurrentTimeHours-6.f)/12.f*PI;
+	const float SunHeight=FMath::Sin(SolarRadians);
+	const float DayFactor=FMath::Clamp(SunHeight/.18f,0.f,1.f);
+	Sun->SetWorldRotation(FRotator(-(CurrentTimeHours-6.f)*15.f,-35.f,0.f));
+	Sun->SetIntensity(FMath::Lerp(.025f,6.f,DayFactor));
+	FLinearColor SunColor=FLinearColor(.48f,.58f,1.f);
+	if(DayFactor>.01f)
+	{
+		const float HorizonWarmth=1.f-FMath::Clamp(SunHeight/.45f,0.f,1.f);
+		SunColor=FLinearColor::LerpUsingHSV(FLinearColor(1.f,.38f,.14f),FLinearColor(1.f,.96f,.86f),1.f-HorizonWarmth);
+	}
+	Sun->SetLightColor(SunColor);
+	SkyLight->SetIntensity(FMath::Lerp(.09f,1.f,DayFactor));
+	HeightFog->SetFogDensity(FMath::Lerp(.012f,.003f,DayFactor));
+	HeightFog->SetFogInscatteringColor(FLinearColor::LerpUsingHSV(FLinearColor(.025f,.045f,.11f),FLinearColor(.64f,.72f,.78f),DayFactor));
+}
+
+void AOpenWorldStreamingManager::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps)const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+	DOREPLIFETIME(AOpenWorldStreamingManager,CurrentTimeHours);
+	DOREPLIFETIME(AOpenWorldStreamingManager,bIsNight);
 }
 
 void AOpenWorldStreamingManager::EnsureBootstrapTile()

@@ -25,6 +25,7 @@ public:
 	UFUNCTION(BlueprintCallable) virtual bool TryAttack(AActor* Target);
 	UFUNCTION(BlueprintPure) bool IsDead() const { return bIsDead; }
 	UFUNCTION(BlueprintPure) bool IsAttacking() const { return bIsAttacking; }
+	UFUNCTION(BlueprintPure) bool IsNightEmpowered()const{return bNightEmpowered;}
 
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly) UHealthArmorComponent* Health;
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly,Category="Navigation") UNavigationInvokerComponent* NavigationInvoker;
@@ -72,6 +73,13 @@ private:
 	UPROPERTY() UMaterialInterface* VisualVariantClothesMaterial=nullptr;
 	bool bLocomotionMoving=false;
 	float SmoothedLocomotionSpeed=0.f;
+	bool bNightEmpowered=false;
+	float BaseMaxCombatHealth=100.f;
+	float BaseAttackDamage=18.f;
+	float BaseWalkSpeed=270.f;
+	float BaseWalkAnimationPlayRate=1.35f;
+	float BaseComponentMaxHealth=1000.f;
+	float NextNightStateCheck=0.f;
 	FTimerHandle AttackHitTimer;
 	FTimerHandle AttackFinishTimer;
 
@@ -80,6 +88,8 @@ private:
 	FName ResolveHeadBone(FName PreferredBone)const;
 	void UpdateLocomotionAnimation();
 	void ApplyVisualVariant();
+	void UpdateNightEmpowerment();
+	void ApplyNightEmpowerment(bool bEnable);
 	void PlayZombieAnimation(UAnimationAsset* Animation,bool bLooping,float PlayRate);
 	void FinishAttack();
 	void Die(bool bHeadshot,FName HitBone,const FVector& ShotDirection,const FVector& HitLocation);

@@ -6,13 +6,13 @@
 #include "Components/TextRenderComponent.h"
 #include "Materials/MaterialInterface.h"
 #include "UObject/ConstructorHelpers.h"
+#include "EngineUtils.h"
 
 ASaveBed::ASaveBed()
 {
 	bReplicates=true;
 	SetReplicateMovement(false);
-	SceneRoot=CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
-	RootComponent=SceneRoot;
+	MaxStructureHealth=150.f;StructureHealth=150.f;bNeedsFoundationSupport=true;
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> Cube(TEXT("/Game/StarterContent/Shapes/Shape_Cube.Shape_Cube"));
 	static ConstructorHelpers::FObjectFinder<UMaterialInterface> Wood(TEXT("/Game/StarterContent/Materials/M_Wood_Walnut.M_Wood_Walnut"));
 	static ConstructorHelpers::FObjectFinder<UMaterialInterface> Cloth(TEXT("/Game/StarterContent/Materials/M_Basic_Wall.M_Basic_Wall"));
@@ -57,4 +57,23 @@ ASaveBed::ASaveBed()
 	SaveText->SetTextRenderColor(FColor(70,180,255));
 	SaveText->SetText(FText::FromString(TEXT("E  SAVE")));
 	SaveText->bAlwaysRenderAsText=true;
+}
+
+void ASaveBed::BeginPlay()
+{
+	Super::BeginPlay();
+	if(!GetWorld()||bConstructionPreview)return;
+	float BestDistanceSq=FMath::Square(240.f);
+	for(TActorIterator<AWoodFloor> It(GetWorld());It;++It)
+	{
+		if(It->IsConstructionPreview()||It->IsCollapsing()||FMath::Abs(GetActorLocation().Z-It->GetActorLocation().Z)>35.f)continue;
+		const float DistanceSq=FVector::DistSquared2D(GetActorLocation(),It->GetActorLocation());
+		if(DistanceSq<BestDistanceSq){BestDistanceSq=DistanceSq;SupportingFloor=*It;bRequiresFloorSupport=true;}
+	}
+}
+
+bool ASaveBed::HasStructuralSupport()const
+{
+	if(bRequiresFloorSupport)return SupportingFloor.IsValid()&&!SupportingFloor->IsCollapsing();
+	return ABuildableStructure::HasStructuralSupport();
 }
