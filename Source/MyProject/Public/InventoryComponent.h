@@ -26,6 +26,8 @@ public:
 	UPROPERTY(ReplicatedUsing=OnRep_Capacity, EditDefaultsOnly, BlueprintReadOnly) int32 MaxSlots = 6;
 	UPROPERTY(Replicated, EditDefaultsOnly, BlueprintReadOnly) float MaxWeight = 500.f;
 	UPROPERTY(ReplicatedUsing=OnRep_Items, VisibleAnywhere, BlueprintReadOnly) TArray<FInventoryEntry> Items;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly)int32 OverrideMaxStack=0;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly)bool bAllowMultipleStacks=false;
 	UPROPERTY(BlueprintAssignable) FInventoryChanged OnInventoryChanged;
 private:
 	UFUNCTION() void OnRep_Items();

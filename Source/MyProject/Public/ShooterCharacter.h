@@ -4,7 +4,7 @@
 #include "ShooterTypes.h"
 #include "BuildTypes.h"
 #include "ShooterCharacter.generated.h"
-class UCameraComponent;class USpringArmComponent;class USceneComponent;class UInventoryComponent;class UHealthArmorComponent;class UNavigationInvokerComponent;class UAIPerceptionStimuliSourceComponent;class USkeletalMeshComponent;class UStaticMeshComponent;class UBlendSpace;class UAnimMontage;class UAnimSequence;class UAnimInstance;class AWeaponBase;class APickupActor;class ASaveBed;
+class UCameraComponent;class USpringArmComponent;class USceneComponent;class UInventoryComponent;class UHealthArmorComponent;class UNavigationInvokerComponent;class UAIPerceptionStimuliSourceComponent;class USkeletalMeshComponent;class UStaticMeshComponent;class UBlendSpace;class UAnimMontage;class UAnimSequence;class UAnimInstance;class AWeaponBase;class APickupActor;class ASaveBed;class AStorageChest;
 UCLASS(Blueprintable)
 class MYPROJECT_API AShooterCharacter:public ACharacter
 {
@@ -43,6 +43,12 @@ public:
 	UFUNCTION(BlueprintCallable) void EquipWeapon(TSubclassOf<AWeaponBase> WeaponClass);
 	UFUNCTION(BlueprintCallable) int32 AddAmmunition(int32 Amount);
 	UFUNCTION(BlueprintPure) bool CanCraftBed()const;
+	UFUNCTION(BlueprintPure) bool CanCraftMedkit()const;
+	UFUNCTION(BlueprintCallable) void CraftMedkit();
+	UFUNCTION(BlueprintCallable) void UseMedkit();
+	UFUNCTION(BlueprintCallable)void TransferItemToChest(AStorageChest* Chest,FName ItemId,int32 Quantity=1);
+	UFUNCTION(BlueprintCallable)void TransferItemFromChest(AStorageChest* Chest,FName ItemId,int32 Quantity=1);
+	UFUNCTION(BlueprintCallable)void StoreEquippedWeaponInChest(AStorageChest* Chest);
 	UFUNCTION(BlueprintPure) bool IsBuildingBed()const{return SelectedBuildPiece==EBuildPieceType::Bed;}
 	UFUNCTION(BlueprintPure) bool IsBuilding()const{return SelectedBuildPiece!=EBuildPieceType::None;}
 	UFUNCTION(BlueprintPure) bool IsBuildPreviewValid()const{return bBuildPreviewValid;}
@@ -100,6 +106,11 @@ protected:
 	UFUNCTION(Server,Reliable,WithValidation)void ServerPlaceBuildPiece(EBuildPieceType PieceType,FVector_NetQuantize Location,FRotator Rotation);
 	UFUNCTION(Client,Reliable)void ClientBuildPlacementResult(EBuildPieceType PieceType,bool bPlaced,bool bCanContinue);
 	UFUNCTION(Server,Reliable,WithValidation)void ServerPurchaseSkill(EShooterSkill Skill);
+	UFUNCTION(Server,Reliable,WithValidation)void ServerCraftMedkit();
+	UFUNCTION(Server,Reliable,WithValidation)void ServerUseMedkit();
+	UFUNCTION(Server,Reliable,WithValidation)void ServerTransferItemToChest(AStorageChest* Chest,FName ItemId,int32 Quantity);
+	UFUNCTION(Server,Reliable,WithValidation)void ServerTransferItemFromChest(AStorageChest* Chest,FName ItemId,int32 Quantity);
+	UFUNCTION(Server,Reliable,WithValidation)void ServerStoreEquippedWeaponInChest(AStorageChest* Chest);
 	UFUNCTION()void OnRep_Weapon();
 	UFUNCTION()void HandleDeath();
 	void RefreshAnimationState();

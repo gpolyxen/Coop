@@ -15,6 +15,7 @@ void AShooterPlayerController::SetupInputComponent()
 	InputComponent->BindAction(TEXT("Inventory"),IE_Pressed,this,&AShooterPlayerController::ToggleInventory);
 	InputComponent->BindAction(TEXT("SkillTree"),IE_Pressed,this,&AShooterPlayerController::ToggleSkillTree);
 	InputComponent->BindAction(TEXT("BuildBed"),IE_Pressed,this,&AShooterPlayerController::ToggleBuildingMenu);
+	InputComponent->BindAction(TEXT("Crafting"),IE_Pressed,this,&AShooterPlayerController::ToggleCrafting);
 }
 
 void AShooterPlayerController::TogglePauseMenu()
@@ -51,6 +52,12 @@ void AShooterPlayerController::ToggleBuildingMenu()
 	if(UShooterGameInstance* GI=GetGameInstance<UShooterGameInstance>())if(GI->IsPauseMenuOpen())return;
 	OpenGameplayPanel(UBuildingMenuWidget::StaticClass());
 }
+void AShooterPlayerController::ToggleCrafting()
+{
+	if(IsGameplayPanelOpen()){CloseGameplayPanel();return;}
+	if(UShooterGameInstance* GI=GetGameInstance<UShooterGameInstance>())if(GI->IsPauseMenuOpen())return;
+	OpenGameplayPanel(UInventoryWidget::StaticClass());
+}
 
 void AShooterPlayerController::OpenGameplayPanel(TSubclassOf<UUserWidget> WidgetClass)
 {
@@ -70,9 +77,19 @@ void AShooterPlayerController::OpenGameplayPanel(TSubclassOf<UUserWidget> Widget
 	ActiveGameplayPanel->SetKeyboardFocus();
 }
 
+void AShooterPlayerController::OpenStorageChest(AStorageChest* Chest)
+{
+	if(!Chest||!IsLocalController())return;
+	// OpenGameplayPanel closes the previous panel first, and CloseGameplayPanel
+	// clears OpenChest. Assign the chest after that cleanup so the storage widget
+	// can populate both grids on its first tick.
+	OpenGameplayPanel(UStorageChestWidget::StaticClass());OpenChest=Chest;
+}
+
 void AShooterPlayerController::CloseGameplayPanel()
 {
 	if(ActiveGameplayPanel){ActiveGameplayPanel->RemoveFromParent();ActiveGameplayPanel=nullptr;}
+	OpenChest=nullptr;
 	if(UShooterGameInstance* GI=GetGameInstance<UShooterGameInstance>())if(GI->IsPauseMenuOpen())return;
 	bShowMouseCursor=false;bEnableClickEvents=false;bEnableMouseOverEvents=false;
 	ResetIgnoreMoveInput();ResetIgnoreLookInput();

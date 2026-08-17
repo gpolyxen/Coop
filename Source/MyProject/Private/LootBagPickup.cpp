@@ -91,7 +91,17 @@ bool ALootBagPickup::TryPickup(APawn* Pawn)
 	if(!Inventory->CanAddItems(TEXT("Wood"),Wood,TEXT("Rope"),Rope))return false;
 	Inventory->AddItem(TEXT("Wood"),Wood);
 	Inventory->AddItem(TEXT("Rope"),Rope);
-	if(AShooterCharacter* Shooter=Cast<AShooterCharacter>(Pawn))Shooter->ShowLocalNotification(FString::Printf(TEXT("НАЙДЕНО: ПАЛКИ +%d, ВЕРЕВКИ +%d"),Wood,Rope));
+	const int32 Medicine=FMath::FRand()<=MedicineChance?1:0;
+	const int32 Bandages=FMath::FRand()<=BandageChance?FMath::RandRange(1,FMath::Max(1,MaxBandages)):0;
+	const int32 Leather=FMath::FRand()<=LeatherChance?FMath::RandRange(1,FMath::Max(1,MaxLeather)):0;
+	int32 AddedMedicine=0,AddedBandages=0,AddedLeather=0;
+	if(Inventory->CanAddItems(TEXT("Medicine"),Medicine,TEXT("Bandage"),Bandages))
+	{
+		if(Medicine>0&&Inventory->AddItem(TEXT("Medicine"),Medicine))AddedMedicine=Medicine;
+		if(Bandages>0&&Inventory->AddItem(TEXT("Bandage"),Bandages))AddedBandages=Bandages;
+	}
+	if(Leather>0&&Inventory->CanAddItems(TEXT("Leather"),Leather,NAME_None,0)&&Inventory->AddItem(TEXT("Leather"),Leather))AddedLeather=Leather;
+	if(AShooterCharacter* Shooter=Cast<AShooterCharacter>(Pawn))Shooter->ShowLocalNotification(FString::Printf(TEXT("НАЙДЕНО: ПАЛКИ +%d, ВЕРЕВКИ +%d%s%s%s"),Wood,Rope,AddedMedicine?TEXT(", МЕДИКАМЕНТ +1"):TEXT(""),AddedBandages?*FString::Printf(TEXT(", БИНТЫ +%d"),AddedBandages):TEXT(""),AddedLeather?*FString::Printf(TEXT(", КОЖА +%d"),AddedLeather):TEXT("")));
 	Destroy();
 	return true;
 }

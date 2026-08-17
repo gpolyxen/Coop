@@ -21,4 +21,9 @@ public:
 	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category="Loot") int32 MaxWood=4;
 	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category="Loot") int32 MinRope=1;
 	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category="Loot") int32 MaxRope=3;
+	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category="Loot",meta=(ClampMin="0.0",ClampMax="1.0")) float MedicineChance=.32f;
+	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category="Loot",meta=(ClampMin="0.0",ClampMax="1.0")) float BandageChance=.58f;
+	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category="Loot") int32 MaxBandages=2;
+	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category="Loot",meta=(ClampMin="0.0",ClampMax="1.0")) float LeatherChance=.42f;
+	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category="Loot") int32 MaxLeather=2;
 };

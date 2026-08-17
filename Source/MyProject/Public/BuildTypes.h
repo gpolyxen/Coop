@@ -11,5 +11,7 @@ enum class EBuildPieceType : uint8
 	WoodWall,
 	WoodGate,
 	WoodFloor,
-	WoodStairs
+	WoodStairs,
+	WoodPillar,
+	WoodChest
 };

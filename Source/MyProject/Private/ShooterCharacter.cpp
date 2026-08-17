@@ -3,7 +3,9 @@
 #include "PickupActor.h"
 #include "SaveBed.h"
 #include "BuildableStructure.h"
+#include "StorageChest.h"
 #include "ShooterGameInstance.h"
+#include "ShooterPlayerController.h"
 #include "InventoryComponent.h"
 #include "HealthArmorComponent.h"
 #include "Camera/CameraComponent.h"
@@ -40,12 +42,99 @@
 #include "Perception/AISense_Hearing.h"
 #include "EngineUtils.h"
 
+namespace
+{
+	struct FBuildSnapCandidate
+	{
+		FBuildSnapCandidate():Location(FVector::ZeroVector),Rotation(FRotator::ZeroRotator),Parent(nullptr){}
+		FBuildSnapCandidate(const FVector& InLocation,const FRotator& InRotation,ABuildableStructure* InParent):Location(InLocation),Rotation(InRotation),Parent(InParent){}
+		FVector Location;FRotator Rotation;ABuildableStructure* Parent;
+	};
+	void AddBuildSnapCandidates(EBuildPieceType Piece,ABuildableStructure* Target,int32 QuarterTurns,TArray<FBuildSnapCandidate>& Out)
+	{
+		if(!Target||Target->IsCollapsing())return;
+		const FVector T=Target->GetActorLocation();
+		const FVector Right=Target->GetActorRotation().RotateVector(FVector::RightVector).GetSafeNormal2D();
+		const FVector Forward=Target->GetActorRotation().RotateVector(FVector::ForwardVector).GetSafeNormal2D();
+		if(Piece==EBuildPieceType::WoodPillar)
+		{
+			if(AWoodFloor* Floor=Cast<AWoodFloor>(Target))
+			{
+				Out.Add({T,Floor->GetActorRotation(),Target});
+				Out.Add({T-FVector(0.f,0.f,220.f),Floor->GetActorRotation(),Target});
+			}
+			return;
+		}
+		if(Piece==EBuildPieceType::WoodFloor)
+		{
+			if(Target->IsA<AWoodFloor>())
+			{
+				for(const FVector& Offset:{Right*300.f,-Right*300.f,Forward*300.f,-Forward*300.f})Out.Add({T+Offset,Target->GetActorRotation(),Target});
+			}
+			else if(Target->IsA<AWoodWall>()||Target->IsA<AWoodGate>())
+			{
+				for(float Side:{-1.f,1.f})Out.Add({T+Forward*(150.f*Side)+FVector(0,0,220.f),Target->GetActorRotation(),Target});
+			}
+			else if(Target->IsA<AWoodStairs>())
+			{
+				Out.Add({T+Right*300.f+FVector(0,0,220.f),Target->GetActorRotation(),Target});
+			}
+			return;
+		}
+		if(Piece==EBuildPieceType::WoodStairs)
+		{
+			if(!(Target->IsA<AWoodWall>()||Target->IsA<AWoodGate>()))return;
+			for(float Side:{-1.f,1.f})
+			{
+				const float RotatedSide=(QuarterTurns&1)?-Side:Side;const FVector Along=-Forward*RotatedSide;
+				FRotator R=Along.Rotation();R.Pitch=0.f;R.Roll=0.f;R.Yaw-=90.f;
+				Out.Add({T+Forward*(150.f*RotatedSide),R,Target});
+			}
+			return;
+		}
+		if(Piece==EBuildPieceType::WoodWall||Piece==EBuildPieceType::WoodGate)
+		{
+			if(Target->IsA<AWoodFloor>())
+			{
+				Out.Add({T+Forward*150.f,Target->GetActorRotation(),Target});Out.Add({T-Forward*150.f,Target->GetActorRotation(),Target});
+				FRotator Across=Target->GetActorRotation();Across.Yaw+=90.f;
+				Out.Add({T+Right*150.f,Across,Target});Out.Add({T-Right*150.f,Across,Target});return;
+			}
+			if(Target->IsA<AWoodWall>()||Target->IsA<AWoodGate>())
+			{
+				FRotator R=Target->GetActorRotation();R.Yaw+=QuarterTurns*90.f;const FVector Along=R.RotateVector(FVector::RightVector).GetSafeNormal2D();
+				for(const FVector& End:{T+Right*150.f,T-Right*150.f})for(float Side:{-1.f,1.f})
+				{
+					const FVector Candidate=End+Along*(150.f*Side);if(FVector::Dist2D(Candidate,T)>200.f)Out.Add({Candidate,R,Target});
+				}
+			}
+		}
+	}
+	bool IsBuildLocationBlocked(UWorld* World,EBuildPieceType Piece,const FVector& Location,const ABuildableStructure* Parent)
+	{
+		if(!World)return true;
+		// Stairs deliberately occupy the same modular bay as their supporting wall
+		// and nearby landing. A centre-distance test cannot distinguish that valid
+		// arrangement from an obstruction, so stair clearance is handled by the
+		// authored snap points and component collision instead.
+		if(Piece==EBuildPieceType::WoodStairs)return false;
+		for(TActorIterator<ABuildableStructure> It(World);It;++It)
+		{
+			if(*It==Parent||It->IsCollapsing())continue;const FVector Other=It->GetActorLocation();
+			if(Piece==EBuildPieceType::WoodPillar&&It->IsA<AWoodPillar>()&&FMath::Abs(Location.Z-Other.Z)<80.f&&FVector::Dist2D(Location,Other)<80.f)return true;
+			if(Piece==EBuildPieceType::WoodFloor&&It->IsA<AWoodStairs>()&&FMath::Abs(Location.Z-(Other.Z+220.f))<90.f&&FVector::Dist2D(Location,Other)<210.f)return true;
+			if(Piece==EBuildPieceType::WoodStairs&&FMath::Abs(Location.Z-Other.Z)<180.f&&FVector::Dist2D(Location,Other)<125.f)return true;
+		}
+		return false;
+	}
+}
+
 AShooterCharacter::AShooterCharacter()
 {
 	bReplicates=true;
 	bUseControllerRotationPitch=false;bUseControllerRotationYaw=true;bUseControllerRotationRoll=false;
 	CameraBoom=CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));CameraBoom->SetupAttachment(RootComponent);CameraBoom->TargetArmLength=0.f;CameraBoom->bDoCollisionTest=false;
-	Camera=CreateDefaultSubobject<UCameraComponent>(TEXT("CharacterCamera"));Camera->SetupAttachment(GetMesh(),TEXT("head"));Camera->SetRelativeLocation(FVector::ZeroVector);Camera->SetRelativeRotation(FRotator::ZeroRotator);Camera->bUsePawnControlRotation=true;Camera->FieldOfView=90.f;
+	Camera=CreateDefaultSubobject<UCameraComponent>(TEXT("CharacterCamera"));Camera->SetupAttachment(GetMesh(),TEXT("head"));Camera->SetRelativeLocation(FVector::ZeroVector);Camera->SetRelativeRotation(FRotator::ZeroRotator);Camera->bUsePawnControlRotation=true;Camera->FieldOfView=90.f;Camera->PostProcessSettings.bOverride_MotionBlurAmount=true;Camera->PostProcessSettings.MotionBlurAmount=0.f;
 	FirstPersonBody=CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("FirstPersonBody"));FirstPersonBody->SetupAttachment(RootComponent);FirstPersonBody->SetRelativeLocation(FVector(0.f,0.f,-90.f));FirstPersonBody->SetRelativeRotation(FRotator(0.f,-90.f,0.f));FirstPersonBody->SetOnlyOwnerSee(true);FirstPersonBody->SetCollisionEnabled(ECollisionEnabled::NoCollision);FirstPersonBody->CastShadow=false;
 	// The legacy camera carries a non-unit scale copied from BP_Player. Keep a
 	// scale-neutral root so dedicated FPS rigs retain their authored dimensions.
@@ -214,65 +303,81 @@ void AShooterCharacter::StartFire()
 void AShooterCharacter::StopFire(){GetWorldTimerManager().ClearTimer(FireTimer);}
 
 bool AShooterCharacter::CanCraftBed()const{return Inventory&&Inventory->HasItems(TEXT("Wood"),10,TEXT("Rope"),10);}
+bool AShooterCharacter::CanCraftMedkit()const{return Inventory&&Inventory->HasItems(TEXT("Medicine"),1,TEXT("Bandage"),2);}
+void AShooterCharacter::CraftMedkit()
+{
+	if(!HasAuthority()){ServerCraftMedkit();return;}
+	if(!CanCraftMedkit())return;
+	if(!Inventory->ConsumeItems(TEXT("Medicine"),1,TEXT("Bandage"),2))return;
+	if(!Inventory->AddItem(TEXT("Medkit"),1)){Inventory->AddItem(TEXT("Medicine"),1);Inventory->AddItem(TEXT("Bandage"),2);return;}
+	ShowLocalNotification(TEXT("СОЗДАНА АПТЕЧКА"),2.f);
+}
+void AShooterCharacter::UseMedkit()
+{
+	if(!HasAuthority()){ServerUseMedkit();return;}
+	if(!Inventory||!Health||Health->Health>=Health->MaxHealth||Inventory->GetQuantity(TEXT("Medkit"))<1)return;
+	if(Inventory->RemoveItem(TEXT("Medkit"),1))Health->Heal(50.f*GetHealingMultiplier());
+}
+bool AShooterCharacter::ServerCraftMedkit_Validate(){return true;}void AShooterCharacter::ServerCraftMedkit_Implementation(){CraftMedkit();}
+bool AShooterCharacter::ServerUseMedkit_Validate(){return true;}void AShooterCharacter::ServerUseMedkit_Implementation(){UseMedkit();}
 FString AShooterCharacter::GetSelectedBuildName()const
 {
-	switch(SelectedBuildPiece){case EBuildPieceType::Bed:return TEXT("КРОВАТЬ");case EBuildPieceType::WoodWall:return TEXT("ДЕРЕВЯННАЯ СТЕНА");case EBuildPieceType::WoodGate:return TEXT("ДЕРЕВЯННЫЕ ВОРОТА");case EBuildPieceType::WoodFloor:return TEXT("ДЕРЕВЯННЫЙ ПОЛ");case EBuildPieceType::WoodStairs:return TEXT("ДЕРЕВЯННАЯ ЛЕСТНИЦА");default:return FString();}
+	switch(SelectedBuildPiece){case EBuildPieceType::Bed:return TEXT("КРОВАТЬ");case EBuildPieceType::WoodChest:return TEXT("СУНДУК");case EBuildPieceType::WoodWall:return TEXT("ДЕРЕВЯННАЯ СТЕНА");case EBuildPieceType::WoodGate:return TEXT("ДЕРЕВЯННЫЕ ВОРОТА");case EBuildPieceType::WoodFloor:return TEXT("ДЕРЕВЯННЫЙ ПОЛ");case EBuildPieceType::WoodStairs:return TEXT("ДЕРЕВЯННАЯ ЛЕСТНИЦА");case EBuildPieceType::WoodPillar:return TEXT("ДЕРЕВЯННАЯ КОЛОННА");default:return FString();}
 }
 void AShooterCharacter::BeginBuildPlacement(EBuildPieceType PieceType)
 {
 	CancelBuildMode();if(!Inventory||PieceType==EBuildPieceType::None)return;
-	const int32 RequiredWood=PieceType==EBuildPieceType::Bed?10:PieceType==EBuildPieceType::WoodWall?6:PieceType==EBuildPieceType::WoodGate?12:PieceType==EBuildPieceType::WoodFloor?5:8;
+	const int32 RequiredWood=PieceType==EBuildPieceType::Bed?10:PieceType==EBuildPieceType::WoodChest?20:PieceType==EBuildPieceType::WoodWall?6:PieceType==EBuildPieceType::WoodGate?12:PieceType==EBuildPieceType::WoodFloor?5:PieceType==EBuildPieceType::WoodPillar?4:8;
 	const int32 RequiredRope=PieceType==EBuildPieceType::Bed?10:PieceType==EBuildPieceType::WoodGate?4:0;
-	const bool bAffordable=Inventory->GetQuantity(TEXT("Wood"))>=RequiredWood&&Inventory->GetQuantity(TEXT("Rope"))>=RequiredRope;
+	const int32 RequiredLeather=PieceType==EBuildPieceType::WoodChest?5:0;
+	const bool bAffordable=Inventory->GetQuantity(TEXT("Wood"))>=RequiredWood&&Inventory->GetQuantity(TEXT("Rope"))>=RequiredRope&&Inventory->GetQuantity(TEXT("Leather"))>=RequiredLeather;
 	if(!bAffordable){ShowLocalNotification(TEXT("НЕДОСТАТОЧНО МАТЕРИАЛОВ"));return;}
 	SelectedBuildPiece=PieceType;StopFire();StopAim();
 	FActorSpawnParameters PreviewParameters;PreviewParameters.SpawnCollisionHandlingOverride=ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-	UClass* PreviewClass=PieceType==EBuildPieceType::Bed?ASaveBed::StaticClass():PieceType==EBuildPieceType::WoodWall?AWoodWall::StaticClass():PieceType==EBuildPieceType::WoodGate?AWoodGate::StaticClass():PieceType==EBuildPieceType::WoodFloor?AWoodFloor::StaticClass():AWoodStairs::StaticClass();
+	UClass* PreviewClass=PieceType==EBuildPieceType::Bed?ASaveBed::StaticClass():PieceType==EBuildPieceType::WoodChest?AStorageChest::StaticClass():PieceType==EBuildPieceType::WoodWall?AWoodWall::StaticClass():PieceType==EBuildPieceType::WoodGate?AWoodGate::StaticClass():PieceType==EBuildPieceType::WoodFloor?AWoodFloor::StaticClass():PieceType==EBuildPieceType::WoodPillar?AWoodPillar::StaticClass():AWoodStairs::StaticClass();
 	BuildPreview=GetWorld()->SpawnActor<AActor>(PreviewClass,GetActorLocation(),GetActorRotation(),PreviewParameters);
-	if(BuildPreview){BuildPreview->SetReplicates(false);BuildPreview->SetActorEnableCollision(false);TArray<ULightComponent*> Lights;BuildPreview->GetComponents<ULightComponent>(Lights);for(ULightComponent* Light:Lights)if(Light)Light->SetVisibility(false);}
+	if(BuildPreview){BuildPreview->SetReplicates(false);BuildPreview->SetActorEnableCollision(false);if(ABuildableStructure* Structure=Cast<ABuildableStructure>(BuildPreview))Structure->SetConstructionPreview(true);TArray<ULightComponent*> Lights;BuildPreview->GetComponents<ULightComponent>(Lights);for(ULightComponent* Light:Lights)if(Light)Light->SetVisibility(false);}
 	BuildRotationQuarterTurns=0;UpdateBuildPreview();ShowLocalNotification(TEXT("ЛКМ — ПОСТАВИТЬ    R — ПОВЕРНУТЬ 90°    ПКМ — ОТМЕНА"),8.f);
 }
 void AShooterCharacter::UpdateBuildPreview()
 {
 	if(!IsBuilding()||!Camera||!BuildPreview)return;
 	FHitResult Hit;FCollisionQueryParams Query(SCENE_QUERY_STAT(BuildPreview),false,this);Query.AddIgnoredActor(BuildPreview);
-	const FVector Start=Camera->GetComponentLocation(),End=Start+Camera->GetForwardVector()*600.f;
+	const FVector Start=Camera->GetComponentLocation(),End=Start+Camera->GetForwardVector()*850.f;
 	const bool bHasHit=GetWorld()->LineTraceSingleByChannel(Hit,Start,End,ECC_Visibility,Query);
-	FVector Location=bHasHit?Hit.ImpactPoint:End;FRotator Rotation(0.f,FMath::GridSnap(Controller?Controller->GetControlRotation().Yaw:0.f,90.f)+BuildRotationQuarterTurns*90.f,0.f);
+	const FVector AimLocation=bHasHit?Hit.ImpactPoint:End;
+	FVector Location=AimLocation;FRotator Rotation(0.f,FMath::GridSnap(Controller?Controller->GetControlRotation().Yaw:0.f,90.f)+BuildRotationQuarterTurns*90.f,0.f);
 	FCollisionQueryParams GroundQuery(SCENE_QUERY_STAT(BuildPreviewGround),false,this);GroundQuery.AddIgnoredActor(BuildPreview);for(TActorIterator<ABuildableStructure> It(GetWorld());It;++It)GroundQuery.AddIgnoredActor(*It);
 	FCollisionObjectQueryParams GroundObjects;GroundObjects.AddObjectTypesToQuery(ECC_WorldStatic);
 	FHitResult GroundHit;const bool bGroundHit=GetWorld()->LineTraceSingleByObjectType(GroundHit,Location+FVector(0,0,1500.f),Location-FVector(0,0,3000.f),GroundObjects,GroundQuery)&&GroundHit.ImpactNormal.Z>=.35f;
 	if(bGroundHit)Location.Z=GroundHit.ImpactPoint.Z;
 	bBuildPreviewValid=bGroundHit;
-	if(SelectedBuildPiece!=EBuildPieceType::Bed)
+	if(SelectedBuildPiece==EBuildPieceType::Bed||SelectedBuildPiece==EBuildPieceType::WoodChest)
+	{
+		AWoodFloor* Floor=bHasHit?Cast<AWoodFloor>(Hit.GetActor()):nullptr;
+		if(!Floor)for(TActorIterator<AWoodFloor> It(GetWorld());It;++It)if(FMath::Abs(Location.Z-It->GetActorLocation().Z)<300.f&&FVector::Dist2D(Location,It->GetActorLocation())<205.f){Floor=*It;break;}
+		if(Floor){Location.Z=Floor->GetActorLocation().Z+12.f;bBuildPreviewValid=true;}
+	}
+	else
 	{
 		ABuildableStructure* DirectStructure=bHasHit?Cast<ABuildableStructure>(Hit.GetActor()):nullptr;
 		float BestScore=FLT_MAX;
-		FVector BestLocation=Location;
-		FRotator BestRotation=Rotation;
+		FBuildSnapCandidate Best;
 		bool bFoundSnap=false;
 		for(TActorIterator<ABuildableStructure> It(GetWorld());It;++It)
 		{
-			if(*It==BuildPreview)continue;
-			const FRotator CandidateRotation(0.f,It->GetActorRotation().Yaw+BuildRotationQuarterTurns*90.f,0.f);
-			const FVector NewAlong=CandidateRotation.RotateVector(FVector::RightVector).GetSafeNormal2D();
-			const FVector NewForward=CandidateRotation.RotateVector(FVector::ForwardVector).GetSafeNormal2D();
-			TArray<FVector> Points;It->GetSnapPoints(Points);
-			for(const FVector& Point:Points)
+			if(*It==BuildPreview)continue;TArray<FBuildSnapCandidate> Candidates;AddBuildSnapCandidates(SelectedBuildPiece,*It,BuildRotationQuarterTurns,Candidates);
+			for(const FBuildSnapCandidate& Candidate:Candidates)
 			{
-				TArray<FVector> Candidates;Candidates.Add(Point+NewAlong*150.f);Candidates.Add(Point-NewAlong*150.f);
-				if(SelectedBuildPiece==EBuildPieceType::WoodFloor){Candidates.Add(Point+NewForward*150.f);Candidates.Add(Point-NewForward*150.f);}
-				for(const FVector& Candidate:Candidates)
-				{
-					if(FVector::DistSquared(Candidate,It->GetActorLocation())<FMath::Square(200.f))continue;
-					const float CandidateDistanceSq=FVector::DistSquared(Location,Candidate);
-					const float Score=CandidateDistanceSq+(DirectStructure==*It?-FMath::Square(500.f):0.f);
-					if((DirectStructure==*It||CandidateDistanceSq<=FMath::Square(500.f))&&Score<BestScore){BestScore=Score;BestLocation=Candidate;BestRotation=CandidateRotation;bFoundSnap=true;}
-				}
+				if(SelectedBuildPiece==EBuildPieceType::WoodFloor&&(Candidate.Parent->IsA<AWoodWall>()||Candidate.Parent->IsA<AWoodGate>())&&AimLocation.Z<Candidate.Parent->GetActorLocation().Z+115.f)continue;
+				const float CandidateDistanceSq=FVector::DistSquared(Location,Candidate.Location);const float Score=CandidateDistanceSq+(DirectStructure==*It?-FMath::Square(500.f):0.f);
+				const float SnapSearchRadius=SelectedBuildPiece==EBuildPieceType::WoodStairs?800.f:550.f;
+				if((DirectStructure==*It||CandidateDistanceSq<=FMath::Square(SnapSearchRadius))&&Score<BestScore&&!IsBuildLocationBlocked(GetWorld(),SelectedBuildPiece,Candidate.Location,Candidate.Parent)){BestScore=Score;Best=Candidate;bFoundSnap=true;}
 			}
 		}
-		if(bFoundSnap){Location=BestLocation;Rotation=BestRotation;bBuildPreviewValid=true;}
+		if(bFoundSnap){Location=Best.Location;Rotation=Best.Rotation;bBuildPreviewValid=true;}
 	}
+	if(IsBuildLocationBlocked(GetWorld(),SelectedBuildPiece,Location,nullptr))bBuildPreviewValid=false;
 	BuildPreview->SetActorLocationAndRotation(Location,Rotation);
 }
 void AShooterCharacter::RotateBuildPreview(){if(IsBuilding()){BuildRotationQuarterTurns=(BuildRotationQuarterTurns+1)%4;UpdateBuildPreview();ShowLocalNotification(TEXT("ПОВОРОТ: 90°"),1.f);}}
@@ -283,28 +388,35 @@ void AShooterCharacter::ConfirmBuildPlacement()
 	const EBuildPieceType Piece=SelectedBuildPiece;const FVector Location=BuildPreview->GetActorLocation();const FRotator Rotation=BuildPreview->GetActorRotation();
 	ServerPlaceBuildPiece(Piece,Location,Rotation);
 }
-bool AShooterCharacter::ServerPlaceBuildPiece_Validate(EBuildPieceType Piece,FVector_NetQuantize Location,FRotator){return Piece!=EBuildPieceType::None&&FVector::DistSquared(Location,GetActorLocation())<=FMath::Square(1000.f);}
+bool AShooterCharacter::ServerPlaceBuildPiece_Validate(EBuildPieceType Piece,FVector_NetQuantize Location,FRotator){return Piece!=EBuildPieceType::None&&FVector::DistSquared(Location,GetActorLocation())<=FMath::Square(1600.f);}
 void AShooterCharacter::ServerPlaceBuildPiece_Implementation(EBuildPieceType Piece,FVector_NetQuantize Location,FRotator Rotation)
 {
-	if(!Inventory)return;const int32 WoodCost=Piece==EBuildPieceType::Bed?10:Piece==EBuildPieceType::WoodWall?6:Piece==EBuildPieceType::WoodGate?12:Piece==EBuildPieceType::WoodFloor?5:8;const int32 RopeCost=Piece==EBuildPieceType::Bed?10:(Piece==EBuildPieceType::WoodGate?4:0);
-	if(Inventory->GetQuantity(TEXT("Wood"))<WoodCost||Inventory->GetQuantity(TEXT("Rope"))<RopeCost){ClientBuildPlacementResult(Piece,false,false);return;}
+	if(!Inventory)return;const int32 WoodCost=Piece==EBuildPieceType::Bed?10:Piece==EBuildPieceType::WoodChest?20:Piece==EBuildPieceType::WoodWall?6:Piece==EBuildPieceType::WoodGate?12:Piece==EBuildPieceType::WoodFloor?5:Piece==EBuildPieceType::WoodPillar?4:8;const int32 RopeCost=Piece==EBuildPieceType::Bed?10:(Piece==EBuildPieceType::WoodGate?4:0);const int32 LeatherCost=Piece==EBuildPieceType::WoodChest?5:0;
+	if(Inventory->GetQuantity(TEXT("Wood"))<WoodCost||Inventory->GetQuantity(TEXT("Rope"))<RopeCost||Inventory->GetQuantity(TEXT("Leather"))<LeatherCost){UE_LOG(LogTemp,Warning,TEXT("Build rejected: insufficient materials for piece %d"),static_cast<int32>(Piece));ClientBuildPlacementResult(Piece,false,false);return;}
 	FCollisionQueryParams Query(SCENE_QUERY_STAT(ServerBuildPlacement),false,this);
 	FVector FinalLocation=Location;FRotator FinalRotation=Rotation;ABuildableStructure* SnapParent=nullptr;
-	if(Piece!=EBuildPieceType::Bed)
+	if(Piece==EBuildPieceType::Bed||Piece==EBuildPieceType::WoodChest)
 	{
-		float BestDistanceSq=FMath::Square(80.f);
+		float BestDistanceSq=FMath::Square(230.f);
+		for(TActorIterator<AWoodFloor> It(GetWorld());It;++It)
+		{
+			const float DistanceSq=FVector::DistSquared2D(FinalLocation,It->GetActorLocation());
+			if(DistanceSq<BestDistanceSq&&FMath::Abs(FinalLocation.Z-It->GetActorLocation().Z)<80.f){BestDistanceSq=DistanceSq;FinalLocation.Z=It->GetActorLocation().Z+12.f;SnapParent=*It;}
+		}
+	}
+	else
+	{
+		float BestDistanceSq=FMath::Square(95.f);
 		for(TActorIterator<ABuildableStructure> It(GetWorld());It;++It)
 		{
-			TArray<FVector> Points;It->GetSnapPoints(Points);
-			const FVector NewAlong=FinalRotation.RotateVector(FVector::RightVector).GetSafeNormal2D();
-			const FVector NewForward=FinalRotation.RotateVector(FVector::ForwardVector).GetSafeNormal2D();
-			for(const FVector& Point:Points)
+			TArray<FBuildSnapCandidate> Candidates;for(int32 Quarter=0;Quarter<4;++Quarter)AddBuildSnapCandidates(Piece,*It,Quarter,Candidates);
+			for(const FBuildSnapCandidate& Candidate:Candidates)
 			{
-				TArray<FVector> Candidates;Candidates.Add(Point+NewAlong*150.f);Candidates.Add(Point-NewAlong*150.f);if(Piece==EBuildPieceType::WoodFloor){Candidates.Add(Point+NewForward*150.f);Candidates.Add(Point-NewForward*150.f);}
-				for(const FVector& Candidate:Candidates){if(FVector::DistSquared(Candidate,It->GetActorLocation())<FMath::Square(200.f))continue;const float DistanceSq=FVector::DistSquared(FinalLocation,Candidate);if(DistanceSq<BestDistanceSq){BestDistanceSq=DistanceSq;FinalLocation=Candidate;SnapParent=*It;}}
+				const float DistanceSq=FVector::DistSquared(FinalLocation,Candidate.Location);if(DistanceSq<BestDistanceSq){BestDistanceSq=DistanceSq;FinalLocation=Candidate.Location;FinalRotation=Candidate.Rotation;SnapParent=Candidate.Parent;}
 			}
 		}
 	}
+	if(IsBuildLocationBlocked(GetWorld(),Piece,FinalLocation,SnapParent)){UE_LOG(LogTemp,Warning,TEXT("Build rejected: modular location blocked for piece %d at %s"),static_cast<int32>(Piece),*FinalLocation.ToCompactString());ClientBuildPlacementResult(Piece,false,true);return;}
 	if(SnapParent)Query.AddIgnoredActor(SnapParent);
 	else
 	{
@@ -313,12 +425,12 @@ void AShooterCharacter::ServerPlaceBuildPiece_Implementation(EBuildPieceType Pie
 		FinalLocation=Ground.ImpactPoint;
 	}
 	FActorSpawnParameters Parameters;Parameters.SpawnCollisionHandlingOverride=ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-	UClass* BuildClass=Piece==EBuildPieceType::Bed?ASaveBed::StaticClass():Piece==EBuildPieceType::WoodWall?AWoodWall::StaticClass():Piece==EBuildPieceType::WoodGate?AWoodGate::StaticClass():Piece==EBuildPieceType::WoodFloor?AWoodFloor::StaticClass():AWoodStairs::StaticClass();
+	UClass* BuildClass=Piece==EBuildPieceType::Bed?ASaveBed::StaticClass():Piece==EBuildPieceType::WoodChest?AStorageChest::StaticClass():Piece==EBuildPieceType::WoodWall?AWoodWall::StaticClass():Piece==EBuildPieceType::WoodGate?AWoodGate::StaticClass():Piece==EBuildPieceType::WoodFloor?AWoodFloor::StaticClass():Piece==EBuildPieceType::WoodPillar?AWoodPillar::StaticClass():AWoodStairs::StaticClass();
 	if(GetWorld()->SpawnActor<AActor>(BuildClass,FinalLocation,FinalRotation,Parameters))
 	{
 		UE_LOG(LogTemp,Display,TEXT("Build placed: piece %d at %s rotation %s snapped=%s"),static_cast<int32>(Piece),*FinalLocation.ToCompactString(),*FinalRotation.ToCompactString(),SnapParent?TEXT("true"):TEXT("false"));
-		Inventory->RemoveItem(TEXT("Wood"),WoodCost);if(RopeCost>0)Inventory->RemoveItem(TEXT("Rope"),RopeCost);
-		const bool bCanContinue=Inventory->GetQuantity(TEXT("Wood"))>=WoodCost&&Inventory->GetQuantity(TEXT("Rope"))>=RopeCost;
+		Inventory->RemoveItem(TEXT("Wood"),WoodCost);if(RopeCost>0)Inventory->RemoveItem(TEXT("Rope"),RopeCost);if(LeatherCost>0)Inventory->RemoveItem(TEXT("Leather"),LeatherCost);
+		const bool bCanContinue=Inventory->GetQuantity(TEXT("Wood"))>=WoodCost&&Inventory->GetQuantity(TEXT("Rope"))>=RopeCost&&Inventory->GetQuantity(TEXT("Leather"))>=LeatherCost;
 		ClientBuildPlacementResult(Piece,true,bCanContinue);
 	}
 	else ClientBuildPlacementResult(Piece,false,true);
@@ -485,6 +597,7 @@ void AShooterCharacter::Interact()
 	if(GetWorld()->LineTraceSingleByChannel(H,A,B,ECC_Visibility,P))
 	{
 		if(ASaveBed* Bed=Cast<ASaveBed>(H.GetActor())){ServerUseBed(Bed);return;}
+		if(AStorageChest* Chest=Cast<AStorageChest>(H.GetActor())){if(AShooterPlayerController* PC=Cast<AShooterPlayerController>(Controller))PC->OpenStorageChest(Chest);return;}
 		if(AWoodGate* Gate=Cast<AWoodGate>(H.GetActor())){ServerToggleGate(Gate);return;}
 		if(APickupActor* Pickup=Cast<APickupActor>(H.GetActor())){ServerInteract(Pickup);return;}
 	}
@@ -499,6 +612,30 @@ void AShooterCharacter::Interact()
 bool AShooterCharacter::ServerInteract_Validate(APickupActor* P){return P&&FVector::DistSquared(P->GetActorLocation(),GetActorLocation())<=FMath::Square(InteractionDistance+100.f);}void AShooterCharacter::ServerInteract_Implementation(APickupActor* P){P->TryPickup(this);}
 bool AShooterCharacter::ServerUseBed_Validate(ASaveBed* Bed){return Bed&&FVector::DistSquared(Bed->GetActorLocation(),GetActorLocation())<=FMath::Square(InteractionDistance+150.f);}void AShooterCharacter::ServerUseBed_Implementation(ASaveBed* Bed){if(Bed)ClientSaveAtBed();}
 bool AShooterCharacter::ServerToggleGate_Validate(AWoodGate* Gate){return Gate&&FVector::DistSquared(Gate->GetActorLocation(),GetActorLocation())<=FMath::Square(InteractionDistance+100.f);}void AShooterCharacter::ServerToggleGate_Implementation(AWoodGate* Gate){if(Gate)Gate->TryToggle(this);}
+void AShooterCharacter::TransferItemToChest(AStorageChest* Chest,FName ItemId,int32 Quantity){if(HasAuthority())ServerTransferItemToChest_Implementation(Chest,ItemId,Quantity);else ServerTransferItemToChest(Chest,ItemId,Quantity);}
+void AShooterCharacter::TransferItemFromChest(AStorageChest* Chest,FName ItemId,int32 Quantity){if(HasAuthority())ServerTransferItemFromChest_Implementation(Chest,ItemId,Quantity);else ServerTransferItemFromChest(Chest,ItemId,Quantity);}
+void AShooterCharacter::StoreEquippedWeaponInChest(AStorageChest* Chest){if(HasAuthority())ServerStoreEquippedWeaponInChest_Implementation(Chest);else ServerStoreEquippedWeaponInChest(Chest);}
+bool AShooterCharacter::ServerTransferItemToChest_Validate(AStorageChest* Chest,FName ItemId,int32 Quantity){return Chest&&!ItemId.IsNone()&&Quantity>0&&Quantity<=999&&FVector::DistSquared(Chest->GetActorLocation(),GetActorLocation())<=FMath::Square(500.f);}
+void AShooterCharacter::ServerTransferItemToChest_Implementation(AStorageChest* Chest,FName ItemId,int32 Quantity){if(!Chest||!Chest->Storage||!Inventory)return;Chest->Storage->MaxSlots=FMath::Max(0,20-Chest->StoredWeapons.Num());if(Inventory->GetQuantity(ItemId)<Quantity||!Chest->Storage->CanAddItems(ItemId,Quantity,NAME_None,0))return;if(Inventory->RemoveItem(ItemId,Quantity)){if(!Chest->Storage->AddItem(ItemId,Quantity))Inventory->AddItem(ItemId,Quantity);}}
+bool AShooterCharacter::ServerTransferItemFromChest_Validate(AStorageChest* Chest,FName ItemId,int32 Quantity){return Chest&&!ItemId.IsNone()&&Quantity>0&&Quantity<=999&&FVector::DistSquared(Chest->GetActorLocation(),GetActorLocation())<=FMath::Square(500.f);}
+void AShooterCharacter::ServerTransferItemFromChest_Implementation(AStorageChest* Chest,FName ItemId,int32 Quantity)
+{
+	if(!Chest||!Chest->Storage||!Inventory)return;
+	if(ItemId.ToString().StartsWith(TEXT("Weapon_")))
+	{
+		AWeaponBase* Weapon=Chest->FindStoredWeapon(ItemId);if(!Weapon)return;
+		if(WeaponSlots.Num()<2){WeaponSlots.Add(Weapon);ActiveWeaponSlot=WeaponSlots.Num()-1;}
+		else{AWeaponBase* Old=WeaponSlots[ActiveWeaponSlot];if(Old){const FVector DropLocation=GetActorLocation()+GetActorForwardVector()*100.f+FVector(0,0,45.f);AWeaponPickup* Drop=GetWorld()->SpawnActor<AWeaponPickup>(AWeaponPickup::StaticClass(),DropLocation,GetActorRotation());if(Drop)Drop->ConfigureWeaponClass(Old->GetClass());Old->Destroy();}WeaponSlots[ActiveWeaponSlot]=Weapon;}
+		Chest->StoredWeapons.Remove(Weapon);Chest->Storage->MaxSlots=FMath::Max(0,20-Chest->StoredWeapons.Num());Weapon->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);Weapon->SetActorHiddenInGame(false);Weapon->SetOwner(this);EquippedWeapon=Weapon;OnRep_Weapon();return;
+	}
+	if(Chest->Storage->GetQuantity(ItemId)<Quantity||!Inventory->CanAddItems(ItemId,Quantity,NAME_None,0))return;if(Chest->Storage->RemoveItem(ItemId,Quantity)){if(!Inventory->AddItem(ItemId,Quantity))Chest->Storage->AddItem(ItemId,Quantity);}
+}
+bool AShooterCharacter::ServerStoreEquippedWeaponInChest_Validate(AStorageChest* Chest){return Chest&&FVector::DistSquared(Chest->GetActorLocation(),GetActorLocation())<=FMath::Square(500.f);}
+void AShooterCharacter::ServerStoreEquippedWeaponInChest_Implementation(AStorageChest* Chest)
+{
+	if(!Chest||!EquippedWeapon||Chest->Storage->Items.Num()+Chest->StoredWeapons.Num()>=20)return;AWeaponBase* Weapon=EquippedWeapon;Chest->StoredWeapons.Add(Weapon);Chest->Storage->MaxSlots=FMath::Max(0,20-Chest->StoredWeapons.Num());WeaponSlots.Remove(Weapon);Weapon->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);Weapon->SetOwner(Chest);Weapon->AttachToActor(Chest,FAttachmentTransformRules::KeepRelativeTransform);Weapon->SetActorHiddenInGame(true);
+	if(WeaponSlots.Num()>0){ActiveWeaponSlot=FMath::Clamp(ActiveWeaponSlot,0,WeaponSlots.Num()-1);EquippedWeapon=WeaponSlots[ActiveWeaponSlot];}else{ActiveWeaponSlot=INDEX_NONE;EquippedWeapon=nullptr;}OnRep_Weapon();
+}
 void AShooterCharacter::ClientSaveAtBed_Implementation(){if(UShooterGameInstance* GI=GetGameInstance<UShooterGameInstance>())ShowLocalNotification(GI->SavePlayerAtBed(this)?TEXT("ИГРА СОХРАНЕНА У КРОВАТИ"):TEXT("НЕ УДАЛОСЬ СОХРАНИТЬ ИГРУ"));}
 void AShooterCharacter::ShowLocalNotification(const FString& Message,float Duration){LocalNotification=Message;LocalNotificationEndTime=GetWorld()?GetWorld()->GetTimeSeconds()+FMath::Max(.1f,Duration):0.f;}
 void AShooterCharacter::EquipWeapon(TSubclassOf<AWeaponBase>C){if(HasAuthority())ServerEquipWeapon_Implementation(C);else ServerEquipWeapon(C);}bool AShooterCharacter::ServerEquipWeapon_Validate(TSubclassOf<AWeaponBase>C){return C!=nullptr;}void AShooterCharacter::ServerEquipWeapon_Implementation(TSubclassOf<AWeaponBase>C){FActorSpawnParameters P;P.Owner=this;P.Instigator=this;AWeaponBase* W=GetWorld()->SpawnActor<AWeaponBase>(C,FTransform::Identity,P);if(!W)return;if(WeaponSlots.Num()<2){WeaponSlots.Add(W);ActiveWeaponSlot=WeaponSlots.Num()-1;}else{AWeaponBase* Old=WeaponSlots[ActiveWeaponSlot];if(Old){const FVector DropLocation=GetActorLocation()+GetActorForwardVector()*100.f+FVector(0.f,0.f,45.f);AWeaponPickup* Drop=GetWorld()->SpawnActor<AWeaponPickup>(AWeaponPickup::StaticClass(),DropLocation,GetActorRotation());if(Drop){Drop->ConfigureWeaponClass(Old->GetClass());Drop->Mesh->AddImpulse((GetActorForwardVector()*350.f+FVector(0.f,0.f,180.f))*Drop->Mesh->GetMass());Drop->Mesh->AddAngularImpulseInDegrees(FVector(0.f,180.f,360.f),NAME_None,true);}Old->Destroy();}WeaponSlots[ActiveWeaponSlot]=W;}EquippedWeapon=W;OnRep_Weapon();}
