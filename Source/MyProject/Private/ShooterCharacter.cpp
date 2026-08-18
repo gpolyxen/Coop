@@ -321,7 +321,49 @@ void AShooterCharacter::StopGameplayActionsForMenu()
 
 bool AShooterCharacter::IsDead()const{return Health&&Health->IsDead();}
 
-void AShooterCharacter::HandleDeath(){StopFire();bIsAiming=false;if(Camera)Camera->SetFieldOfView(HipFOV);if(UCharacterMovementComponent* Movement=GetCharacterMovement()){Movement->StopMovementImmediately();Movement->DisableMovement();}if(IsLocallyControlled())if(APlayerController* PC=Cast<APlayerController>(Controller))DisableInput(PC);UE_LOG(LogTemp,Display,TEXT("Player %s died"),*GetName());}
+float AShooterCharacter::GetReviveSecondsRemaining()const{return CanBeRevived()&&GetWorld()?FMath::Max(0.f,ReviveDeadline-GetWorld()->GetTimeSeconds()):0.f;}
+void AShooterCharacter::ApplyDownedState()
+{
+	StopFire();bIsAiming=false;bWantsToSprint=false;
+	if(Camera)Camera->SetFieldOfView(HipFOV);
+	if(UCharacterMovementComponent* Movement=GetCharacterMovement()){Movement->StopMovementImmediately();Movement->DisableMovement();}
+	if(IsLocallyControlled())if(APlayerController* PC=Cast<APlayerController>(Controller))DisableInput(PC);
+}
+void AShooterCharacter::RestoreFromDownedState()
+{
+	if(UCharacterMovementComponent* Movement=GetCharacterMovement())Movement->SetMovementMode(MOVE_Walking);
+	if(IsLocallyControlled())if(APlayerController* PC=Cast<APlayerController>(Controller)){EnableInput(PC);RestoreLocalGameplayInput();}
+}
+void AShooterCharacter::HandleDeath()
+{
+	ApplyDownedState();
+	if(HasAuthority()&&!bCanBeRevived&&!bPermanentlyDead)
+	{
+		bool bLivingTeammate=false;
+		if(GetNetMode()!=NM_Standalone)for(TActorIterator<AShooterCharacter> It(GetWorld());It;++It)if(*It!=this&&!It->IsDead()){bLivingTeammate=true;break;}
+		if(bLivingTeammate)
+		{
+			bCanBeRevived=true;ReviveDeadline=GetWorld()->GetTimeSeconds()+ReviveWindowSeconds;
+			GetWorldTimerManager().SetTimer(ReviveWindowTimer,this,&AShooterCharacter::FinalizeDeath,ReviveWindowSeconds,false);
+		}
+		else bPermanentlyDead=true;
+		ForceNetUpdate();
+	}
+	UE_LOG(LogTemp,Display,TEXT("Player %s %s"),*GetName(),bCanBeRevived?TEXT("is downed for revival"):TEXT("died"));
+}
+void AShooterCharacter::FinalizeDeath(){if(!HasAuthority()||!bCanBeRevived)return;bCanBeRevived=false;bPermanentlyDead=true;ReviveDeadline=0.f;ForceNetUpdate();}
+bool AShooterCharacter::TryReviveBy(AShooterCharacter* Reviver)
+{
+	if(!HasAuthority()||!Reviver||Reviver==this||Reviver->IsDead()||!CanBeRevived()||GetReviveSecondsRemaining()<=0.f)return false;
+	if(FVector::DistSquared(Reviver->GetActorLocation(),GetActorLocation())>FMath::Square(InteractionDistance+100.f))return false;
+	GetWorldTimerManager().ClearTimer(ReviveWindowTimer);
+	Health->RestoreAfterRevive(RevivedHealth);bCanBeRevived=false;bPermanentlyDead=false;ReviveDeadline=0.f;
+	RestoreFromDownedState();ClientRevived();ForceNetUpdate();
+	return true;
+}
+void AShooterCharacter::OnRep_ReviveState(){if(bCanBeRevived)ApplyDownedState();else if(!bPermanentlyDead&&!IsDead())RestoreFromDownedState();}
+void AShooterCharacter::ClientRevived_Implementation(){RestoreFromDownedState();ShowLocalNotification(TEXT("ВАС ВОСКРЕСИЛИ"),3.f);}
+void AShooterCharacter::ClientReviveSucceeded_Implementation(){ShowLocalNotification(TEXT("ИГРОК ВОСКРЕШЁН"),3.f);}
 void AShooterCharacter::CaptureDiagnosticScreenshot()
 {
 	FScreenshotRequest::RequestScreenshot(TEXT("CodexWeaponView.png"),false,false);
@@ -592,9 +634,9 @@ void AShooterCharacter::Reload()
 void AShooterCharacter::SprintPressed(){if(IsDead())return;bWantsToSprint=HasSkill(EShooterSkill::Marathon)||Stamina>0.f;if(bWantsToSprint)GetCharacterMovement()->MaxWalkSpeed=SprintSpeed*(HasSkill(EShooterSkill::Marathon)?1.15f:1.f);if(!HasAuthority())ServerSetSprinting(bWantsToSprint);}
 void AShooterCharacter::SprintReleased(){bWantsToSprint=false;GetCharacterMovement()->MaxWalkSpeed=WalkSpeed;if(!HasAuthority())ServerSetSprinting(false);}
 bool AShooterCharacter::ServerSetSprinting_Validate(bool){return true;}void AShooterCharacter::ServerSetSprinting_Implementation(bool bNewSprinting){bWantsToSprint=bNewSprinting&&(HasSkill(EShooterSkill::Marathon)||Stamina>0.f);}
-void AShooterCharacter::JumpPressed(){if(IsDead()||GetCharacterMovement()->IsFalling())return;if(HasAuthority())ServerTryJump_Implementation();else ServerTryJump();}
+void AShooterCharacter::JumpPressed(){UCharacterMovementComponent* Movement=GetCharacterMovement();if(IsDead()||!Movement||Movement->IsFalling()||!HasSkill(EShooterSkill::Marathon)&&Stamina<JumpStaminaCost)return;if(HasAuthority())ServerTryJump_Implementation();else{LaunchCharacter(FVector(0.f,0.f,Movement->JumpZVelocity),false,true);ServerTryJump();}}
 void AShooterCharacter::JumpReleased(){StopJumping();}
-bool AShooterCharacter::ServerTryJump_Validate(){return true;}void AShooterCharacter::ServerTryJump_Implementation(){if(IsDead()||GetCharacterMovement()->IsFalling())return;if(!HasSkill(EShooterSkill::Marathon)){if(Stamina<JumpStaminaCost)return;Stamina-=JumpStaminaCost;LastStaminaUseTime=GetWorld()->GetTimeSeconds();}Jump();}
+bool AShooterCharacter::ServerTryJump_Validate(){return true;}void AShooterCharacter::ServerTryJump_Implementation(){UCharacterMovementComponent* Movement=GetCharacterMovement();if(IsDead()||!Movement||Movement->IsFalling()||!Movement->IsMovingOnGround())return;if(!HasSkill(EShooterSkill::Marathon)){if(Stamina<JumpStaminaCost)return;Stamina-=JumpStaminaCost;LastStaminaUseTime=GetWorld()->GetTimeSeconds();}LaunchCharacter(FVector(0.f,0.f,Movement->JumpZVelocity),false,true);}
 
 bool AShooterCharacter::IsDedicatedFirstPersonRigActive()const
 {
@@ -691,11 +733,19 @@ void AShooterCharacter::Interact()
 	FHitResult H;FCollisionQueryParams P;P.AddIgnoredActor(this);const FVector A=Camera->GetComponentLocation(),B=A+Camera->GetForwardVector()*InteractionDistance;
 	if(GetWorld()->LineTraceSingleByChannel(H,A,B,ECC_Visibility,P))
 	{
+		if(AShooterCharacter* Downed=Cast<AShooterCharacter>(H.GetActor()))if(Downed->CanBeRevived()){ServerRevivePlayer(Downed);return;}
 		if(ASaveBed* Bed=Cast<ASaveBed>(H.GetActor())){ServerUseBed(Bed);return;}
 		if(AStorageChest* Chest=Cast<AStorageChest>(H.GetActor())){if(AShooterPlayerController* PC=Cast<AShooterPlayerController>(Controller))PC->OpenStorageChest(Chest);return;}
 		if(AWoodGate* Gate=Cast<AWoodGate>(H.GetActor())){ServerToggleGate(Gate);return;}
 		if(APickupActor* Pickup=Cast<APickupActor>(H.GetActor())){ServerInteract(Pickup);return;}
 	}
+	AShooterCharacter* NearestDowned=nullptr;float NearestDownedDistanceSq=FMath::Square(InteractionDistance+75.f);
+	for(TActorIterator<AShooterCharacter> It(GetWorld());It;++It)if(*It!=this&&It->CanBeRevived())
+	{
+		const float DistanceSq=FVector::DistSquared(GetActorLocation(),It->GetActorLocation());
+		if(DistanceSq<NearestDownedDistanceSq){NearestDownedDistanceSq=DistanceSq;NearestDowned=*It;}
+	}
+	if(NearestDowned){ServerRevivePlayer(NearestDowned);return;}
 	APickupActor* NearestPickup=nullptr;float NearestDistanceSq=FMath::Square(InteractionDistance+75.f);
 	for(TActorIterator<APickupActor> It(GetWorld());It;++It)
 	{
@@ -705,6 +755,7 @@ void AShooterCharacter::Interact()
 	if(NearestPickup)ServerInteract(NearestPickup);
 }
 bool AShooterCharacter::ServerInteract_Validate(APickupActor* P){return P&&FVector::DistSquared(P->GetActorLocation(),GetActorLocation())<=FMath::Square(InteractionDistance+100.f);}void AShooterCharacter::ServerInteract_Implementation(APickupActor* P){P->TryPickup(this);}
+bool AShooterCharacter::ServerRevivePlayer_Validate(AShooterCharacter* DownedPlayer){return DownedPlayer&&DownedPlayer!=this&&FVector::DistSquared(DownedPlayer->GetActorLocation(),GetActorLocation())<=FMath::Square(InteractionDistance+100.f);}void AShooterCharacter::ServerRevivePlayer_Implementation(AShooterCharacter* DownedPlayer){if(DownedPlayer&&DownedPlayer->TryReviveBy(this))ClientReviveSucceeded();}
 bool AShooterCharacter::ServerUseBed_Validate(ASaveBed* Bed){return Bed&&FVector::DistSquared(Bed->GetActorLocation(),GetActorLocation())<=FMath::Square(InteractionDistance+150.f);}void AShooterCharacter::ServerUseBed_Implementation(ASaveBed* Bed){if(Bed)ClientSaveAtBed();}
 bool AShooterCharacter::ServerToggleGate_Validate(AWoodGate* Gate){return Gate&&FVector::DistSquared(Gate->GetActorLocation(),GetActorLocation())<=FMath::Square(InteractionDistance+100.f);}void AShooterCharacter::ServerToggleGate_Implementation(AWoodGate* Gate){if(Gate)Gate->TryToggle(this);}
 void AShooterCharacter::TransferItemToChest(AStorageChest* Chest,FName ItemId,int32 Quantity){if(HasAuthority())ServerTransferItemToChest_Implementation(Chest,ItemId,Quantity);else ServerTransferItemToChest(Chest,ItemId,Quantity);}
@@ -909,4 +960,4 @@ void AShooterCharacter::OnRep_Weapon()
 		Weapon->FirstPersonMesh->SetVisibility(false,true);
 	}
 }
-void AShooterCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>&OutLifetimeProps)const{Super::GetLifetimeReplicatedProps(OutLifetimeProps);DOREPLIFETIME(AShooterCharacter,EquippedWeapon);DOREPLIFETIME(AShooterCharacter,WeaponSlots);DOREPLIFETIME(AShooterCharacter,ActiveWeaponSlot);DOREPLIFETIME(AShooterCharacter,bIsAiming);DOREPLIFETIME(AShooterCharacter,bWantsToSprint);DOREPLIFETIME(AShooterCharacter,Stamina);DOREPLIFETIME(AShooterCharacter,CharacterLevel);DOREPLIFETIME(AShooterCharacter,Experience);DOREPLIFETIME(AShooterCharacter,TotalExperience);DOREPLIFETIME(AShooterCharacter,SkillPoints);DOREPLIFETIME(AShooterCharacter,UnlockedSkills);DOREPLIFETIME(AShooterCharacter,bLastLifeConsumed);DOREPLIFETIME(AShooterCharacter,LastLifeInvulnerableUntil);}
+void AShooterCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>&OutLifetimeProps)const{Super::GetLifetimeReplicatedProps(OutLifetimeProps);DOREPLIFETIME(AShooterCharacter,EquippedWeapon);DOREPLIFETIME(AShooterCharacter,WeaponSlots);DOREPLIFETIME(AShooterCharacter,ActiveWeaponSlot);DOREPLIFETIME(AShooterCharacter,bIsAiming);DOREPLIFETIME(AShooterCharacter,bWantsToSprint);DOREPLIFETIME(AShooterCharacter,Stamina);DOREPLIFETIME(AShooterCharacter,CharacterLevel);DOREPLIFETIME(AShooterCharacter,Experience);DOREPLIFETIME(AShooterCharacter,TotalExperience);DOREPLIFETIME(AShooterCharacter,SkillPoints);DOREPLIFETIME(AShooterCharacter,UnlockedSkills);DOREPLIFETIME(AShooterCharacter,bLastLifeConsumed);DOREPLIFETIME(AShooterCharacter,LastLifeInvulnerableUntil);DOREPLIFETIME(AShooterCharacter,bCanBeRevived);DOREPLIFETIME(AShooterCharacter,bPermanentlyDead);DOREPLIFETIME(AShooterCharacter,ReviveDeadline);}

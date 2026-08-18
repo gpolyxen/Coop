@@ -76,6 +76,14 @@ public:
 	float LocalNotificationEndTime=0.f;
 	UFUNCTION(BlueprintPure) bool IsAiming()const{return bIsAiming;}
 	UFUNCTION(BlueprintPure) bool IsDead()const;
+	UFUNCTION(BlueprintPure)bool CanBeRevived()const{return bCanBeRevived&&!bPermanentlyDead;}
+	UFUNCTION(BlueprintPure)float GetReviveSecondsRemaining()const;
+	bool TryReviveBy(AShooterCharacter* Reviver);
+	UPROPERTY(ReplicatedUsing=OnRep_ReviveState,VisibleAnywhere,BlueprintReadOnly,Category="Revive")bool bCanBeRevived=false;
+	UPROPERTY(Replicated,VisibleAnywhere,BlueprintReadOnly,Category="Revive")bool bPermanentlyDead=false;
+	UPROPERTY(Replicated,VisibleAnywhere,BlueprintReadOnly,Category="Revive")float ReviveDeadline=0.f;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Revive",meta=(ClampMin="1.0"))float ReviveWindowSeconds=30.f;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Revive",meta=(ClampMin="1.0"))float RevivedHealth=35.f;
 	UFUNCTION(BlueprintPure) int32 GetExperienceForNextLevel()const{return BaseExperiencePerLevel+FMath::Max(0,CharacterLevel-1)*ExperienceGrowthPerLevel;}
 	UPROPERTY(Replicated,VisibleAnywhere,BlueprintReadOnly,Category="Progression")int32 CharacterLevel=1;
 	UPROPERTY(Replicated,VisibleAnywhere,BlueprintReadOnly,Category="Progression")int32 Experience=0;
@@ -97,6 +105,7 @@ protected:
 	UFUNCTION(Server,Reliable,WithValidation)void ServerEquipWeapon(TSubclassOf<AWeaponBase> WeaponClass);
 	UFUNCTION(Server,Reliable,WithValidation)void ServerSwitchWeapon(int32 Direction);
 	UFUNCTION(Server,Reliable,WithValidation)void ServerInteract(APickupActor* Pickup);
+	UFUNCTION(Server,Reliable,WithValidation)void ServerRevivePlayer(AShooterCharacter* DownedPlayer);
 	UFUNCTION(Server,Reliable,WithValidation)void ServerUseBed(ASaveBed* Bed);
 	UFUNCTION(Server,Reliable,WithValidation)void ServerToggleGate(class AWoodGate* Gate);
 	UFUNCTION(Client,Reliable)void ClientSaveAtBed();
@@ -112,11 +121,18 @@ protected:
 	UFUNCTION(Server,Reliable,WithValidation)void ServerTransferItemFromChest(AStorageChest* Chest,FName ItemId,int32 Quantity);
 	UFUNCTION(Server,Reliable,WithValidation)void ServerStoreEquippedWeaponInChest(AStorageChest* Chest);
 	UFUNCTION()void OnRep_Weapon();
+	UFUNCTION()void OnRep_ReviveState();
+	UFUNCTION(Client,Reliable)void ClientRevived();
+	UFUNCTION(Client,Reliable)void ClientReviveSucceeded();
 	UFUNCTION()void HandleDeath();
+	void FinalizeDeath();
+	void ApplyDownedState();
+	void RestoreFromDownedState();
 	void RefreshAnimationState();
 	UPROPERTY(EditDefaultsOnly,Category="Movement")float WalkSpeed=450.f;UPROPERTY(EditDefaultsOnly,Category="Movement")float SprintSpeed=700.f;UPROPERTY(EditDefaultsOnly,Category="Movement")float BaseTurnRate=45.f;UPROPERTY(EditDefaultsOnly,Category="Interaction")float InteractionDistance=300.f;UPROPERTY(EditDefaultsOnly,Category="Aim")float HipFOV=90.f;UPROPERTY(EditDefaultsOnly,Category="Aim")float AimFOV=75.f;UPROPERTY(Replicated)bool bIsAiming=false;FTimerHandle FireTimer;
 	UPROPERTY(Replicated)bool bWantsToSprint=false;
 	float LastStaminaUseTime=-1000.f;
+	FTimerHandle ReviveWindowTimer;
 	UPROPERTY(EditDefaultsOnly,Category="Progression",meta=(ClampMin="1"))int32 BaseExperiencePerLevel=100;
 	UPROPERTY(EditDefaultsOnly,Category="Progression",meta=(ClampMin="0"))int32 ExperienceGrowthPerLevel=50;
 	void CaptureDiagnosticScreenshot();

@@ -90,5 +90,19 @@ void AShooterHUD::DrawHUD()
 	DrawText(WeaponText,FLinearColor::White,Canvas->ClipX-260.f,Canvas->ClipY-80.f,GEngine->GetMediumFont(),1.2f,false);
 	if(!C->LocalNotification.IsEmpty()&&GetWorld()&&GetWorld()->GetTimeSeconds()<C->LocalNotificationEndTime)
 		DrawText(C->LocalNotification,FLinearColor(.25f,.8f,1.f),CenterX-190.f,CenterY+150.f,GEngine->GetMediumFont(),1.1f,false);
-	if(C->IsDead())DrawText(TEXT("YOU DIED"),FLinearColor::Red,CenterX-95.f,CenterY-35.f,GEngine->GetLargeFont(),1.5f,false);
+	if(C->CanBeRevived())
+	{
+		DrawText(TEXT("ВЫ РАНЕНЫ"),FLinearColor(1.f,.15f,.08f),CenterX-110.f,CenterY-55.f,GEngine->GetLargeFont(),1.5f,false);
+		DrawText(FString::Printf(TEXT("СОЮЗНИК МОЖЕТ ВОСКРЕСИТЬ ВАС: %.0f"),C->GetReviveSecondsRemaining()),FLinearColor::White,CenterX-210.f,CenterY-12.f,GEngine->GetMediumFont(),1.f,false);
+	}
+	else if(C->IsDead())DrawText(TEXT("YOU DIED"),FLinearColor::Red,CenterX-95.f,CenterY-35.f,GEngine->GetLargeFont(),1.5f,false);
+	else
+	{
+		for(TActorIterator<AShooterCharacter> It(GetWorld());It;++It)
+		{
+			if(*It==C||!It->CanBeRevived()||FVector::DistSquared(C->GetActorLocation(),It->GetActorLocation())>FMath::Square(375.f))continue;
+			DrawText(FString::Printf(TEXT("E — ВОСКРЕСИТЬ СОЮЗНИКА (%.0f)"),It->GetReviveSecondsRemaining()),FLinearColor(.2f,1.f,.35f),CenterX-175.f,CenterY+95.f,GEngine->GetMediumFont(),1.1f,false);
+			break;
+		}
+	}
 }

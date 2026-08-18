@@ -17,6 +17,8 @@ public:
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	UFUNCTION(BlueprintCallable) float ApplyDamage(float RawDamage, AController* InstigatorController, AActor* DamageCauser);
 	UFUNCTION(BlueprintCallable) float Heal(float Amount);
+	/** Server-only transition from zero health back to a living state. */
+	float RestoreAfterRevive(float NewHealth);
 	UFUNCTION(BlueprintPure) bool IsDead() const { return Health <= 0.f; }
 	UPROPERTY(Replicated, EditDefaultsOnly, BlueprintReadOnly, Category="Health") float MaxHealth = 100.f;
 	UPROPERTY(ReplicatedUsing=OnRep_Health, VisibleAnywhere, BlueprintReadOnly, Category="Health") float Health = 100.f;

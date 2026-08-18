@@ -25,5 +25,13 @@ float UHealthArmorComponent::Heal(float Amount)
 	if (Restored > 0.f) OnHealthChanged.Broadcast(Health, Restored);
 	return Restored;
 }
+float UHealthArmorComponent::RestoreAfterRevive(float NewHealth)
+{
+	if(!GetOwner()->HasAuthority()||NewHealth<=0.f)return 0.f;
+	const float Old=Health;
+	Health=FMath::Clamp(NewHealth,1.f,MaxHealth);
+	OnHealthChanged.Broadcast(Health,Health-Old);
+	return Health-Old;
+}
 void UHealthArmorComponent::OnRep_Health(float OldHealth) { OnHealthChanged.Broadcast(Health, Health - OldHealth); if (IsDead() && OldHealth > 0.f) OnDeath.Broadcast(); }
 void UHealthArmorComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const { Super::GetLifetimeReplicatedProps(OutLifetimeProps); DOREPLIFETIME(UHealthArmorComponent, MaxHealth); DOREPLIFETIME(UHealthArmorComponent, Health); DOREPLIFETIME(UHealthArmorComponent, ArmorReduction); }

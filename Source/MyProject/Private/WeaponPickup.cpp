@@ -9,6 +9,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "Components/SphereComponent.h"
 #include "UObject/ConstructorHelpers.h"
+#include "Net/UnrealNetwork.h"
 
 AWeaponPickup::AWeaponPickup(){WeaponClass=AStarterRifle::StaticClass();ItemId=TEXT("AR4");static ConstructorHelpers::FObjectFinder<UStaticMesh>PickupMesh(TEXT("/Game/FPS_Weapon_Bundle/Weapons/Meshes/AR4/SM_AR4.SM_AR4"));if(PickupMesh.Succeeded())Mesh->SetStaticMesh(PickupMesh.Object);Mesh->SetRelativeScale3D(FVector(1.f));}
 void AWeaponPickup::ConfigureWeaponClass(TSubclassOf<AWeaponBase> C)
@@ -47,4 +48,6 @@ void AWeaponPickup::ConfigureWeaponClass(TSubclassOf<AWeaponBase> C)
 	}
 	if(M)Mesh->SetStaticMesh(M);
 }
+void AWeaponPickup::OnRep_WeaponClass(){ConfigureWeaponClass(WeaponClass);}
+void AWeaponPickup::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps)const{Super::GetLifetimeReplicatedProps(OutLifetimeProps);DOREPLIFETIME(AWeaponPickup,WeaponClass);}
 bool AWeaponPickup::TryPickup(APawn* P){if(!HasAuthority()||!P||FVector::DistSquared(P->GetActorLocation(),GetActorLocation())>FMath::Square(400.f))return false;if(AShooterCharacter*C=Cast<AShooterCharacter>(P)){C->EquipWeapon(WeaponClass);Destroy();return true;}return false;}
