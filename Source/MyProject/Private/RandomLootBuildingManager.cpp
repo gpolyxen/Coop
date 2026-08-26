@@ -3,6 +3,7 @@
 #include "BuildableStructure.h"
 #include "LootSuitcasePickup.h"
 #include "ZombieCharacter.h"
+#include "ZombieAIController.h"
 #include "Engine/World.h"
 #include "NavigationSystem.h"
 
@@ -130,6 +131,11 @@ void ARandomLootBuildingManager::SpawnBuilding(const FVector& GroundLocation,flo
 		const float X=XPositions[XSlot];
 		const float Y=(Index&1)?110.f:-110.f;
 		if(AZombieCharacter* Resident=GetWorld()->SpawnActor<AZombieCharacter>(AZombieCharacter::StaticClass(),WorldPoint(X,Y,Level*220.f+100.f),BuildingRotation,Parameters))
+		{
 			Resident->SetDormant((Index+BuildingIndex)%3==0);
+			if(!Resident->GetController())Resident->SpawnDefaultController();
+			if(AZombieAIController* ResidentAI=Cast<AZombieAIController>(Resident->GetController()))
+				ResidentAI->SetPatrolArea(WorldPoint(0.f,0.f,Level*220.f+100.f),260.f);
+		}
 	}
 }

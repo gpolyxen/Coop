@@ -12,6 +12,7 @@ public:
 	AZombieAIController();
 	virtual void Tick(float DeltaSeconds)override;
 	void AlertToActor(AActor* Actor);
+	void SetPatrolArea(const FVector& Center,float Radius);
 protected:virtual void OnPossess(APawn* InPawn)override;
 	UPROPERTY(VisibleAnywhere)UAIPerceptionComponent* Senses;UPROPERTY()UAISenseConfig_Sight* Sight;UPROPERTY()UAISenseConfig_Hearing* Hearing;
 	UFUNCTION()void OnTargetPerception(AActor* Actor,FAIStimulus Stimulus);
@@ -36,7 +37,7 @@ protected:virtual void OnPossess(APawn* InPawn)override;
 	// Once a wave has found a living player it must keep hunting while the player
 	// is hiding on an upper floor.  A short perception timeout made the horde drop
 	// aggro half way through a multi-storey route and start wandering downstairs.
-	UPROPERTY(EditDefaultsOnly,Category="AI")float ForgetAfter=300.f;
+	UPROPERTY(EditDefaultsOnly,Category="AI")float ForgetAfter=8.f;
 	// At arm's length a player is noticed even when he approaches from behind.
 	// An obstacle must still be absent, so this does not provide vision through walls.
 	UPROPERTY(EditDefaultsOnly,Category="AI",meta=(ClampMin="100"))float ProximityAwarenessRadius=350.f;
@@ -58,6 +59,8 @@ protected:virtual void OnPossess(APawn* InPawn)override;
 	UPROPERTY(EditDefaultsOnly,Category="AI|Jump",meta=(ClampMin="0"))float MaximumLandingDrop=90.f;
 	double LastStimulus=-1000.;
 	double NextPatrolTime=0.;
+	FVector PatrolCenter=FVector::ZeroVector;
+	float PatrolAreaRadius=0.f;
 	bool bPatrolMoveActive=false;
 	bool bSteeringPatrol=false;
 	FVector SteeringPatrolLocation=FVector::ZeroVector;

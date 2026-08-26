@@ -47,10 +47,21 @@ void AZombieAIController::OnPossess(APawn* InPawn)
 	Super::OnPossess(InPawn);
 	if(Senses)Senses->RequestStimuliListenerUpdate();
 	NextPatrolTime=GetWorld()?GetWorld()->GetTimeSeconds()+FMath::FRandRange(PatrolWaitMin,PatrolWaitMax):0.;
+	PatrolCenter=InPawn?InPawn->GetActorLocation():FVector::ZeroVector;
 	PatrolLastProgressLocation=InPawn?InPawn->GetActorLocation():FVector::ZeroVector;
 	PatrolLastProgressTime=GetWorld()?GetWorld()->GetTimeSeconds():0.;
 	ResetNavigationRecovery();
 	UE_LOG(LogTemp,Display,TEXT("Zombie AI %s possessed %s"),*GetName(),*GetNameSafe(InPawn));
+}
+
+void AZombieAIController::SetPatrolArea(const FVector& Center,float Radius)
+{
+	PatrolCenter=Center;
+	PatrolAreaRadius=FMath::Max(0.f,Radius);
+	bPatrolMoveActive=false;
+	bSteeringPatrol=false;
+	StopMovement();
+	NextPatrolTime=GetWorld()?GetWorld()->GetTimeSeconds()+FMath::FRandRange(PatrolWaitMin,PatrolWaitMax):0.;
 }
 
 void AZombieAIController::ResetNavigationRecovery()
@@ -446,9 +457,11 @@ void AZombieAIController::TryStartPatrol()
 {
 	AZombieCharacter* Zombie=Cast<AZombieCharacter>(GetPawn());
 	UNavigationSystemV1* Navigation=UNavigationSystemV1::GetCurrent(GetWorld());
-	if(!Zombie||!Navigation)return;
+	if(!Zombie||!Navigation||Zombie->IsDormant())return;
+	const float EffectiveRadius=PatrolAreaRadius>0.f?PatrolAreaRadius:PatrolRadius;
+	const FVector SearchCenter=PatrolAreaRadius>0.f?PatrolCenter:Zombie->GetActorLocation();
 	FNavLocation PatrolPoint;
-	if(Navigation->GetRandomReachablePointInRadius(Zombie->GetActorLocation(),PatrolRadius,PatrolPoint))
+	if(Navigation->GetRandomReachablePointInRadius(SearchCenter,EffectiveRadius,PatrolPoint))
 	{
 		bPatrolMoveActive=MoveToLocation(PatrolPoint.Location,PatrolAcceptanceRadius,true,true,true)!=EPathFollowingRequestResult::Failed;
 		bSteeringPatrol=false;
@@ -458,8 +471,8 @@ void AZombieAIController::TryStartPatrol()
 	}
 	else
 	{
-		const FVector2D Direction=FMath::RandPointInCircle(PatrolRadius);
-		SteeringPatrolLocation=Zombie->GetActorLocation()+FVector(Direction.X,Direction.Y,0.f);
+		const FVector2D Direction=FMath::RandPointInCircle(EffectiveRadius);
+		SteeringPatrolLocation=SearchCenter+FVector(Direction.X,Direction.Y,0.f);
 		bSteeringPatrol=true;
 		bPatrolMoveActive=true;
 		PatrolLastProgressLocation=Zombie->GetActorLocation();
@@ -723,6 +736,7 @@ void AZombieAIController::Tick(float DeltaSeconds)
 	Super::Tick(DeltaSeconds);
 	AZombieCharacter* Zombie=Cast<AZombieCharacter>(GetPawn());
 	if(!Zombie||Zombie->IsDead()){StopMovement();return;}
+	if(Zombie->IsDormant()){StopMovement();bPatrolMoveActive=false;bSteeringPatrol=false;return;}
 	if(Zombie->IsAttacking()||Zombie->IsHitReacting()){StopMovement();return;}
 	const double Now=GetWorld()->GetTimeSeconds();
 	UCharacterMovementComponent* Movement=Zombie->GetCharacterMovement();
@@ -756,13 +770,6 @@ void AZombieAIController::Tick(float DeltaSeconds)
 
 	if(Target.IsValid())
 	{
-		// Once the horde has acquired a player it tracks the current storey.  Using
-		// only the last visible point made zombies attack the wall below the place
-		// where the player had previously been seen instead of selecting stairs.
-		LastKnownLocation=Target->GetActorLocation();
-		// Acquired living players remain the objective even when a floor or wall
-		// hides them. This prevents the horde returning to patrol under the base.
-		LastStimulus=Now;
 		const bool bCanSeeTarget=LineOfSightTo(Target.Get());
 		if(bCanSeeTarget)
 		{
@@ -791,7 +798,7 @@ void AZombieAIController::Tick(float DeltaSeconds)
 			}
 			else
 			{
-				const FVector Destination=Target->GetActorLocation();
+				const FVector Destination=bCanSeeTarget?Target->GetActorLocation():LastKnownLocation;
 				const bool bNeedsVerticalRoute=FMath::Abs(Destination.Z-Zombie->GetActorLocation().Z)>=115.f;
 				// A stair is only accepted when its entry is reachable on the zombie's
 				// current navigation island. Once selected, keep its authored traversal

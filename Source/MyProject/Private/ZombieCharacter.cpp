@@ -121,6 +121,12 @@ void AZombieCharacter::BeginPlay()
 void AZombieCharacter::SetDormant(bool bNewDormant)
 {
 	if(!HasAuthority()||bIsDead)return;
+	if(bDormant==bNewDormant)return;
+	if(!bNewDormant)
+	{
+		WakeUp();
+		return;
+	}
 	bDormant=bNewDormant;
 	OnRep_Dormant();
 }
@@ -151,7 +157,7 @@ void AZombieCharacter::OnRep_Dormant()
 			Instance->SetPlaying(false);
 		}
 	}
-	else if(bWakeSequencePlaying||WakeAnimation)
+	else if(bWakeSequencePlaying)
 	{
 		bWakeSequencePlaying=true;
 		GetCharacterMovement()->DisableMovement();

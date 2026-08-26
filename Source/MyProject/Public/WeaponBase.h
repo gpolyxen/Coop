@@ -84,7 +84,7 @@ public:
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Aiming",meta=(ClampMin="0.0"))float CloseRangeHitCorrectionDistance=0.f;
 	// Server-side guaranteed alert radius. Perception can miss a freshly spawned
 	// listener, so every real shot also wakes all zombies inside the active zone.
-	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="AI",meta=(ClampMin="1000.0"))float GunshotAlertRadius=60000.f;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="AI",meta=(ClampMin="1000.0"))float GunshotAlertRadius=20000.f;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Melee")bool bMeleeWeapon=false;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Melee",meta=(ClampMin="10.0"))float MeleeRange=230.f;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Melee",meta=(ClampMin="0.0"))float MeleeRadius=32.f;
