@@ -112,7 +112,11 @@ void ARandomLootBuildingManager::SpawnBuilding(const FVector& GroundLocation,flo
 		if(!bRoofStairwell)SpawnStructure(AWoodFloor::StaticClass(),X,Y,FloorCount*220.f+2.f,0.f);
 	}
 	if(ALootSuitcasePickup* Suitcase=GetWorld()->SpawnActor<ALootSuitcasePickup>(ALootSuitcasePickup::StaticClass(),WorldPoint(60.f,30.f,55.f),BuildingRotation,Parameters))
+	{
+#if WITH_EDITOR
 		Suitcase->SetActorLabel(FString::Printf(TEXT("GeneratedLootSuitcase_%d"),BuildingIndex));
+#endif
+	}
 	// Every generated floor receives at least one resident.  Some start dormant
 	// and only play their wake sequence after sight, hearing or damage alerts them.
 	const int32 ResidentCount=FMath::Max(ZombiesPerBuilding,FloorCount*2);

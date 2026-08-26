@@ -1,7 +1,7 @@
 #include "WoodAxeWeapon.h"
 #include "Components/StaticMeshComponent.h"
-#include "Animation/AnimSequence.h"
 #include "Materials/MaterialInterface.h"
+#include "Animation/AnimSequence.h"
 #include "UObject/ConstructorHelpers.h"
 
 AWoodAxeWeapon::AWoodAxeWeapon()
@@ -16,15 +16,24 @@ AWoodAxeWeapon::AWoodAxeWeapon()
 	// Do not rely on an old imported mesh slot saved by the editor: Blueprint
 	// children and cooked builds receive the same authored PBR material explicitly.
 	static ConstructorHelpers::FObjectFinder<UMaterialInterface>AxeMaterial(TEXT("/Game/ThirdPersonBP/Player_0/Weapon/WoodAxe/M_WoodAxeColored.M_WoodAxeColored"));if(AxeMaterial.Succeeded())AxeMesh->SetMaterial(0,AxeMaterial.Object);
-	// Mixamo exports two takes per FBX in UE4.27; the *_mixamo_com take contains
-	// the actual motion, while Take_001 is only the auxiliary take.
-	static ConstructorHelpers::FObjectFinder<UAnimSequence>Attack1(TEXT("/Game/ThirdPersonBP/Player_0/Anim/Two_Hands_weapon/Axe_Attack_1_mixamo_com.Axe_Attack_1_mixamo_com"));if(Attack1.Succeeded())CharacterMeleeAttackAnimations.Add(Attack1.Object);
-	static ConstructorHelpers::FObjectFinder<UAnimSequence>Attack2(TEXT("/Game/ThirdPersonBP/Player_0/Anim/Two_Hands_weapon/Axe_Attack_2_mixamo_com.Axe_Attack_2_mixamo_com"));if(Attack2.Succeeded())CharacterMeleeAttackAnimations.Add(Attack2.Object);
-	static ConstructorHelpers::FObjectFinder<UAnimSequence>Attack3(TEXT("/Game/ThirdPersonBP/Player_0/Anim/Two_Hands_weapon/Axe_Attack_3_mixamo_com.Axe_Attack_3_mixamo_com"));if(Attack3.Succeeded())CharacterMeleeAttackAnimations.Add(Attack3.Object);
-	bUseMeleeLocomotionAnimations=true;
-	static ConstructorHelpers::FObjectFinder<UAnimSequence>Idle(TEXT("/Game/ThirdPersonBP/Player_0/Anim/Two_Hands_weapon/TwoHand_Idle_mixamo_com.TwoHand_Idle_mixamo_com"));if(Idle.Succeeded())CharacterMeleeIdleAnimation=Idle.Object;
-	static ConstructorHelpers::FObjectFinder<UAnimSequence>Walk(TEXT("/Game/ThirdPersonBP/Player_0/Anim/Two_Hands_weapon/TwoHand_Walk_mixamo_com.TwoHand_Walk_mixamo_com"));if(Walk.Succeeded())CharacterMeleeWalkAnimation=Walk.Object;
-	static ConstructorHelpers::FObjectFinder<UAnimSequence>Run(TEXT("/Game/ThirdPersonBP/Player_0/Anim/Two_Hands_weapon/TwoHand_Run_mixamo_com.TwoHand_Run_mixamo_com"));if(Run.Succeeded())CharacterMeleeRunAnimation=Run.Object;
-	static ConstructorHelpers::FObjectFinder<UAnimSequence>Strafe(TEXT("/Game/ThirdPersonBP/Player_0/Anim/Two_Hands_weapon/TwoHand_Strafe_mixamo_com.TwoHand_Strafe_mixamo_com"));if(Strafe.Succeeded())CharacterMeleeStrafeAnimation=Strafe.Object;
-	static ConstructorHelpers::FObjectFinder<UAnimSequence>Jump(TEXT("/Game/ThirdPersonBP/Player_0/Anim/Two_Hands_weapon/TwoHand_Jump_mixamo_com.TwoHand_Jump_mixamo_com"));if(Jump.Succeeded())CharacterMeleeJumpAnimation=Jump.Object;
+	// These imports are retargeted to UE4_Mannequin_Skeleton, which is also used by
+	// the playable character.  Do not reference the similarly named Person_0
+	// originals: those have a different hierarchy and produce a T-pose.
+	static ConstructorHelpers::FObjectFinder<UAnimSequence> AxeIdle(TEXT("/Game/ThirdPersonBP/Player_0/Anim/Two_Hands_weapon/Great_Sword_Idle_Anim_mixamo_com.Great_Sword_Idle_Anim_mixamo_com"));
+	static ConstructorHelpers::FObjectFinder<UAnimSequence> AxeWalk(TEXT("/Game/ThirdPersonBP/Player_0/Anim/Two_Hands_weapon/Great_Sword_Walk_Anim_mixamo_com.Great_Sword_Walk_Anim_mixamo_com"));
+	static ConstructorHelpers::FObjectFinder<UAnimSequence> AxeRun(TEXT("/Game/ThirdPersonBP/Player_0/Anim/Two_Hands_weapon/Great_Sword_Run_Anim_mixamo_com.Great_Sword_Run_Anim_mixamo_com"));
+	static ConstructorHelpers::FObjectFinder<UAnimSequence> AxeStrafe(TEXT("/Game/ThirdPersonBP/Player_0/Anim/Two_Hands_weapon/Great_Sword_Strafe_Anim_mixamo_com.Great_Sword_Strafe_Anim_mixamo_com"));
+	static ConstructorHelpers::FObjectFinder<UAnimSequence> AxeJump(TEXT("/Game/ThirdPersonBP/Player_0/Anim/Two_Hands_weapon/Great_Sword_Jump_Anim_mixamo_com.Great_Sword_Jump_Anim_mixamo_com"));
+	static ConstructorHelpers::FObjectFinder<UAnimSequence> AxeSlash(TEXT("/Game/ThirdPersonBP/Player_0/Anim/Two_Hands_weapon/Great_Sword_Slash_Anim_mixamo_com.Great_Sword_Slash_Anim_mixamo_com"));
+	static ConstructorHelpers::FObjectFinder<UAnimSequence> AxeInward(TEXT("/Game/ThirdPersonBP/Player_0/Anim/Two_Hands_weapon/Stable_Sword_Inward_Slash_Anim_mixamo_com.Stable_Sword_Inward_Slash_Anim_mixamo_com"));
+	static ConstructorHelpers::FObjectFinder<UAnimSequence> AxeOutward(TEXT("/Game/ThirdPersonBP/Player_0/Anim/Two_Hands_weapon/Stable_Sword_Outward_Slash_Anim_mixamo_com.Stable_Sword_Outward_Slash_Anim_mixamo_com"));
+	CharacterMeleeIdleAnimation=AxeIdle.Object;
+	CharacterMeleeWalkAnimation=AxeWalk.Object;
+	CharacterMeleeRunAnimation=AxeRun.Object;
+	CharacterMeleeStrafeAnimation=AxeStrafe.Object;
+	CharacterMeleeJumpAnimation=AxeJump.Object;
+	if(AxeSlash.Succeeded())CharacterMeleeAttackAnimations.Add(AxeSlash.Object);
+	if(AxeInward.Succeeded())CharacterMeleeAttackAnimations.Add(AxeInward.Object);
+	if(AxeOutward.Succeeded())CharacterMeleeAttackAnimations.Add(AxeOutward.Object);
+	bUseMeleeLocomotionAnimations=AxeIdle.Succeeded()&&AxeWalk.Succeeded();
 }

@@ -12,6 +12,7 @@
 #include "HealthArmorComponent.h"
 #include "OpenWorldStreamingManager.h"
 #include "Animation/AnimSequence.h"
+#include "Animation/AnimSingleNodeInstance.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/SkeletalMesh.h"
@@ -76,13 +77,14 @@ AZombieCharacter::AZombieCharacter()
 	if(CrawlAsset.Succeeded())CrawlAnimation=CrawlAsset.Object;
 	static ConstructorHelpers::FObjectFinder<UAnimSequence> RunAsset(TEXT("/Game/ThirdPersonBP/Bot/bot_animations/Zombie_Run_Anim.Zombie_Run_Anim"));
 	if(RunAsset.Succeeded())RunAnimation=RunAsset.Object;
-	static ConstructorHelpers::FObjectFinder<UAnimSequence> WakeAsset(TEXT("/Game/ThirdPersonBP/Bot/bot_animations/Thriller_Idle_Anim.Thriller_Idle_Anim"));
+	static ConstructorHelpers::FObjectFinder<UAnimSequence> WakeAsset(TEXT("/Game/ThirdPersonBP/Bot/bot_animations/Zombie_Stand_Up_Anim.Zombie_Stand_Up_Anim"));
 	if(WakeAsset.Succeeded())WakeAnimation=WakeAsset.Object;
 	static ConstructorHelpers::FObjectFinder<UAnimSequence> ReactionAsset(TEXT("/Game/ThirdPersonBP/Bot/bot_animations/Zombie_Reaction_Hit_Anim.Zombie_Reaction_Hit_Anim"));
 	if(ReactionAsset.Succeeded())HitReactionAnimation=ReactionAsset.Object;
 	static ConstructorHelpers::FObjectFinder<UAnimSequence> TurnAsset(TEXT("/Game/ThirdPersonBP/Bot/bot_animations/Zombie_Turn_Anim.Zombie_Turn_Anim"));
 	if(TurnAsset.Succeeded())TurnAnimation=TurnAsset.Object;
-	BiteAnimation=AttackAnimation;
+	static ConstructorHelpers::FObjectFinder<UAnimSequence> BiteAsset(TEXT("/Game/ThirdPersonBP/Bot/bot_animations/Zombie_Neck_Bite_Anim.Zombie_Neck_Bite_Anim"));
+	if(BiteAsset.Succeeded())BiteAnimation=BiteAsset.Object;
 }
 
 void AZombieCharacter::BeginPlay()
@@ -140,7 +142,14 @@ void AZombieCharacter::OnRep_Dormant()
 	if(bDormant)
 	{
 		GetCharacterMovement()->DisableMovement();
-		PlayZombieAnimation(IdleAnimation,true,1.f);
+		// The first frame of the stand-up take is the authored lying pose. Freeze it
+		// there until sight, sound or damage calls WakeUp().
+		PlayZombieAnimation(WakeAnimation?WakeAnimation:IdleAnimation,false,1.f);
+		if(UAnimSingleNodeInstance* Instance=GetMesh()->GetSingleNodeInstance())
+		{
+			Instance->SetPosition(0.f,false);
+			Instance->SetPlaying(false);
+		}
 	}
 	else if(bWakeSequencePlaying||WakeAnimation)
 	{
@@ -185,7 +194,7 @@ void AZombieCharacter::Tick(float DeltaSeconds)
 	if(bDormant||bWakeSequencePlaying)return;
 	if(GetWorld()&&GetWorld()->GetTimeSeconds()>=NextNightStateCheck){NextNightStateCheck=GetWorld()->GetTimeSeconds()+1.f;UpdateNightEmpowerment();}
 	SmoothedLocomotionSpeed=FMath::FInterpTo(SmoothedLocomotionSpeed,GetVelocity().Size2D(),DeltaSeconds,LocomotionSmoothingSpeed);
-	if(bIsAttacking)
+	if(IsAttacking())
 	{
 		if(HasAuthority()&&PendingAttackTarget.IsValid())
 		{
@@ -254,7 +263,7 @@ void AZombieCharacter::PlayZombieAnimation(UAnimationAsset* Animation,bool bLoop
 
 void AZombieCharacter::UpdateLocomotionAnimation()
 {
-	if(bIsDead||bIsAttacking||bDormant||bWakeSequencePlaying||(GetWorld()&&GetWorld()->GetTimeSeconds()<TemporaryAnimationUntil))return;
+	if(bIsDead||IsAttacking()||bHitReacting||bDormant||bWakeSequencePlaying||(GetWorld()&&GetWorld()->GetTimeSeconds()<TemporaryAnimationUntil))return;
 	if(bLocomotionMoving)
 	{
 		if(SmoothedLocomotionSpeed<StopWalkingSpeed)bLocomotionMoving=false;
@@ -278,9 +287,8 @@ void AZombieCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out
 	DOREPLIFETIME(AZombieCharacter,LethalProgress);
 	DOREPLIFETIME(AZombieCharacter,CombatHealth);
 	DOREPLIFETIME(AZombieCharacter,bIsDead);
-	DOREPLIFETIME(AZombieCharacter,bIsAttacking);
+	DOREPLIFETIME(AZombieCharacter,AttackMode);
 	DOREPLIFETIME(AZombieCharacter,bDormant);
-	DOREPLIFETIME(AZombieCharacter,bBiteAttack);
 	DOREPLIFETIME(AZombieCharacter,SeveredLimbs);
 }
 
@@ -411,7 +419,7 @@ float AZombieCharacter::TakeDamage(float DamageAmount,const FDamageEvent& Damage
 	LethalProgress=1.f-CombatHealth/FMath::Max(1.f,MaxCombatHealth);
 	const bool bKilled=CombatHealth<=KINDA_SMALL_NUMBER;
 	MulticastBloodImpact(HitLocation,ShotDirection,bKilled&&bHeadshot);
-	if(!bKilled&&!bIsAttacking)MulticastHitReaction();
+	if(!bKilled&&!IsAttacking())BeginHitReaction();
 	WakeUp();
 
 	if(AZombieAIController* ZombieController=Cast<AZombieAIController>(GetController()))
@@ -445,15 +453,42 @@ void AZombieCharacter::MulticastBloodImpact_Implementation(FVector_NetQuantize H
 
 void AZombieCharacter::MulticastHitReaction_Implementation()
 {
-	if(!HitReactionAnimation||bIsDead||bIsAttacking)return;
+	if(!HitReactionAnimation||bIsDead||IsAttacking())return;
 	TemporaryAnimationUntil=GetWorld()->GetTimeSeconds()+HitReactionAnimation->GetPlayLength()/1.25f;
 	CurrentAnimation=nullptr;
 	PlayZombieAnimation(HitReactionAnimation,false,1.25f);
 }
 
+void AZombieCharacter::BeginHitReaction()
+{
+	if(!HasAuthority()||bIsDead||IsAttacking()||!HitReactionAnimation)return;
+	bHitReacting=true;
+	if(AZombieAIController* ZombieController=Cast<AZombieAIController>(GetController()))ZombieController->StopMovement();
+	if(UCharacterMovementComponent* Movement=GetCharacterMovement())
+	{
+		Movement->StopMovementImmediately();
+		Movement->DisableMovement();
+	}
+	MulticastHitReaction();
+	const float Duration=HitReactionAnimation->GetPlayLength()/1.25f;
+	GetWorldTimerManager().SetTimer(HitReactionTimer,this,&AZombieCharacter::FinishHitReaction,FMath::Max(.1f,Duration),false);
+}
+
+void AZombieCharacter::FinishHitReaction()
+{
+	if(!HasAuthority())return;
+	bHitReacting=false;
+	if(!bIsDead&&!bDormant&&!bWakeSequencePlaying&&!IsAttacking())
+	{
+		if(UCharacterMovementComponent* Movement=GetCharacterMovement())Movement->SetMovementMode(MOVE_Walking);
+		CurrentAnimation=nullptr;
+		UpdateLocomotionAnimation();
+	}
+}
+
 bool AZombieCharacter::TryAttack(AActor* Target)
 {
-	if(!HasAuthority()||bIsDead||bIsAttacking||!Target||(SeveredLimbs&3)==3)return false;
+	if(!HasAuthority()||bIsDead||IsAttacking()||bHitReacting||!Target||(SeveredLimbs&3)==3)return false;
 	FVector AttackPoint=Target->GetActorLocation();
 	if(Cast<ABuildableStructure>(Target))
 	{
@@ -466,28 +501,42 @@ bool AZombieCharacter::TryAttack(AActor* Target)
 
 	LastAttackTime=Now;
 	PendingAttackTarget=Target;
-	bBiteAttack=Cast<ACharacter>(Target)!=nullptr&&!Cast<ABuildableStructure>(Target)&&(SeveredLimbs&3)==0&&FMath::FRand()<BiteChance;
-	bIsAttacking=true;
+	ACharacter* CharacterTarget=Cast<ACharacter>(Target);
+	const float TargetDistance2D=FVector::Dist2D(GetActorLocation(),Target->GetActorLocation());
+	const bool bCanBite=CharacterTarget&&!Cast<ABuildableStructure>(Target)&&(SeveredLimbs&3)==0;
+	const bool bStationaryPointBlank=bCanBite&&TargetDistance2D<=ImmediateBiteRange
+		&&CharacterTarget->GetVelocity().Size2D()<=StationaryBiteSpeed;
+	AttackMode=bCanBite&&(bStationaryPointBlank||FMath::FRand()<BiteChance)
+		?EZombieAttackMode::Bite:EZombieAttackMode::HandStrike;
 	GetCharacterMovement()->StopMovementImmediately();
-	OnRep_IsAttacking();
-	GetWorldTimerManager().SetTimer(AttackHitTimer,this,&AZombieCharacter::PerformAttackHit,AttackHitDelay,false);
-	UAnimSequence* SelectedAttack=bBiteAttack&&BiteAnimation?BiteAnimation:AttackAnimation;
-	const float SelectedPlayRate=bBiteAttack?BitePlayRate:AttackPlayRate;
+	OnRep_AttackMode();
+	ForceNetUpdate();
+	const float SelectedHitDelay=AttackMode==EZombieAttackMode::Bite?BiteHitDelay:AttackHitDelay;
+	GetWorldTimerManager().SetTimer(AttackHitTimer,this,&AZombieCharacter::PerformAttackHit,SelectedHitDelay,false);
+	// A dedicated bite sequence can be assigned on a Blueprint child.  Until one
+	// is available, keep the grapple functional and use the existing close attack
+	// as a visual fallback instead of silently disabling bites.
+	UAnimSequence* SelectedAttack=AttackMode==EZombieAttackMode::Bite&&BiteAnimation?BiteAnimation:AttackAnimation;
+	const float SelectedPlayRate=AttackMode==EZombieAttackMode::Bite?BitePlayRate:AttackPlayRate;
 	const float AnimationDuration=SelectedAttack?SelectedAttack->GetPlayLength()/FMath::Max(.1f,SelectedPlayRate):1.8f;
-	GetWorldTimerManager().SetTimer(AttackFinishTimer,this,&AZombieCharacter::FinishAttack,FMath::Max(AttackHitDelay+.2f,AnimationDuration),false);
+	GetWorldTimerManager().SetTimer(AttackFinishTimer,this,&AZombieCharacter::FinishAttack,FMath::Max(SelectedHitDelay+.2f,AnimationDuration),false);
 	return true;
 }
 
-void AZombieCharacter::OnRep_IsAttacking()
+void AZombieCharacter::OnRep_AttackMode()
 {
 	CurrentAnimation=nullptr;
-	if(bIsAttacking)PlayZombieAnimation(bBiteAttack&&BiteAnimation?BiteAnimation:AttackAnimation,false,bBiteAttack?BitePlayRate:AttackPlayRate);
+	if(AttackMode!=EZombieAttackMode::None)
+	{
+		UAnimSequence* SelectedAttack=AttackMode==EZombieAttackMode::Bite&&BiteAnimation?BiteAnimation:AttackAnimation;
+		PlayZombieAnimation(SelectedAttack,false,AttackMode==EZombieAttackMode::Bite?BitePlayRate:AttackPlayRate);
+	}
 	else UpdateLocomotionAnimation();
 }
 
 void AZombieCharacter::PerformAttackHit()
 {
-	if(!HasAuthority()||bIsDead||!bIsAttacking||!PendingAttackTarget.IsValid())return;
+	if(!HasAuthority()||bIsDead||!IsAttacking()||!PendingAttackTarget.IsValid())return;
 	AActor* Target=PendingAttackTarget.Get();
 	FVector TargetPoint=Target->GetActorLocation();
 	if(Cast<ABuildableStructure>(Target))
@@ -511,7 +560,7 @@ void AZombieCharacter::PerformAttackHit()
 		AActor* HitActor=ObstacleHit.GetActor();
 		if(HitActor&&HitActor!=Target&&!HitActor->IsOwnedBy(Target))return;
 	}
-	if(bBiteAttack&&Cast<ACharacter>(Target))
+	if(AttackMode==EZombieAttackMode::Bite&&Cast<ACharacter>(Target))
 	{
 		BeginBite(Target);
 		return;
@@ -541,9 +590,9 @@ void AZombieCharacter::FinishAttack()
 	if(!HasAuthority()||bIsDead)return;
 	EndBite();
 	PendingAttackTarget.Reset();
-	bBiteAttack=false;
-	bIsAttacking=false;
-	OnRep_IsAttacking();
+	AttackMode=EZombieAttackMode::None;
+	OnRep_AttackMode();
+	ForceNetUpdate();
 }
 
 void AZombieCharacter::BeginBite(AActor* Victim)
@@ -556,7 +605,9 @@ void AZombieCharacter::BeginBite(AActor* Victim)
 	{
 		if(!Player->BeginZombieBite(this))
 		{
-			bBiteAttack=false;
+			AttackMode=EZombieAttackMode::HandStrike;
+			OnRep_AttackMode();
+			ForceNetUpdate();
 			return;
 		}
 	}
@@ -587,7 +638,7 @@ void AZombieCharacter::ApplyBiteDamage()
 
 void AZombieCharacter::RegisterBiteEscapePress(AActor* Victim)
 {
-	if(!HasAuthority()||Victim!=BiteVictim.Get()||!bBiteAttack)return;
+	if(!HasAuthority()||Victim!=BiteVictim.Get()||AttackMode!=EZombieAttackMode::Bite)return;
 	++BiteEscapePresses;
 	if(BiteEscapePresses<BiteEscapePressesRequired)return;
 	const float Elapsed=GetWorld()->GetTimeSeconds()-BiteStartTime;
@@ -613,10 +664,12 @@ void AZombieCharacter::Die(bool bHeadshot,FName HitBone,const FVector& ShotDirec
 	if(bIsDead)return;
 	bIsDead=true;
 	EndBite();
-	bIsAttacking=false;
+	AttackMode=EZombieAttackMode::None;
+	bHitReacting=false;
 	PendingAttackTarget.Reset();
 	GetWorldTimerManager().ClearTimer(AttackHitTimer);
 	GetWorldTimerManager().ClearTimer(AttackFinishTimer);
+	GetWorldTimerManager().ClearTimer(HitReactionTimer);
 	const FVector Impulse=ShotDirection.GetSafeNormal()*HeadDetachImpulse;
 	MulticastDie(bHeadshot,HitBone,Impulse,HitLocation);
 	if(HasAuthority()&&GetWorld()&&FMath::FRand()<=LootBagDropChance)
@@ -632,7 +685,7 @@ void AZombieCharacter::Die(bool bHeadshot,FName HitBone,const FVector& ShotDirec
 void AZombieCharacter::MulticastDie_Implementation(bool bHeadshot,FName HitBone,FVector Impulse,FVector HitLocation)
 {
 	bIsDead=true;
-	bIsAttacking=false;
+	AttackMode=EZombieAttackMode::None;
 	CurrentAnimation=nullptr;
 	if(AAIController* ZombieController=Cast<AAIController>(GetController()))ZombieController->StopMovement();
 	GetCharacterMovement()->DisableMovement();

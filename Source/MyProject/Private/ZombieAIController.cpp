@@ -723,7 +723,7 @@ void AZombieAIController::Tick(float DeltaSeconds)
 	Super::Tick(DeltaSeconds);
 	AZombieCharacter* Zombie=Cast<AZombieCharacter>(GetPawn());
 	if(!Zombie||Zombie->IsDead()){StopMovement();return;}
-	if(Zombie->IsAttacking()){StopMovement();return;}
+	if(Zombie->IsAttacking()||Zombie->IsHitReacting()){StopMovement();return;}
 	const double Now=GetWorld()->GetTimeSeconds();
 	UCharacterMovementComponent* Movement=Zombie->GetCharacterMovement();
 	if(Movement&&Movement->IsFalling())

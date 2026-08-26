@@ -10,6 +10,14 @@ class UHealthArmorComponent;
 class UNavigationInvokerComponent;
 class UMaterialInterface;
 
+UENUM()
+enum class EZombieAttackMode : uint8
+{
+	None,
+	HandStrike,
+	Bite
+};
+
 UCLASS(Blueprintable)
 class MYPROJECT_API AZombieCharacter : public ACharacter
 {
@@ -27,7 +35,8 @@ public:
 	UFUNCTION(BlueprintCallable) void WakeUp();
 	void RegisterBiteEscapePress(AActor* Victim);
 	UFUNCTION(BlueprintPure) bool IsDead() const { return bIsDead; }
-	UFUNCTION(BlueprintPure) bool IsAttacking() const { return bIsAttacking; }
+	UFUNCTION(BlueprintPure) bool IsAttacking() const { return AttackMode!=EZombieAttackMode::None; }
+	UFUNCTION(BlueprintPure) bool IsHitReacting() const { return bHitReacting; }
 	UFUNCTION(BlueprintPure) bool IsDormant() const { return bDormant; }
 	UFUNCTION(BlueprintPure) bool IsNightEmpowered()const{return bNightEmpowered;}
 
@@ -67,6 +76,11 @@ public:
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Rewards",meta=(ClampMin="0")) int32 KillExperience=10;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Rewards",meta=(ClampMin="0")) int32 HeadshotBonusExperience=10;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Attack|Bite",meta=(ClampMin="0.0",ClampMax="1.0")) float BiteChance=.28f;
+	/** A stationary character this close is bitten instead of receiving a random hand strike. */
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Attack|Bite",meta=(ClampMin="1.0")) float ImmediateBiteRange=125.f;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Attack|Bite",meta=(ClampMin="0.0")) float StationaryBiteSpeed=15.f;
+	/** Grapple starts near the contact frame instead of waiting for the hand-strike hit frame. */
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Attack|Bite",meta=(ClampMin="0.01")) float BiteHitDelay=.18f;
 	/** A bite deliberately holds the contact frames longer than a hand strike. */
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Attack|Bite",meta=(ClampMin="0.1")) float BitePlayRate=.72f;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Attack|Bite",meta=(ClampMin="0.1")) float BiteDamageInterval=.45f;
@@ -89,9 +103,8 @@ protected:
 private:
 	double LastAttackTime=-1000.;
 	UPROPERTY(Replicated) bool bIsDead=false;
-	UPROPERTY(ReplicatedUsing=OnRep_IsAttacking) bool bIsAttacking=false;
+	UPROPERTY(ReplicatedUsing=OnRep_AttackMode) EZombieAttackMode AttackMode=EZombieAttackMode::None;
 	UPROPERTY(ReplicatedUsing=OnRep_Dormant) bool bDormant=false;
-	UPROPERTY(ReplicatedUsing=OnRep_IsAttacking) bool bBiteAttack=false;
 	UPROPERTY(Transient) UAnimationAsset* CurrentAnimation=nullptr;
 	UPROPERTY() UMaterialInterface* VisualVariantBodyMaterial=nullptr;
 	UPROPERTY() UMaterialInterface* VisualVariantClothesMaterial=nullptr;
@@ -107,11 +120,13 @@ private:
 	FTimerHandle AttackHitTimer;
 	FTimerHandle AttackFinishTimer;
 	FTimerHandle BiteDamageTimer;
+	FTimerHandle HitReactionTimer;
 	FTimerHandle WakeTimer;
 	TWeakObjectPtr<AActor> BiteVictim;
 	double BiteStartTime=-1000.;
 	int32 BiteEscapePresses=0;
 	bool bWakeSequencePlaying=false;
+	bool bHitReacting=false;
 	float TemporaryAnimationUntil=0.f;
 	float LastObservedYaw=0.f;
 
@@ -131,10 +146,12 @@ private:
 	void ApplyBiteDamage();
 	void BeginBite(AActor* Victim);
 	void EndBite();
+	void BeginHitReaction();
+	void FinishHitReaction();
 	void FinishWakeUp();
 	void Die(bool bHeadshot,FName HitBone,const FVector& ShotDirection,const FVector& HitLocation);
 
-	UFUNCTION() void OnRep_IsAttacking();
+	UFUNCTION() void OnRep_AttackMode();
 	UFUNCTION() void OnRep_Dormant();
 	UFUNCTION() void OnRep_SeveredLimbs();
 	UFUNCTION(NetMulticast,Unreliable) void MulticastBloodImpact(FVector_NetQuantize HitLocation,FVector_NetQuantizeNormal ShotDirection,bool bFountain);

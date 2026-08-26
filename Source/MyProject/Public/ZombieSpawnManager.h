@@ -26,6 +26,8 @@ public:
 	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="Zombie Spawning",meta=(ClampMin="0.5"))float SpawnInterval=4.f;
 	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="Zombie Spawning",meta=(ClampMin="300"))float MinimumSpawnDistance=1300.f;
 	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="Zombie Spawning",meta=(ClampMin="500"))float MaximumSpawnDistance=3000.f;
+	/** Only this random fraction of roaming spawns begins lying down. */
+	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="Zombie Spawning",meta=(ClampMin="0.0",ClampMax="1.0"))float DormantSpawnChance=.18f;
 	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="Supplies",meta=(ClampMin="100"))float MinimumSupplyDistance=350.f;
 	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="Supplies",meta=(ClampMin="300"))float MaximumSupplyDistance=1200.f;
 	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="Spawning",meta=(ClampMin="100"))float ConstructionExclusionRadius=550.f;

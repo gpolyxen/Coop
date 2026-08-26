@@ -133,6 +133,9 @@ void AZombieSpawnManager::MaintainZombiePopulation()
 		AZombieCharacter* Zombie=GetWorld()->SpawnActor<AZombieCharacter>(ZombieClass,SpawnLocation,SpawnRotation,Parameters);
 		if(Zombie)
 		{
+			// Most zombies patrol immediately; a small random subset waits in the
+			// authored lying pose and stands up only after being alerted.
+			Zombie->SetDormant(FMath::FRand()<DormantSpawnChance);
 			if(bSpawnBrute)++LivingBrutes;
 			else if(bSpawnSpitter)++LivingSpitters;
 			else if(bSpawnRunner)++LivingRunners;
