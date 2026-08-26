@@ -12,6 +12,7 @@
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "Animation/AnimSequence.h"
+#include "Animation/Skeleton.h"
 #include "BuildableStructure.h"
 #include "ShooterCharacter.h"
 #include "ZombieCharacter.h"
@@ -39,7 +40,19 @@ bool AWeaponBase::FireAuthoritative(FVector AimPoint)
 		if(!AimPoint.IsNearlyZero())Direction=(AimPoint-Start).GetSafeNormal();
 		FCollisionQueryParams Query(SCENE_QUERY_STAT(MeleeWeaponSweep),true,GetOwner());Query.AddIgnoredActor(this);
 		FHitResult Hit;
-		const bool bHit=GetWorld()->SweepSingleByChannel(Hit,Start,Start+Direction*MeleeRange,FQuat::Identity,ECC_Visibility,FCollisionShape::MakeSphere(MeleeRadius),Query);
+		bool bHit=GetWorld()->SweepSingleByChannel(Hit,Start,Start+Direction*MeleeRange,FQuat::Identity,ECC_Visibility,FCollisionShape::MakeSphere(MeleeRadius),Query);
+		// Character capsules are not required to block Visibility in this project.
+		// Query Pawns explicitly so a visible axe swing cannot pass through a zombie
+		// without producing an authoritative damage hit.
+		FCollisionObjectQueryParams PawnObjects;
+		PawnObjects.AddObjectTypesToQuery(ECC_Pawn);
+		FHitResult PawnHit;
+		if(GetWorld()->SweepSingleByObjectType(PawnHit,Start,Start+Direction*MeleeRange,FQuat::Identity,PawnObjects,FCollisionShape::MakeSphere(MeleeRadius),Query)
+			&&PawnHit.GetActor()&&(!bHit||PawnHit.Distance<=Hit.Distance+MeleeRadius))
+		{
+			Hit=PawnHit;
+			bHit=true;
+		}
 		if(bHit&&Hit.GetActor())
 		{
 			// A world sweep normally contacts the character capsule first.  Recover a
@@ -70,7 +83,14 @@ bool AWeaponBase::FireAuthoritative(FVector AimPoint)
 			UGameplayStatics::ApplyPointDamage(Hit.GetActor(),Damage,Direction,Hit,GetOwner()?GetOwner()->GetInstigatorController():nullptr,this,nullptr);
 		}
 		const int32 AttackCount=CharacterMeleeAttackAnimations.Num();
-		const int32 AttackIndex=AttackCount>0?NextMeleeAttackIndex++%AttackCount:INDEX_NONE;
+		int32 AttackIndex=AttackCount>0?FMath::RandHelper(AttackCount):INDEX_NONE;
+		// Preserve variety: when several attacks exist, never repeat the immediately
+		// preceding animation. The authoritative server chooses once for all clients.
+		if(AttackCount>1&&AttackIndex==LastMeleeAttackIndex)
+			AttackIndex=(AttackIndex+1+FMath::RandHelper(AttackCount-1))%AttackCount;
+		LastMeleeAttackIndex=AttackIndex;
+		UE_LOG(LogTemp,Display,TEXT("Melee attack requested: weapon=%s attacks=%d index=%d authority=%d"),
+			*GetNameSafe(this),AttackCount,AttackIndex,HasAuthority()?1:0);
 		MulticastMeleeEffects(AttackIndex);
 		return true;
 	}
@@ -173,15 +193,35 @@ void AWeaponBase::MulticastMeleeEffects_Implementation(int32 AttackIndex)
 {
 	ACharacter* Character=Cast<ACharacter>(GetOwner());
 	UAnimSequence* Attack=CharacterMeleeAttackAnimations.IsValidIndex(AttackIndex)?CharacterMeleeAttackAnimations[AttackIndex]:nullptr;
-	if(!Character||!Character->GetMesh()||!Attack)return;
-	if(bUseMeleeLocomotionAnimations)
+	if(!Character||!Character->GetMesh()||!Attack)
 	{
-		MeleeActionAnimationUntil=GetWorld()->GetTimeSeconds()+Attack->GetPlayLength();
-		Character->GetMesh()->SetAnimationMode(EAnimationMode::AnimationSingleNode);
-		Character->GetMesh()->PlayAnimation(Attack,false);
+		UE_LOG(LogTemp,Error,TEXT("Melee animation rejected: character=%s mesh=%s attackIndex=%d attack=%s count=%d"),
+			*GetNameSafe(Character),Character?*GetNameSafe(Character->GetMesh()):TEXT("None"),AttackIndex,
+			*GetNameSafe(Attack),CharacterMeleeAttackAnimations.Num());
+		return;
 	}
-	else if(UAnimInstance* AnimInstance=Character->GetMesh()->GetAnimInstance())
-		AnimInstance->PlaySlotAnimationAsDynamicMontage(Attack,TEXT("WeaponSlot"),.08f,.16f,1.f,1,0.f,.05f);
+	if(UAnimInstance* AnimInstance=Character->GetMesh()->GetAnimInstance())
+	{
+		// UE4ASP_HeroTPP_AnimBlueprint routes melee actions through AxeSlot. A dynamic
+		// montage preserves the complete AnimBP graph and only layers the authored
+		// axe swing for its duration instead of replacing the player's AnimInstance.
+		MeleeActionAnimationUntil=GetWorld()->GetTimeSeconds()+Attack->GetPlayLength();
+		static const FName AxeSlotName(TEXT("AxeSlot"));
+		// A slot node can be saved in an AnimBP without the corresponding slot being
+		// persisted in the Skeleton asset. Dynamic montage creation then silently
+		// returns null, so register it on the animation skeleton before playback.
+		if(USkeleton* AttackSkeleton=Attack->GetSkeleton())AttackSkeleton->RegisterSlotNode(AxeSlotName);
+		USkeleton* MeshSkeleton=Character->GetMesh()->SkeletalMesh?Character->GetMesh()->SkeletalMesh->Skeleton:nullptr;
+		USkeleton* AttackSkeleton=Attack->GetSkeleton();
+		const bool bCompatible=MeshSkeleton&&AttackSkeleton&&MeshSkeleton->IsCompatible(AttackSkeleton);
+		const bool bComposable=Attack->CanBeUsedInComposition();
+		UAnimMontage* DynamicMontage=UAnimMontage::CreateSlotAnimationAsDynamicMontage(Attack,AxeSlotName,.08f,.16f,1.f,1,.05f,.05f);
+		const float PlayedLength=DynamicMontage?AnimInstance->Montage_Play(DynamicMontage,1.f,EMontagePlayReturnType::MontageLength,.05f):0.f;
+		UE_LOG(LogTemp,Display,TEXT("Melee animation play: character=%s animInstance=%s attack=%s length=%.3f meshSkeleton=%s attackSkeleton=%s compatible=%d composable=%d slot=AxeSlot montage=%s played=%.3f"),
+			*GetNameSafe(Character),*GetNameSafe(AnimInstance),*GetNameSafe(Attack),Attack->GetPlayLength(),
+			*GetNameSafe(MeshSkeleton),*GetNameSafe(AttackSkeleton),bCompatible?1:0,bComposable?1:0,*GetNameSafe(DynamicMontage),PlayedLength);
+	}
+	else UE_LOG(LogTemp,Error,TEXT("Melee animation rejected: %s has no AnimInstance"),*GetNameSafe(Character));
 }
 void AWeaponBase::Reload(){if(HasAuthority())ServerReload_Implementation();else ServerReload();}bool AWeaponBase::ServerReload_Validate(){return true;}void AWeaponBase::ServerReload_Implementation(){if(bIsReloading||AmmoInMagazine>=Stats.MagazineSize||ReserveAmmo<=0)return;bIsReloading=true;const AShooterCharacter* Shooter=Cast<AShooterCharacter>(GetOwner());const float ReloadMultiplier=Shooter?Shooter->GetReloadTimeMultiplier():1.f;GetWorldTimerManager().SetTimer(ReloadTimer,this,&AWeaponBase::FinishReload,FMath::Max(.1f,Stats.ReloadSeconds*ReloadMultiplier),false);}
 void AWeaponBase::FinishReload(){if(!HasAuthority())return;const int32 Need=Stats.MagazineSize-AmmoInMagazine,Take=FMath::Min(Need,ReserveAmmo);AmmoInMagazine+=Take;ReserveAmmo-=Take;bIsReloading=false;}

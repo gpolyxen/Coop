@@ -438,7 +438,15 @@ void AShooterCharacter::Tick(float D)
 	RecoilPitchTarget=FMath::FInterpTo(RecoilPitchTarget,0.f,D,Recovery);RecoilYawTarget=FMath::FInterpTo(RecoilYawTarget,0.f,D,Recovery);RecoilKickTarget=FMath::FInterpTo(RecoilKickTarget,0.f,D,Recovery);
 	const FVector LocalVelocity=GetActorTransform().InverseTransformVectorNoScale(GetVelocity());
 	const float Direction=FMath::RadiansToDegrees(FMath::Atan2(LocalVelocity.Y,LocalVelocity.X));
-	auto UpdateAnim=[this,Direction](UAnimInstance* Anim){if(!Anim)return;auto SetFloat=[Anim](const TCHAR* Name,float Value){if(FFloatProperty* P=FindFProperty<FFloatProperty>(Anim->GetClass(),Name))P->SetPropertyValue_InContainer(Anim,Value);};auto SetBool=[Anim](const TCHAR* Name,bool Value){if(FBoolProperty* P=FindFProperty<FBoolProperty>(Anim->GetClass(),Name))P->SetPropertyValue_InContainer(Anim,Value);};const bool bHasWeapon=EquippedWeapon!=nullptr;SetFloat(TEXT("Speed"),GetVelocity().Size2D());SetFloat(TEXT("Direction"),Direction);SetBool(TEXT("IsAiming"),bHasWeapon&&bIsAiming);SetBool(TEXT("IsAiming?"),bHasWeapon&&bIsAiming);SetBool(TEXT("Is Aiming?"),bHasWeapon&&bIsAiming);SetBool(TEXT("HasWeapon"),bHasWeapon);SetBool(TEXT("Has Weapon?"),bHasWeapon);SetBool(TEXT("Crouching"),bIsCrouched);SetBool(TEXT("Jumping"),GetCharacterMovement()->IsFalling());FObjectPropertyBase* PlayerProperty=FindFProperty<FObjectPropertyBase>(Anim->GetClass(),TEXT("As BP Player"));if(!PlayerProperty)PlayerProperty=FindFProperty<FObjectPropertyBase>(Anim->GetClass(),TEXT("AsBPPlayer"));if(PlayerProperty)PlayerProperty->SetObjectPropertyValue_InContainer(Anim,this);if(UFunction* CalculateRotation=Anim->FindFunction(TEXT("CalculateRotation")))Anim->ProcessEvent(CalculateRotation,nullptr);};UpdateAnim(GetMesh()->GetAnimInstance());
+	bUsingTwoHandedMelee=EquippedWeapon&&EquippedWeapon->bMeleeWeapon&&EquippedWeapon->bUseMeleeLocomotionAnimations;
+	// UE4ASP_HeroTPP_AnimBlueprint copies this Blueprint variable from BP_Player
+	// every update. Keep the BP_Player value authoritative so that copy cannot
+	// overwrite the native equipment state with the Blueprint default (false).
+	auto SetCharacterBool=[this](const TCHAR* Name,bool Value){if(FBoolProperty* P=FindFProperty<FBoolProperty>(GetClass(),Name))P->SetPropertyValue_InContainer(this,Value);};
+	SetCharacterBool(TEXT("Is_Two_Hands_Weapon?"),bUsingTwoHandedMelee);
+	SetCharacterBool(TEXT("Is Two Hands Weapon?"),bUsingTwoHandedMelee);
+	SetCharacterBool(TEXT("IsTwoHandsWeapon"),bUsingTwoHandedMelee);
+	auto UpdateAnim=[this,Direction](UAnimInstance* Anim){if(!Anim)return;auto SetFloat=[Anim](const TCHAR* Name,float Value){if(FFloatProperty* P=FindFProperty<FFloatProperty>(Anim->GetClass(),Name))P->SetPropertyValue_InContainer(Anim,Value);};auto SetBool=[Anim](const TCHAR* Name,bool Value){if(FBoolProperty* P=FindFProperty<FBoolProperty>(Anim->GetClass(),Name))P->SetPropertyValue_InContainer(Anim,Value);};const bool bHasWeapon=EquippedWeapon!=nullptr;const bool bTwoHandedWeapon=bUsingTwoHandedMelee;SetFloat(TEXT("Speed"),GetVelocity().Size2D());SetFloat(TEXT("Direction"),Direction);SetBool(TEXT("IsAiming"),bHasWeapon&&bIsAiming);SetBool(TEXT("IsAiming?"),bHasWeapon&&bIsAiming);SetBool(TEXT("Is Aiming?"),bHasWeapon&&bIsAiming);SetBool(TEXT("HasWeapon"),bHasWeapon);SetBool(TEXT("Has Weapon?"),bHasWeapon);SetBool(TEXT("Is_Two_Hands_Weapon?"),bTwoHandedWeapon);SetBool(TEXT("Is Two Hands Weapon?"),bTwoHandedWeapon);SetBool(TEXT("IsTwoHandsWeapon"),bTwoHandedWeapon);SetBool(TEXT("Crouching"),bIsCrouched);SetBool(TEXT("Jumping"),GetCharacterMovement()->IsFalling());FObjectPropertyBase* PlayerProperty=FindFProperty<FObjectPropertyBase>(Anim->GetClass(),TEXT("As BP Player"));if(!PlayerProperty)PlayerProperty=FindFProperty<FObjectPropertyBase>(Anim->GetClass(),TEXT("AsBPPlayer"));if(PlayerProperty)PlayerProperty->SetObjectPropertyValue_InContainer(Anim,this);if(UFunction* CalculateRotation=Anim->FindFunction(TEXT("CalculateRotation")))Anim->ProcessEvent(CalculateRotation,nullptr);};UpdateAnim(GetMesh()->GetAnimInstance());
 	UpdateMeleeLocomotionAnimation();
 	UpdateDedicatedFirstPersonRigAnimation();
 	if(IsBuilding())UpdateBuildPreview();
@@ -901,18 +909,12 @@ void AShooterCharacter::EquipWeapon(TSubclassOf<AWeaponBase>C){if(HasAuthority()
 void AShooterCharacter::SwitchWeapon(float V){if(FMath::Abs(V)>.1f)ServerSwitchWeapon(V>0?1:-1);}bool AShooterCharacter::ServerSwitchWeapon_Validate(int32 D){return D==1||D==-1;}void AShooterCharacter::ServerSwitchWeapon_Implementation(int32 D){if(WeaponSlots.Num()<2)return;ActiveWeaponSlot=(ActiveWeaponSlot+D+WeaponSlots.Num())%WeaponSlots.Num();EquippedWeapon=WeaponSlots[ActiveWeaponSlot];OnRep_Weapon();}
 void AShooterCharacter::RefreshAnimationState()
 {
-	if(EquippedWeapon&&EquippedWeapon->bMeleeWeapon&&EquippedWeapon->bUseMeleeLocomotionAnimations&&EquippedWeapon->CharacterMeleeIdleAnimation)
-	{
-		CurrentMeleeLocomotionAnimation=EquippedWeapon->CharacterMeleeIdleAnimation;
-		GetMesh()->SetAnimationMode(EAnimationMode::AnimationSingleNode);
-		GetMesh()->PlayAnimation(CurrentMeleeLocomotionAnimation,true);
-		UE_LOG(LogTemp,Display,TEXT("Character melee animation restored: weapon=%s idle=%s"),*GetNameSafe(EquippedWeapon),*GetNameSafe(CurrentMeleeLocomotionAnimation));
-		return;
-	}
+	bUsingTwoHandedMelee=EquippedWeapon&&EquippedWeapon->bMeleeWeapon&&EquippedWeapon->bUseMeleeLocomotionAnimations;
 	CurrentMeleeLocomotionAnimation=nullptr;
-	// BP_ShooterCharacter was saved with stale class defaults after the native
-	// animation properties changed. Resolve the known-good authored classes here
-	// so equipping any weapon can never switch the character to None/T-pose.
+	// The authored AnimBP always remains in control.  Switching to a SingleNode
+	// player for the axe disabled locomotion/aim logic and moved the head-mounted
+	// camera with the raw full-body animation, which put the camera inside the body.
+	// The AnimBP reads bUsingTwoHandedMelee and performs the desired pose blend.
 	TSubclassOf<UAnimInstance> DesiredAnimClass=EquippedWeapon
 		?LoadClass<UAnimInstance>(nullptr,TEXT("/Game/ThirdPersonBP/Player_0/Anim/UE4ASP_HeroTPP_AnimBlueprint.UE4ASP_HeroTPP_AnimBlueprint_C"))
 		:LoadClass<UAnimInstance>(nullptr,TEXT("/Game/Mannequin/Animations/ThirdPerson_AnimBP.ThirdPerson_AnimBP_C"));
@@ -934,21 +936,10 @@ void AShooterCharacter::RefreshAnimationState()
 
 void AShooterCharacter::UpdateMeleeLocomotionAnimation()
 {
-	if(!EquippedWeapon||!EquippedWeapon->bMeleeWeapon||!EquippedWeapon->bUseMeleeLocomotionAnimations||EquippedWeapon->IsMeleeActionAnimationPlaying())return;
-	UAnimSequence* Desired=EquippedWeapon->CharacterMeleeIdleAnimation;
-	const float Speed=GetVelocity().Size2D();
-	if(GetCharacterMovement()->IsFalling()&&EquippedWeapon->CharacterMeleeJumpAnimation)Desired=EquippedWeapon->CharacterMeleeJumpAnimation;
-	else if(Speed>10.f)
-	{
-		const FVector LocalVelocity=GetActorTransform().InverseTransformVectorNoScale(GetVelocity());
-		if(FMath::Abs(LocalVelocity.Y)>FMath::Abs(LocalVelocity.X)*.55f&&EquippedWeapon->CharacterMeleeStrafeAnimation)Desired=EquippedWeapon->CharacterMeleeStrafeAnimation;
-		else if(Speed>WalkSpeed*1.08f&&EquippedWeapon->CharacterMeleeRunAnimation)Desired=EquippedWeapon->CharacterMeleeRunAnimation;
-		else if(EquippedWeapon->CharacterMeleeWalkAnimation)Desired=EquippedWeapon->CharacterMeleeWalkAnimation;
-	}
-	if(!Desired||Desired==CurrentMeleeLocomotionAnimation)return;
-	CurrentMeleeLocomotionAnimation=Desired;
-	GetMesh()->SetAnimationMode(EAnimationMode::AnimationSingleNode);
-	GetMesh()->PlayAnimation(Desired,true);
+	// Locomotion selection belongs to UE4ASP_HeroTPP_AnimBlueprint.  Keeping this
+	// function as a harmless state refresh preserves the existing Tick call while
+	// ensuring native code can never replace the active AnimInstance again.
+	bUsingTwoHandedMelee=EquippedWeapon&&EquippedWeapon->bMeleeWeapon&&EquippedWeapon->bUseMeleeLocomotionAnimations;
 }
 
 void AShooterCharacter::SetActiveWeaponSlotForLoad(int32 SlotIndex)
@@ -1110,7 +1101,13 @@ void AShooterCharacter::OnRep_Weapon()
 		if(!Weapon)continue;
 
 		const bool bIsEquipped=Weapon==EquippedWeapon;
-		const FName TargetSocket=bIsEquipped?EquippedWeaponSocketName:StowedWeaponSocketName;
+		FName TargetSocket=bIsEquipped?EquippedWeaponSocketName:StowedWeaponSocketName;
+		if(bIsEquipped&&!Weapon->EquippedSocketOverride.IsNone())
+		{
+			if(CharacterMesh->DoesSocketExist(Weapon->EquippedSocketOverride))TargetSocket=Weapon->EquippedSocketOverride;
+			else UE_LOG(LogTemp,Warning,TEXT("Equipped socket %s is missing on %s; using %s"),
+				*Weapon->EquippedSocketOverride.ToString(),*GetNameSafe(CharacterMesh),*EquippedWeaponSocketName.ToString());
+		}
 		Weapon->SetOwner(this);
 		Weapon->AttachToComponent(CharacterMesh,FAttachmentTransformRules::SnapToTargetIncludingScale,TargetSocket);
 		Weapon->SetActorRelativeTransform(FTransform::Identity);

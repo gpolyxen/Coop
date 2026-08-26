@@ -40,6 +40,13 @@ public:
 	UPROPERTY(ReplicatedUsing=OnRep_Weapon,VisibleAnywhere,BlueprintReadOnly) AWeaponBase* EquippedWeapon=nullptr;
 	UPROPERTY(ReplicatedUsing=OnRep_Weapon,VisibleAnywhere,BlueprintReadOnly) TArray<AWeaponBase*> WeaponSlots;
 	UPROPERTY(Replicated,VisibleAnywhere,BlueprintReadOnly) int32 ActiveWeaponSlot=INDEX_NONE;
+	/**
+	 * Animation Blueprint switch for an equipped two-handed melee weapon.
+	 * This is derived from EquippedWeapon on every machine; the AnimBP owns the
+	 * actual pose blending so native weapon code never replaces the AnimInstance.
+	 */
+	UPROPERTY(VisibleAnywhere,BlueprintReadOnly,Category="Animation")bool bUsingTwoHandedMelee=false;
+	UFUNCTION(BlueprintPure,Category="Animation")bool IsUsingTwoHandedMelee()const{return bUsingTwoHandedMelee;}
 	UFUNCTION(BlueprintCallable) void EquipWeapon(TSubclassOf<AWeaponBase> WeaponClass);
 	UFUNCTION(BlueprintCallable) int32 AddAmmunition(int32 Amount);
 	UFUNCTION(BlueprintPure) bool CanCraftBed()const;

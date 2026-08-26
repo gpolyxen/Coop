@@ -28,6 +28,9 @@ public:
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly) FWeaponStats Stats;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Weapon")FString WeaponName=TEXT("Weapon");
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Weapon")bool bAutomatic=true;
+	// Optional character socket used only while this weapon is equipped.
+	// NAME_None keeps the character's normal sktGun socket.
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Weapon")FName EquippedSocketOverride=NAME_None;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly) TSubclassOf<ABallisticProjectile> ProjectileClass;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Effects")UNiagaraSystem* MuzzleFlash=nullptr;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Effects")USoundBase* FireSound=nullptr;
@@ -105,5 +108,5 @@ protected:
 	UFUNCTION(Server,Reliable,WithValidation) void ServerReload();
 	UFUNCTION(NetMulticast,Unreliable)void MulticastFireEffects(FVector_NetQuantize MuzzleLocation,FRotator MuzzleRotation);
 	UFUNCTION(NetMulticast,Unreliable)void MulticastMeleeEffects(int32 AttackIndex);
-	bool FireAuthoritative(FVector AimPoint);void FinishReload();double LastFireTime=-1000.;double MeleeActionAnimationUntil=-1000.;FTimerHandle ReloadTimer;int32 NextMeleeAttackIndex=0;
+	bool FireAuthoritative(FVector AimPoint);void FinishReload();double LastFireTime=-1000.;double MeleeActionAnimationUntil=-1000.;FTimerHandle ReloadTimer;int32 LastMeleeAttackIndex=INDEX_NONE;
 };
