@@ -2,6 +2,7 @@
 
 #include "ZombieAIController.h"
 #include "BloodBurstActor.h"
+#include "BloodPoolActor.h"
 #include "HeadGibActor.h"
 #include "LimbGibActor.h"
 #include "LootBagPickup.h"
@@ -372,7 +373,11 @@ void AZombieCharacter::MulticastSeverLimb_Implementation(uint8 LimbBit,FName Roo
 	FActorSpawnParameters Parameters;Parameters.SpawnCollisionHandlingOverride=ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 	if(ALimbGibActor* Gib=GetWorld()->SpawnActor<ALimbGibActor>(ALimbGibActor::StaticClass(),HitLocation,FRotator::ZeroRotator,Parameters))
 		Gib->InitializeGib(GetMesh()->GetMaterial(0),(LimbBit&12)!=0,Impulse);
-	MulticastBloodImpact(HitLocation,Impulse.GetSafeNormal(),true);
+	if(ABloodBurstActor* Blood=GetWorld()->SpawnActor<ABloodBurstActor>(ABloodBurstActor::StaticClass(),HitLocation,Impulse.Rotation(),Parameters))
+	{
+		if(!RootBone.IsNone())Blood->AttachToComponent(GetMesh(),FAttachmentTransformRules::KeepWorldTransform,RootBone);
+		Blood->ActivateBurst(Impulse.GetSafeNormal(),true);
+	}
 }
 
 FName AZombieCharacter::ResolveHeadBone(FName PreferredBone)const
@@ -424,7 +429,7 @@ float AZombieCharacter::TakeDamage(float DamageAmount,const FDamageEvent& Damage
 	const float AppliedDamage=OldCombatHealth-CombatHealth;
 	LethalProgress=1.f-CombatHealth/FMath::Max(1.f,MaxCombatHealth);
 	const bool bKilled=CombatHealth<=KINDA_SMALL_NUMBER;
-	MulticastBloodImpact(HitLocation,ShotDirection,bKilled&&bHeadshot);
+	MulticastBloodImpact(HitLocation,ShotDirection,false);
 	if(!bKilled&&!IsAttacking())BeginHitReaction();
 	WakeUp();
 
@@ -700,6 +705,13 @@ void AZombieCharacter::MulticastDie_Implementation(bool bHeadshot,FName HitBone,
 	GetMesh()->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 	GetMesh()->SetAllBodiesSimulatePhysics(true);
 	GetMesh()->WakeAllRigidBodies();
+	if(GetWorld())
+	{
+		FActorSpawnParameters PoolParameters;
+		PoolParameters.SpawnCollisionHandlingOverride=ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		if(ABloodPoolActor* Pool=GetWorld()->SpawnActor<ABloodPoolActor>(ABloodPoolActor::StaticClass(),GetActorLocation(),FRotator::ZeroRotator,PoolParameters))
+			Pool->ActivatePool(GetMesh(),GetActorLocation());
+	}
 	if(bHeadshot)
 	{
 		const FName HeadBone=ResolveHeadBone(HitBone);
@@ -710,5 +722,10 @@ void AZombieCharacter::MulticastDie_Implementation(bool bHeadshot,FName HitBone,
 		Parameters.SpawnCollisionHandlingOverride=ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 		if(AHeadGibActor* DetachedHead=GetWorld()->SpawnActor<AHeadGibActor>(AHeadGibActor::StaticClass(),HeadLocation,FRotator::ZeroRotator,Parameters))
 			DetachedHead->InitializeGib(HeadMaterial,Impulse);
+		if(ABloodBurstActor* Blood=GetWorld()->SpawnActor<ABloodBurstActor>(ABloodBurstActor::StaticClass(),HeadLocation,Impulse.Rotation(),Parameters))
+		{
+			if(!HeadBone.IsNone())Blood->AttachToComponent(GetMesh(),FAttachmentTransformRules::KeepWorldTransform,HeadBone);
+			Blood->ActivateBurst(Impulse.GetSafeNormal(),true);
+		}
 	}
 }

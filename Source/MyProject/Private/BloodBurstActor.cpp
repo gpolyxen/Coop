@@ -14,7 +14,7 @@ ABloodBurstActor::ABloodBurstActor()
 	RootComponent=SceneRoot;
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> Sphere(TEXT("/Engine/BasicShapes/Sphere.Sphere"));
 	static ConstructorHelpers::FObjectFinder<UMaterialInterface> BaseMaterial(TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
-	for(int32 Index=0;Index<34;++Index)
+	for(int32 Index=0;Index<64;++Index)
 	{
 		UStaticMeshComponent* Drop=CreateDefaultSubobject<UStaticMeshComponent>(*FString::Printf(TEXT("BloodDrop_%02d"),Index));
 		Drop->SetupAttachment(SceneRoot);
@@ -29,10 +29,11 @@ ABloodBurstActor::ABloodBurstActor()
 
 void ABloodBurstActor::ActivateBurst(const FVector& ShotDirection,bool bFountain)
 {
-	bActive=true;Age=0.f;Velocities.Reset();
-	SetLifeSpan(4.f);
+	bActive=true;Age=0.f;Velocities.Reset();bFountainMode=bFountain;NextFountainPulse=.12f;
+	SetLifeSpan(bFountain?6.f:4.f);
 	const FVector Forward=ShotDirection.IsNearlyZero()?GetActorForwardVector():ShotDirection.GetSafeNormal();
-	const int32 VisibleCount=bFountain?34:16;
+	FountainDirection=Forward;
+	const int32 VisibleCount=bFountain?64:28;
 	for(int32 Index=0;Index<Droplets.Num();++Index)
 	{
 		UStaticMeshComponent* Drop=Droplets[Index];
@@ -56,16 +57,33 @@ void ABloodBurstActor::ActivateBurst(const FVector& ShotDirection,bool bFountain
 	}
 }
 
+void ABloodBurstActor::ResetFountainDroplet(int32 Index)
+{
+	if(!Droplets.IsValidIndex(Index)||!Velocities.IsValidIndex(Index))return;
+	UStaticMeshComponent* Drop=Droplets[Index];
+	Drop->SetVisibility(true);
+	const float Scale=FMath::FRandRange(.028f,.075f);
+	Drop->SetWorldScale3D(FVector(Scale,FMath::FRandRange(Scale*.3f,Scale),Scale));
+	Drop->SetRelativeLocation(FMath::VRand()*FMath::FRandRange(0.f,7.f));
+	Velocities[Index]=FVector(FountainDirection.X,FountainDirection.Y,0.f)*FMath::FRandRange(40.f,210.f)
+		+FVector::UpVector*FMath::FRandRange(300.f,680.f)+FMath::VRand()*150.f;
+}
+
 void ABloodBurstActor::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 	if(!bActive)return;
 	Age+=DeltaSeconds;
+	if(bFountainMode&&Age<4.75f&&Age>=NextFountainPulse)
+	{
+		NextFountainPulse=Age+FMath::FRandRange(.08f,.16f);
+		for(int32 PulseDrop=0;PulseDrop<12;++PulseDrop)ResetFountainDroplet(FMath::RandHelper(Droplets.Num()));
+	}
 	for(int32 Index=0;Index<Droplets.Num()&&Velocities.IsValidIndex(Index);++Index)
 	{
 		if(!Droplets[Index]->IsVisible())continue;
 		Velocities[Index].Z-=980.f*DeltaSeconds;
 		Droplets[Index]->AddWorldOffset(Velocities[Index]*DeltaSeconds,false);
-		if(Age>1.65f)Droplets[Index]->SetVisibility(false);
+		if((!bFountainMode&&Age>2.1f)||(bFountainMode&&Age>5.15f))Droplets[Index]->SetVisibility(false);
 	}
 }

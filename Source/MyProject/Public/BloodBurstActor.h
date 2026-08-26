@@ -21,4 +21,8 @@ private:
 	TArray<FVector> Velocities;
 	float Age=0.f;
 	bool bActive=false;
+	bool bFountainMode=false;
+	float NextFountainPulse=0.f;
+	FVector FountainDirection=FVector::ForwardVector;
+	void ResetFountainDroplet(int32 Index);
 };
