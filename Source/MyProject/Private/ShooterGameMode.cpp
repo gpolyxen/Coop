@@ -12,11 +12,13 @@
 #include "ASValRifle.h"
 #include "P9Weapon.h"
 #include "AK74UWeapon.h"
+#include "WoodAxeWeapon.h"
 #include "ZombieCharacter.h"
 #include "ZombieSpawnManager.h"
 #include "WindField.h"
 #include "OpenWorldStreamingManager.h"
 #include "OpenWorldNavBoundsVolume.h"
+#include "RandomLootBuildingManager.h"
 #include "GameFramework/PlayerStart.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
@@ -69,6 +71,13 @@ void AShooterGameMode::BeginPlay()
 	for(TActorIterator<AOpenWorldStreamingManager> It(GetWorld());It;++It){StreamingManager=*It;break;}
 	if(!StreamingManager)StreamingManager=GetWorld()->SpawnActor<AOpenWorldStreamingManager>();
 	if(StreamingManager)StreamingManager->PrepareStartingTile(Start->GetActorLocation()+FVector(GetWorld()->OriginLocation));
+	bool bRestoredStructures=false;
+	if(UShooterGameInstance* GI=GetGameInstance<UShooterGameInstance>())bRestoredStructures=GI->RestorePendingWorld(GetWorld());
+	if(!bRestoredStructures)
+	{
+		if(ARandomLootBuildingManager* BuildingManager=GetWorld()->SpawnActor<ARandomLootBuildingManager>())
+			BuildingManager->GenerationCenter=Start->GetActorLocation();
+	}
 	bool bHasWind=false;for(TActorIterator<AWindField> It(GetWorld());It;++It){bHasWind=true;break;}if(!bHasWind)GetWorld()->SpawnActor<AWindField>();
 	bool bHasSpawnManager=false;for(TActorIterator<AZombieSpawnManager> It(GetWorld());It;++It){bHasSpawnManager=true;break;}if(!bHasSpawnManager)GetWorld()->SpawnActor<AZombieSpawnManager>();
 	bool bHasSaveBed=false;for(TActorIterator<ASaveBed> It(GetWorld());It;++It){bHasSaveBed=true;break;}
@@ -87,12 +96,22 @@ void AShooterGameMode::BeginPlay()
 	{
 		FVector Base=Start->GetActorLocation()+Start->GetActorForwardVector()*300.f;
 		Base.Z=100.f;
-		const TSubclassOf<AWeaponBase> Classes[6]={AStarterRifle::StaticClass(),AKA47Rifle::StaticClass(),ASMG11Weapon::StaticClass(),AASValRifle::StaticClass(),AP9Weapon::StaticClass(),AAK74UWeapon::StaticClass()};
-		for(int32 Index=0;Index<6;++Index)
+		const TSubclassOf<AWeaponBase> Classes[7]={AStarterRifle::StaticClass(),AKA47Rifle::StaticClass(),ASMG11Weapon::StaticClass(),AASValRifle::StaticClass(),AP9Weapon::StaticClass(),AAK74UWeapon::StaticClass(),AWoodAxeWeapon::StaticClass()};
+		for(int32 Index=0;Index<7;++Index)
 		{
 			FActorSpawnParameters SpawnParameters;
 			SpawnParameters.SpawnCollisionHandlingOverride=ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-			const FVector SpawnLocation=Base+Start->GetActorRightVector()*(Index-2.5f)*180.f;
+			// The axe is the seventh starter class, but it must remain immediately visible
+			// from spawn instead of being placed at the far end of the firearm row.
+			FVector SpawnLocation=Index==6
+				?Start->GetActorLocation()+Start->GetActorForwardVector()*210.f+Start->GetActorRightVector()*110.f+FVector(0.f,0.f,100.f)
+				:Base+Start->GetActorRightVector()*(Index-2.5f)*180.f;
+			if(Index==6)
+			{
+				FHitResult AxeGroundHit;
+				if(GetWorld()->LineTraceSingleByChannel(AxeGroundHit,SpawnLocation+FVector(0.f,0.f,1200.f),SpawnLocation-FVector(0.f,0.f,2500.f),ECC_WorldStatic))
+					SpawnLocation.Z=AxeGroundHit.ImpactPoint.Z+80.f;
+			}
 			AWeaponPickup* Pickup=GetWorld()->SpawnActor<AWeaponPickup>(AWeaponPickup::StaticClass(),SpawnLocation,FRotator(0,90,0),SpawnParameters);
 			if(Pickup)
 			{
@@ -101,6 +120,27 @@ void AShooterGameMode::BeginPlay()
 			}
 			else UE_LOG(LogTemp,Error,TEXT("Failed to spawn initial weapon pickup %d"),Index);
 		}
+	}
+	// Existing maps already contain firearms, so the all-or-nothing starter block
+	// above is intentionally skipped there. Ensure the newly added axe still has
+	// one physical world pickup of its own.
+	bool bHasAxePickup=false;
+	for(TActorIterator<AWeaponPickup> It(GetWorld());It;++It)
+		if(It->WeaponClass==AWoodAxeWeapon::StaticClass()){bHasAxePickup=true;break;}
+	if(!bHasAxePickup)
+	{
+		// Keep the test axe clearly visible beside the other starter items instead of
+		// hiding it far to the side of PlayerStart.
+		FVector AxeLocation=Start->GetActorLocation()+Start->GetActorForwardVector()*260.f+Start->GetActorRightVector()*120.f;
+		FHitResult GroundHit;
+		if(GetWorld()->LineTraceSingleByChannel(GroundHit,AxeLocation+FVector(0.f,0.f,1500.f),AxeLocation-FVector(0.f,0.f,2500.f),ECC_WorldStatic))AxeLocation.Z=GroundHit.ImpactPoint.Z+80.f;
+		FActorSpawnParameters SpawnParameters;SpawnParameters.SpawnCollisionHandlingOverride=ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		if(AWeaponPickup* AxePickup=GetWorld()->SpawnActor<AWeaponPickup>(AWeaponPickup::StaticClass(),AxeLocation,FRotator(0.f,90.f,0.f),SpawnParameters))
+		{
+			AxePickup->ConfigureWeaponClass(AWoodAxeWeapon::StaticClass());
+			UE_LOG(LogTemp,Display,TEXT("Spawned guaranteed WoodAxe pickup at %s"),*AxeLocation.ToCompactString());
+		}
+		else UE_LOG(LogTemp,Error,TEXT("Failed to spawn guaranteed WoodAxe pickup"));
 	}
 
 	bool bHasBackpack=false;

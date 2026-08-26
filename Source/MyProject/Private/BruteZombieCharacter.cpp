@@ -26,5 +26,8 @@ ABruteZombieCharacter::ABruteZombieCharacter()
 	KillExperience=75;
 	HeadshotBonusExperience=25;
 	LootBagDropChance=.55f;
+	ArmDetachHits=7;
+	LegDetachHits=9;
+	CrawlSpeed=75.f;
 	if(Health)Health->MaxHealth=4800.f;
 }

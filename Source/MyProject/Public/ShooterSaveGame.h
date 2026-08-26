@@ -14,6 +14,18 @@ struct FSavedWeaponData
 	UPROPERTY()int32 ReserveAmmo=0;
 };
 
+USTRUCT()
+struct FSavedBuildableData
+{
+	GENERATED_BODY()
+	UPROPERTY()FString StructureClassPath;
+	UPROPERTY()FTransform Transform;
+	UPROPERTY()float Health=0.f;
+	UPROPERTY()bool bGateOpen=false;
+	UPROPERTY()TArray<FInventoryEntry> StoredItems;
+	UPROPERTY()TArray<FSavedWeaponData> StoredWeapons;
+};
+
 UCLASS()
 class MYPROJECT_API UShooterSaveGame : public USaveGame
 {
@@ -33,5 +45,6 @@ public:
 	UPROPERTY()TArray<FInventoryEntry> InventoryItems;
 	UPROPERTY()TArray<FSavedWeaponData> Weapons;
 	UPROPERTY()int32 ActiveWeaponSlot=INDEX_NONE;
+	UPROPERTY()TArray<FSavedBuildableData> BuildableStructures;
 	UPROPERTY()FDateTime SavedAt;
 };

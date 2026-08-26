@@ -11,6 +11,8 @@
 #include "GameFramework/Character.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
+#include "Animation/AnimSequence.h"
+#include "BuildableStructure.h"
 #include "ShooterCharacter.h"
 #include "ZombieCharacter.h"
 #include "Camera/CameraComponent.h"
@@ -21,13 +23,57 @@
 AWeaponBase::AWeaponBase(){PrimaryActorTick.bCanEverTick=true;bReplicates=true;SetReplicateMovement(true);Mesh=CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("WorldWeaponMesh"));RootComponent=Mesh;Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);Mesh->SetOwnerNoSee(false);FirstPersonMesh=CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("FirstPersonWeaponMesh"));FirstPersonMesh->SetupAttachment(RootComponent);FirstPersonMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);FirstPersonMesh->SetVisibility(false,true);FirstPersonMesh->SetHiddenInGame(true);FirstPersonMesh->CastShadow=false;ProjectileClass=ABallisticProjectile::StaticClass();static ConstructorHelpers::FObjectFinder<UAnimMontage>HipFire(TEXT("/Game/ThirdPersonBP/Player_0/Anim/Montages/Fire_Rifle_Hip_Montage.Fire_Rifle_Hip_Montage"));if(HipFire.Succeeded())CharacterFireMontage=HipFire.Object;static ConstructorHelpers::FObjectFinder<UAnimMontage>AimFire(TEXT("/Game/ThirdPersonBP/Player_0/Anim/Montages/Fire_Rifle_ironsights_Montage.Fire_Rifle_ironsights_Montage"));if(AimFire.Succeeded())CharacterAimFireMontage=AimFire.Object;AmmoInMagazine=Stats.MagazineSize;ReserveAmmo=90;}
 void AWeaponBase::Tick(float D){Super::Tick(D);}
 FVector AWeaponBase::GetMuzzleLocation()const{static const FName MuzzleBone(TEXT("b_gun_muzzleflash"));return Mesh->DoesSocketExist(MuzzleBone)?Mesh->GetSocketLocation(MuzzleBone):Mesh->GetComponentLocation()+GetActorForwardVector()*100.f;}
-bool AWeaponBase::CanFire()const{return !bIsReloading&&AmmoInMagazine>0&&GetWorld()&&GetWorld()->GetTimeSeconds()-LastFireTime>=60./FMath::Max(1.f,Stats.RoundsPerMinute)&&ProjectileClass!=nullptr;}
+bool AWeaponBase::CanFire()const{return !bIsReloading&&GetWorld()&&GetWorld()->GetTimeSeconds()-LastFireTime>=60./FMath::Max(1.f,Stats.RoundsPerMinute)&&(bMeleeWeapon||(AmmoInMagazine>0&&ProjectileClass!=nullptr));}
+bool AWeaponBase::IsMeleeActionAnimationPlaying()const{return GetWorld()&&GetWorld()->GetTimeSeconds()<MeleeActionAnimationUntil;}
 bool AWeaponBase::Fire(FVector AimPoint){if(!HasAuthority()){if(!CanFire())return false;ServerFire(AimPoint);return true;}return FireAuthoritative(AimPoint);}
 bool AWeaponBase::ServerFire_Validate(FVector_NetQuantize AimPoint){return !AimPoint.ContainsNaN();}void AWeaponBase::ServerFire_Implementation(FVector_NetQuantize AimPoint){FireAuthoritative(AimPoint);}
 bool AWeaponBase::FireAuthoritative(FVector AimPoint)
 {
 	if(!CanFire())return false;
 	LastFireTime=GetWorld()->GetTimeSeconds();
+	if(bMeleeWeapon)
+	{
+		AShooterCharacter* Shooter=Cast<AShooterCharacter>(GetOwner());
+		const FVector Start=Shooter&&Shooter->Camera?Shooter->Camera->GetComponentLocation():GetActorLocation();
+		FVector Direction=Shooter&&Shooter->Camera?Shooter->Camera->GetForwardVector():GetActorForwardVector();
+		if(!AimPoint.IsNearlyZero())Direction=(AimPoint-Start).GetSafeNormal();
+		FCollisionQueryParams Query(SCENE_QUERY_STAT(MeleeWeaponSweep),true,GetOwner());Query.AddIgnoredActor(this);
+		FHitResult Hit;
+		const bool bHit=GetWorld()->SweepSingleByChannel(Hit,Start,Start+Direction*MeleeRange,FQuat::Identity,ECC_Visibility,FCollisionShape::MakeSphere(MeleeRadius),Query);
+		if(bHit&&Hit.GetActor())
+		{
+			// A world sweep normally contacts the character capsule first.  Recover a
+			// skeletal hit (or the nearest actual bone) so axe strikes preserve zones
+			// for head and limb dismemberment instead of always becoming torso damage.
+			if(AZombieCharacter* Zombie=Cast<AZombieCharacter>(Hit.GetActor()))
+			{
+				if(USkeletalMeshComponent* ZombieMesh=Zombie->GetMesh())
+				{
+					FHitResult SkeletalHit;
+					const FVector TraceEnd=Start+Direction*(MeleeRange+MeleeRadius+40.f);
+					if(ZombieMesh->LineTraceComponent(SkeletalHit,Start,TraceEnd,Query)&&!SkeletalHit.BoneName.IsNone())Hit=SkeletalHit;
+					if(Hit.BoneName.IsNone())
+					{
+						FName ClosestBone=NAME_None;FVector ClosestLocation=Hit.ImpactPoint;float ClosestDistanceSquared=MAX_flt;
+						for(int32 BoneIndex=0;BoneIndex<ZombieMesh->GetNumBones();++BoneIndex)
+						{
+							const FName Candidate=ZombieMesh->GetBoneName(BoneIndex);
+							const FVector CandidateLocation=ZombieMesh->GetBoneLocation(Candidate);
+							const float DistanceSquared=FVector::DistSquared(CandidateLocation,Hit.ImpactPoint);
+							if(DistanceSquared<ClosestDistanceSquared){ClosestDistanceSquared=DistanceSquared;ClosestBone=Candidate;ClosestLocation=CandidateLocation;}
+						}
+						if(!ClosestBone.IsNone()&&ClosestDistanceSquared<=FMath::Square(90.f)){Hit.BoneName=ClosestBone;Hit.ImpactPoint=ClosestLocation;Hit.Location=ClosestLocation;}
+					}
+				}
+			}
+			const float Damage=Hit.GetActor()->IsA<ABuildableStructure>()?MeleeDamage*WoodDamageMultiplier:MeleeDamage;
+			UGameplayStatics::ApplyPointDamage(Hit.GetActor(),Damage,Direction,Hit,GetOwner()?GetOwner()->GetInstigatorController():nullptr,this,nullptr);
+		}
+		const int32 AttackCount=CharacterMeleeAttackAnimations.Num();
+		const int32 AttackIndex=AttackCount>0?NextMeleeAttackIndex++%AttackCount:INDEX_NONE;
+		MulticastMeleeEffects(AttackIndex);
+		return true;
+	}
 	--AmmoInMagazine;
 	const FVector Muzzle=GetMuzzleLocation();
 	if(AimPoint.IsNearlyZero())AimPoint=Muzzle+GetActorForwardVector()*100000.f;
@@ -83,7 +129,9 @@ bool AWeaponBase::FireAuthoritative(FVector AimPoint)
 		B->Movement->Velocity=Shot*Stats.MuzzleVelocity;
 	}
 	MulticastFireEffects(Muzzle,Shot.Rotation());
-	constexpr float HearingRadius=4000.f;
+	// Gunfire is a major horde stimulus: 200 m keeps distant spawned zombies from
+	// continuing their patrol while the player is actively firing at a base.
+	const float HearingRadius=GunshotAlertRadius;
 	UAISense_Hearing::ReportNoiseEvent(GetWorld(),Muzzle,Stats.NoiseLoudness,GetOwner(),HearingRadius,TEXT("Gunshot"));
 	// Perception listeners can be registered one frame later than a dynamically
 	// spawned controller in cooked builds. Notify the same server-side controllers
@@ -120,6 +168,20 @@ void AWeaponBase::MulticastFireEffects_Implementation(FVector_NetQuantize Muzzle
 				}
 			if(Montage)C->GetMesh()->GetAnimInstance()->Montage_Play(Montage);
 		}
+}
+void AWeaponBase::MulticastMeleeEffects_Implementation(int32 AttackIndex)
+{
+	ACharacter* Character=Cast<ACharacter>(GetOwner());
+	UAnimSequence* Attack=CharacterMeleeAttackAnimations.IsValidIndex(AttackIndex)?CharacterMeleeAttackAnimations[AttackIndex]:nullptr;
+	if(!Character||!Character->GetMesh()||!Attack)return;
+	if(bUseMeleeLocomotionAnimations)
+	{
+		MeleeActionAnimationUntil=GetWorld()->GetTimeSeconds()+Attack->GetPlayLength();
+		Character->GetMesh()->SetAnimationMode(EAnimationMode::AnimationSingleNode);
+		Character->GetMesh()->PlayAnimation(Attack,false);
+	}
+	else if(UAnimInstance* AnimInstance=Character->GetMesh()->GetAnimInstance())
+		AnimInstance->PlaySlotAnimationAsDynamicMontage(Attack,TEXT("WeaponSlot"),.08f,.16f,1.f,1,0.f,.05f);
 }
 void AWeaponBase::Reload(){if(HasAuthority())ServerReload_Implementation();else ServerReload();}bool AWeaponBase::ServerReload_Validate(){return true;}void AWeaponBase::ServerReload_Implementation(){if(bIsReloading||AmmoInMagazine>=Stats.MagazineSize||ReserveAmmo<=0)return;bIsReloading=true;const AShooterCharacter* Shooter=Cast<AShooterCharacter>(GetOwner());const float ReloadMultiplier=Shooter?Shooter->GetReloadTimeMultiplier():1.f;GetWorldTimerManager().SetTimer(ReloadTimer,this,&AWeaponBase::FinishReload,FMath::Max(.1f,Stats.ReloadSeconds*ReloadMultiplier),false);}
 void AWeaponBase::FinishReload(){if(!HasAuthority())return;const int32 Need=Stats.MagazineSize-AmmoInMagazine,Take=FMath::Min(Need,ReserveAmmo);AmmoInMagazine+=Take;ReserveAmmo-=Take;bIsReloading=false;}

@@ -48,16 +48,37 @@ public:AWoodWall();
 };
 
 UCLASS()
+class MYPROJECT_API AWoodWindowWall : public ABuildableStructure
+{
+	GENERATED_BODY()
+public:AWoodWindowWall();
+	UPROPERTY(VisibleAnywhere)UInstancedStaticMeshComponent* Pieces;
+};
+
+UCLASS()
 class MYPROJECT_API AWoodGate : public ABuildableStructure
 {
 	GENERATED_BODY()
 public:AWoodGate();
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps)const override;
 	UPROPERTY(VisibleAnywhere)UInstancedStaticMeshComponent* Pieces;
+	UPROPERTY(VisibleAnywhere)USceneComponent* LeftHinge;
+	UPROPERTY(VisibleAnywhere)USceneComponent* RightHinge;
 	UPROPERTY(VisibleAnywhere)UInstancedStaticMeshComponent* DoorPieces;
+	UPROPERTY(VisibleAnywhere)UInstancedStaticMeshComponent* RightDoorPieces;
 	UFUNCTION(BlueprintCallable)bool TryToggle(AActor* User);
+	void SetOpenForLoad(bool bNewOpen);
 	UPROPERTY(ReplicatedUsing=OnRep_Open,VisibleAnywhere,BlueprintReadOnly)bool bOpen=false;
 private:UFUNCTION()void OnRep_Open();
+};
+
+/** A one-leaf human-sized doorway that uses the same interaction, save and AI
+ * traversal contract as a gate, but fills an ordinary three-metre wall module. */
+UCLASS()
+class MYPROJECT_API AWoodDoor : public AWoodGate
+{
+	GENERATED_BODY()
+public:AWoodDoor();
 };
 
 UCLASS()

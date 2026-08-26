@@ -4,7 +4,7 @@
 #include "ShooterTypes.h"
 #include "BuildTypes.h"
 #include "ShooterCharacter.generated.h"
-class UCameraComponent;class USpringArmComponent;class USceneComponent;class UInventoryComponent;class UHealthArmorComponent;class UNavigationInvokerComponent;class UAIPerceptionStimuliSourceComponent;class USkeletalMeshComponent;class UStaticMeshComponent;class UBlendSpace;class UAnimMontage;class UAnimSequence;class UAnimInstance;class AWeaponBase;class APickupActor;class ASaveBed;class AStorageChest;
+class UCameraComponent;class USpringArmComponent;class USceneComponent;class UInventoryComponent;class UHealthArmorComponent;class UNavigationInvokerComponent;class UAIPerceptionStimuliSourceComponent;class USkeletalMeshComponent;class UStaticMeshComponent;class UBlendSpace;class UAnimMontage;class UAnimSequence;class UAnimInstance;class AWeaponBase;class APickupActor;class ASaveBed;class AStorageChest;class AZombieCharacter;
 UCLASS(Blueprintable)
 class MYPROJECT_API AShooterCharacter:public ACharacter
 {
@@ -72,10 +72,18 @@ public:
 	void StopGameplayActionsForMenu();
 	void SetActiveWeaponSlotForLoad(int32 SlotIndex);
 	void ShowLocalNotification(const FString& Message,float Duration=4.f);
+	// Returns the next recorded ground waypoint after the point nearest to a
+	// pursuer. AI uses this trail only after it has actually acquired the player.
+	bool GetPursuitTrailWaypoint(const FVector& PursuerLocation,int32& InOutTrailCursor,FVector& OutWaypoint)const;
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly,Category="UI")FString LocalNotification;
 	float LocalNotificationEndTime=0.f;
 	UFUNCTION(BlueprintPure) bool IsAiming()const{return bIsAiming;}
 	UFUNCTION(BlueprintPure) bool IsDead()const;
+	UFUNCTION(BlueprintPure) bool IsBeingBitten()const{return bBeingBitten;}
+	/** Returns false when another zombie already owns the active bite grapple. */
+	bool BeginZombieBite(AZombieCharacter* Zombie);
+	void EndZombieBite(AZombieCharacter* Zombie);
+	UPROPERTY(ReplicatedUsing=OnRep_BeingBitten,VisibleAnywhere,BlueprintReadOnly,Category="Combat")bool bBeingBitten=false;
 	UFUNCTION(BlueprintPure)bool CanBeRevived()const{return bCanBeRevived&&!bPermanentlyDead;}
 	UFUNCTION(BlueprintPure)float GetReviveSecondsRemaining()const;
 	bool TryReviveBy(AShooterCharacter* Reviver);
@@ -112,6 +120,7 @@ protected:
 	UFUNCTION(Server,Reliable,WithValidation)void ServerSetAiming(bool bNewAiming);
 	UFUNCTION(Server,Reliable,WithValidation)void ServerSetSprinting(bool bNewSprinting);
 	UFUNCTION(Server,Reliable,WithValidation)void ServerTryJump();
+	UFUNCTION(Server,Reliable,WithValidation)void ServerStruggleAgainstBite();
 	UFUNCTION(Server,Reliable,WithValidation)void ServerPlaceBuildPiece(EBuildPieceType PieceType,FVector_NetQuantize Location,FRotator Rotation);
 	UFUNCTION(Client,Reliable)void ClientBuildPlacementResult(EBuildPieceType PieceType,bool bPlaced,bool bCanContinue);
 	UFUNCTION(Server,Reliable,WithValidation)void ServerPurchaseSkill(EShooterSkill Skill);
@@ -122,6 +131,7 @@ protected:
 	UFUNCTION(Server,Reliable,WithValidation)void ServerStoreEquippedWeaponInChest(AStorageChest* Chest);
 	UFUNCTION()void OnRep_Weapon();
 	UFUNCTION()void OnRep_ReviveState();
+	UFUNCTION()void OnRep_BeingBitten();
 	UFUNCTION(Client,Reliable)void ClientRevived();
 	UFUNCTION(Client,Reliable)void ClientReviveSucceeded();
 	UFUNCTION()void HandleDeath();
@@ -129,10 +139,17 @@ protected:
 	void ApplyDownedState();
 	void RestoreFromDownedState();
 	void RefreshAnimationState();
+	void UpdateMeleeLocomotionAnimation();
 	UPROPERTY(EditDefaultsOnly,Category="Movement")float WalkSpeed=450.f;UPROPERTY(EditDefaultsOnly,Category="Movement")float SprintSpeed=700.f;UPROPERTY(EditDefaultsOnly,Category="Movement")float BaseTurnRate=45.f;UPROPERTY(EditDefaultsOnly,Category="Interaction")float InteractionDistance=300.f;UPROPERTY(EditDefaultsOnly,Category="Aim")float HipFOV=90.f;UPROPERTY(EditDefaultsOnly,Category="Aim")float AimFOV=75.f;UPROPERTY(Replicated)bool bIsAiming=false;FTimerHandle FireTimer;
 	UPROPERTY(Replicated)bool bWantsToSprint=false;
 	float LastStaminaUseTime=-1000.f;
+	TArray<FVector> PursuitTrail;
+	FVector LastPursuitTrailLocation=FVector::ZeroVector;
+	double LastPursuitTrailTime=-1000.;
+	UPROPERTY(EditDefaultsOnly,Category="AI Trail",meta=(ClampMin="30"))float PursuitTrailSpacing=75.f;
+	UPROPERTY(EditDefaultsOnly,Category="AI Trail",meta=(ClampMin="16"))int32 MaximumPursuitTrailPoints=512;
 	FTimerHandle ReviveWindowTimer;
+	TWeakObjectPtr<AZombieCharacter> BitingZombie;
 	UPROPERTY(EditDefaultsOnly,Category="Progression",meta=(ClampMin="1"))int32 BaseExperiencePerLevel=100;
 	UPROPERTY(EditDefaultsOnly,Category="Progression",meta=(ClampMin="0"))int32 ExperienceGrowthPerLevel=50;
 	void CaptureDiagnosticScreenshot();
@@ -144,6 +161,7 @@ protected:
 	void FinishDedicatedFirstPersonRigAction();
 	bool IsDedicatedFirstPersonRigActive()const;
 	UPROPERTY(Transient)UAnimSequence* CurrentFirstPersonRigAnimation=nullptr;
+	UPROPERTY(Transient)UAnimSequence* CurrentMeleeLocomotionAnimation=nullptr;
 	UPROPERTY(Transient)AWeaponBase* FirstPersonRigWeapon=nullptr;
 	FTimerHandle FirstPersonRigAnimationTimer;
 	bool bFirstPersonRigActionPlaying=false;

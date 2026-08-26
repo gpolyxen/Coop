@@ -23,8 +23,12 @@ public:
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 	UFUNCTION(BlueprintCallable) virtual bool TryAttack(AActor* Target);
+	UFUNCTION(BlueprintCallable) void SetDormant(bool bNewDormant);
+	UFUNCTION(BlueprintCallable) void WakeUp();
+	void RegisterBiteEscapePress(AActor* Victim);
 	UFUNCTION(BlueprintPure) bool IsDead() const { return bIsDead; }
 	UFUNCTION(BlueprintPure) bool IsAttacking() const { return bIsAttacking; }
+	UFUNCTION(BlueprintPure) bool IsDormant() const { return bDormant; }
 	UFUNCTION(BlueprintPure) bool IsNightEmpowered()const{return bNightEmpowered;}
 
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly) UHealthArmorComponent* Health;
@@ -40,6 +44,12 @@ public:
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation") UAnimSequence* IdleAnimation;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation") UAnimSequence* WalkAnimation;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation") UAnimSequence* AttackAnimation;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation") UAnimSequence* CrawlAnimation;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation") UAnimSequence* RunAnimation;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation") UAnimSequence* WakeAnimation;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation") UAnimSequence* HitReactionAnimation;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation") UAnimSequence* TurnAnimation;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation") UAnimSequence* BiteAnimation;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation") float WalkAnimationPlayRate=1.35f;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation") float StartWalkingSpeed=28.f;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation") float StopWalkingSpeed=8.f;
@@ -50,15 +60,27 @@ public:
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Visual Variant") FLinearColor VariantTopColor=FLinearColor(.32f,.3f,.25f,1.f);
 
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Damage") float HeadDetachImpulse=35000.f;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Damage|Dismemberment",meta=(ClampMin="1")) int32 ArmDetachHits=3;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Damage|Dismemberment",meta=(ClampMin="1")) int32 LegDetachHits=4;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Damage|Dismemberment",meta=(ClampMin="20")) float CrawlSpeed=105.f;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Damage",meta=(ClampMin="1.0")) float MaxCombatHealth=100.f;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Rewards",meta=(ClampMin="0")) int32 KillExperience=10;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Rewards",meta=(ClampMin="0")) int32 HeadshotBonusExperience=10;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Attack|Bite",meta=(ClampMin="0.0",ClampMax="1.0")) float BiteChance=.28f;
+	/** A bite deliberately holds the contact frames longer than a hand strike. */
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Attack|Bite",meta=(ClampMin="0.1")) float BitePlayRate=.72f;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Attack|Bite",meta=(ClampMin="0.1")) float BiteDamageInterval=.45f;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Attack|Bite",meta=(ClampMin="0.1")) float BiteMinimumDuration=1.4f;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Attack|Bite",meta=(ClampMin="1.0")) float BiteMaximumDuration=5.f;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Attack|Bite",meta=(ClampMin="1")) int32 BiteEscapePressesRequired=8;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Loot",meta=(ClampMin="0.0",ClampMax="1.0")) float LootBagDropChance=.18f;
 	UPROPERTY(Replicated,VisibleAnywhere,BlueprintReadOnly,Category="Damage") float CombatHealth=100.f;
 	UPROPERTY(Replicated,VisibleAnywhere,BlueprintReadOnly,Category="Damage") int32 HeadHits=0;
 	UPROPERTY(Replicated,VisibleAnywhere,BlueprintReadOnly,Category="Damage") int32 TorsoHits=0;
 	UPROPERTY(Replicated,VisibleAnywhere,BlueprintReadOnly,Category="Damage") int32 LimbHits=0;
 	UPROPERTY(Replicated,VisibleAnywhere,BlueprintReadOnly,Category="Damage") float LethalProgress=0.f;
+	UPROPERTY(ReplicatedUsing=OnRep_SeveredLimbs,VisibleAnywhere,BlueprintReadOnly,Category="Damage|Dismemberment") uint8 SeveredLimbs=0;
+	UFUNCTION(BlueprintPure,Category="Damage|Dismemberment") bool IsCrawling()const{return (SeveredLimbs&12)!=0;}
 
 protected:
 	virtual void PerformAttackHit();
@@ -68,6 +90,8 @@ private:
 	double LastAttackTime=-1000.;
 	UPROPERTY(Replicated) bool bIsDead=false;
 	UPROPERTY(ReplicatedUsing=OnRep_IsAttacking) bool bIsAttacking=false;
+	UPROPERTY(ReplicatedUsing=OnRep_Dormant) bool bDormant=false;
+	UPROPERTY(ReplicatedUsing=OnRep_IsAttacking) bool bBiteAttack=false;
 	UPROPERTY(Transient) UAnimationAsset* CurrentAnimation=nullptr;
 	UPROPERTY() UMaterialInterface* VisualVariantBodyMaterial=nullptr;
 	UPROPERTY() UMaterialInterface* VisualVariantClothesMaterial=nullptr;
@@ -82,9 +106,21 @@ private:
 	float NextNightStateCheck=0.f;
 	FTimerHandle AttackHitTimer;
 	FTimerHandle AttackFinishTimer;
+	FTimerHandle BiteDamageTimer;
+	FTimerHandle WakeTimer;
+	TWeakObjectPtr<AActor> BiteVictim;
+	double BiteStartTime=-1000.;
+	int32 BiteEscapePresses=0;
+	bool bWakeSequencePlaying=false;
+	float TemporaryAnimationUntil=0.f;
+	float LastObservedYaw=0.f;
 
 	static bool IsHeadBone(FName BoneName);
 	static bool IsLimbBone(FName BoneName);
+	int32 ResolveLimbIndex(FName BoneName)const;
+	FName ResolveLimbRootBone(int32 LimbIndex)const;
+	void SeverLimb(int32 LimbIndex,FName HitBone,const FVector& ShotDirection,const FVector& HitLocation);
+	void ApplySeveredLimbState();
 	FName ResolveHeadBone(FName PreferredBone)const;
 	void UpdateLocomotionAnimation();
 	void ApplyVisualVariant();
@@ -92,9 +128,18 @@ private:
 	void ApplyNightEmpowerment(bool bEnable);
 	void PlayZombieAnimation(UAnimationAsset* Animation,bool bLooping,float PlayRate);
 	void FinishAttack();
+	void ApplyBiteDamage();
+	void BeginBite(AActor* Victim);
+	void EndBite();
+	void FinishWakeUp();
 	void Die(bool bHeadshot,FName HitBone,const FVector& ShotDirection,const FVector& HitLocation);
 
 	UFUNCTION() void OnRep_IsAttacking();
+	UFUNCTION() void OnRep_Dormant();
+	UFUNCTION() void OnRep_SeveredLimbs();
 	UFUNCTION(NetMulticast,Unreliable) void MulticastBloodImpact(FVector_NetQuantize HitLocation,FVector_NetQuantizeNormal ShotDirection,bool bFountain);
+	UFUNCTION(NetMulticast,Unreliable) void MulticastHitReaction();
+	UFUNCTION(NetMulticast,Reliable) void MulticastSeverLimb(uint8 LimbBit,FName RootBone,FVector Impulse,FVector HitLocation);
 	UFUNCTION(NetMulticast,Reliable) void MulticastDie(bool bHeadshot,FName HitBone,FVector Impulse,FVector HitLocation);
+	int32 LimbZoneHits[4]={0,0,0,0};
 };

@@ -36,6 +36,7 @@ public:
 	UFUNCTION(BlueprintPure)bool HasSaveGame()const;
 	UFUNCTION(BlueprintCallable)bool SavePlayerAtBed(AShooterCharacter* Character);
 	bool ApplyPendingSave(AShooterCharacter* Character);
+	bool RestorePendingWorld(UWorld* World);
 	bool GetPendingPlayerTransform(FTransform& OutTransform)const;
 
 	UPROPERTY(BlueprintAssignable)FMenuStateChanged OnMenuStateChanged;
@@ -66,4 +67,5 @@ private:
 	UPROPERTY()UShooterSaveGame* PendingSave=nullptr;
 	UPROPERTY(Transient)UPauseMenuWidget* PauseMenuWidget=nullptr;
 	bool bCreateSessionAfterDestroy=false;
+	bool bPendingWorldRestored=false;
 };

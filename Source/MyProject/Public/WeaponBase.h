@@ -79,9 +79,31 @@ public:
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Aiming")bool bUseScopeOverlay=false;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Aiming")bool bPlayCharacterAimFireMontage=false;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Aiming",meta=(ClampMin="0.0"))float CloseRangeHitCorrectionDistance=0.f;
+	// Server-side guaranteed alert radius. Perception can miss a freshly spawned
+	// listener, so every real shot also wakes all zombies inside the active zone.
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="AI",meta=(ClampMin="1000.0"))float GunshotAlertRadius=60000.f;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Melee")bool bMeleeWeapon=false;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Melee",meta=(ClampMin="10.0"))float MeleeRange=230.f;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Melee",meta=(ClampMin="0.0"))float MeleeRadius=32.f;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Melee",meta=(ClampMin="0.0"))float MeleeDamage=55.f;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Melee",meta=(ClampMin="1.0"))float WoodDamageMultiplier=4.f;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Melee")TArray<UAnimSequence*> CharacterMeleeAttackAnimations;
+	// A melee tool owns its complete authored pose set.  This keeps an axe from
+	// being evaluated by the rifle AnimBP merely because it occupies a weapon slot.
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Melee|Animation")bool bUseMeleeLocomotionAnimations=false;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Melee|Animation")UAnimSequence* CharacterMeleeIdleAnimation=nullptr;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Melee|Animation")UAnimSequence* CharacterMeleeWalkAnimation=nullptr;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Melee|Animation")UAnimSequence* CharacterMeleeRunAnimation=nullptr;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Melee|Animation")UAnimSequence* CharacterMeleeStrafeAnimation=nullptr;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Melee|Animation")UAnimSequence* CharacterMeleeJumpAnimation=nullptr;
+	// One axe contact counts as several light projectile contacts for severing,
+	// while health damage continues to use MeleeDamage normally.
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Melee|Dismemberment",meta=(ClampMin="1"))int32 MeleeDismembermentHitPower=1;
+	bool IsMeleeActionAnimationPlaying()const;
 protected:
 	UFUNCTION(Server,Reliable,WithValidation) void ServerFire(FVector_NetQuantize AimPoint);
 	UFUNCTION(Server,Reliable,WithValidation) void ServerReload();
 	UFUNCTION(NetMulticast,Unreliable)void MulticastFireEffects(FVector_NetQuantize MuzzleLocation,FRotator MuzzleRotation);
-	bool FireAuthoritative(FVector AimPoint);void FinishReload();double LastFireTime=-1000.;FTimerHandle ReloadTimer;
+	UFUNCTION(NetMulticast,Unreliable)void MulticastMeleeEffects(int32 AttackIndex);
+	bool FireAuthoritative(FVector AimPoint);void FinishReload();double LastFireTime=-1000.;double MeleeActionAnimationUntil=-1000.;FTimerHandle ReloadTimer;int32 NextMeleeAttackIndex=0;
 };

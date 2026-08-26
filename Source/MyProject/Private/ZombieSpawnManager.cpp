@@ -8,6 +8,7 @@
 #include "ShooterCharacter.h"
 #include "ZombieCharacter.h"
 #include "BuildableStructure.h"
+#include "BanditCharacter.h"
 #include "NavigationInvokerComponent.h"
 #include "NavigationSystem.h"
 #include "EngineUtils.h"
@@ -27,6 +28,7 @@ void AZombieSpawnManager::BeginPlay()
 	Super::BeginPlay();
 	if(!HasAuthority())return;
 	PreparationEndServerTime=GetWorld()->GetTimeSeconds()+PreparationDuration;
+	NextBanditGroupTime=PreparationEndServerTime+15.f;
 	for(TActorIterator<AZombieCharacter> It(GetWorld());It;++It)It->Destroy();
 	GetWorldTimerManager().SetTimer(ZombieTimer,this,&AZombieSpawnManager::MaintainZombiePopulation,SpawnInterval,true,PreparationDuration);
 	GetWorldTimerManager().SetTimer(InitialSuppliesTimer,this,&AZombieSpawnManager::SpawnInitialSupplies,1.25f,false);
@@ -102,6 +104,7 @@ void AZombieSpawnManager::MaintainZombiePopulation()
 		else if(It->IsA<ARunnerZombieCharacter>())++LivingRunners;
 	}
 	const int32 HighestPlayerLevel=GetHighestPlayerLevel();
+	MaintainBanditPopulation(HighestPlayerLevel,Player);
 	const int32 TargetPopulation=FMath::Clamp(MaxAliveZombies+FMath::Max(0,HighestPlayerLevel-1)*ZombiesPerPlayerLevel,MaxAliveZombies,AbsoluteMaxAliveZombies);
 	const int32 ToSpawn=FMath::Min(SpawnBatchSize,FMath::Max(0,TargetPopulation-LivingZombies));
 	const int32 FiveLevelMilestones=HighestPlayerLevel/5;
@@ -118,14 +121,16 @@ void AZombieSpawnManager::MaintainZombiePopulation()
 		FVector SpawnLocation;
 		if(!FindGroundedLocation(Player->GetActorLocation(),MinimumSpawnDistance,MaximumSpawnDistance,SpawnLocation))continue;
 		SpawnLocation.Z+=95.f;
-		FVector ToPlayer=Player->GetActorLocation()-SpawnLocation;ToPlayer.Z=0.f;
 		FActorSpawnParameters Parameters;
 		Parameters.SpawnCollisionHandlingOverride=ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
 		const bool bSpawnBrute=LivingBrutes<MinimumBrutes||FMath::FRand()<BruteChance;
 		const bool bSpawnSpitter=!bSpawnBrute&&(LivingSpitters<MinimumSpitters||FMath::FRand()<SpitterChance);
 		const bool bSpawnRunner=!bSpawnBrute&&!bSpawnSpitter&&(LivingRunners<MinimumRunners||FMath::FRand()<RunnerChance);
 		TSubclassOf<AZombieCharacter> ZombieClass=bSpawnBrute?ABruteZombieCharacter::StaticClass():(bSpawnSpitter?ASpitterZombieCharacter::StaticClass():(bSpawnRunner?ARunnerZombieCharacter::StaticClass():AZombieCharacter::StaticClass()));
-		AZombieCharacter* Zombie=GetWorld()->SpawnActor<AZombieCharacter>(ZombieClass,SpawnLocation,ToPlayer.Rotation(),Parameters);
+		// An unalerted spawn must not be aimed at the player.  Random facing lets
+		// sight and hearing decide whether this zombie chases or starts patrolling.
+		const FRotator SpawnRotation(0.f,FMath::FRandRange(-180.f,180.f),0.f);
+		AZombieCharacter* Zombie=GetWorld()->SpawnActor<AZombieCharacter>(ZombieClass,SpawnLocation,SpawnRotation,Parameters);
 		if(Zombie)
 		{
 			if(bSpawnBrute)++LivingBrutes;
@@ -139,6 +144,32 @@ void AZombieSpawnManager::MaintainZombiePopulation()
 				HighestPlayerLevel,*GetNameSafe(Zombie->GetController()));
 		}
 	}
+}
+
+void AZombieSpawnManager::MaintainBanditPopulation(int32 HighestPlayerLevel,AShooterCharacter* NearPlayer)
+{
+	if(!NearPlayer||HighestPlayerLevel<BanditUnlockLevel||!GetWorld())return;
+	int32 LivingBandits=0;for(TActorIterator<ABanditCharacter> It(GetWorld());It;++It)if(!It->IsDead())++LivingBandits;
+	const double Now=GetWorld()->GetTimeSeconds();if(LivingBandits>0||Now<NextBanditGroupTime)return;
+	// Level 20 starts with a three-person fireteam. Every complete five levels
+	// after that adds exactly two members: 25=5, 30=7, 35=9, and so on.
+	const int32 Milestones=FMath::Max(0,(HighestPlayerLevel-BanditUnlockLevel)/5);
+	const int32 GroupSize=InitialBanditGroupSize+Milestones*2;
+	FVector GroupCenter;if(!FindGroundedLocation(NearPlayer->GetActorLocation(),MinimumBanditSpawnDistance,MaximumBanditSpawnDistance,GroupCenter)){NextBanditGroupTime=Now+15.f;return;}
+	int32 Spawned=0;
+	for(int32 Index=0;Index<GroupSize;++Index)
+	{
+		const float Angle=2.f*PI*Index/FMath::Max(1,GroupSize);FVector Location=GroupCenter+FVector(FMath::Cos(Angle),FMath::Sin(Angle),0.f)*FMath::FRandRange(80.f,240.f);
+		FHitResult Ground;FCollisionQueryParams Query(SCENE_QUERY_STAT(BanditGroupGround),false,this);
+		if(GetWorld()->LineTraceSingleByChannel(Ground,Location+FVector(0,0,600),Location-FVector(0,0,1000),ECC_WorldStatic,Query))Location=Ground.ImpactPoint;
+		Location.Z+=95.f;FActorSpawnParameters Params;Params.SpawnCollisionHandlingOverride=ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
+		if(ABanditCharacter* Bandit=GetWorld()->SpawnActor<ABanditCharacter>(ABanditCharacter::StaticClass(),Location,(NearPlayer->GetActorLocation()-Location).Rotation(),Params))
+		{
+			if(!Bandit->GetController())Bandit->SpawnDefaultController();++Spawned;
+		}
+	}
+	NextBanditGroupTime=Now+BanditGroupCooldown;
+	UE_LOG(LogTemp,Display,TEXT("Spawned bandit fireteam: %d/%d at player level %d"),Spawned,GroupSize,HighestPlayerLevel);
 }
 
 void AZombieSpawnManager::TrySpawnAmmunition()

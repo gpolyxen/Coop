@@ -6,6 +6,8 @@
 #include "ShooterCharacter.h"
 #include "ShooterSaveGame.h"
 #include "WeaponBase.h"
+#include "BuildableStructure.h"
+#include "StorageChest.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
 #include "Engine/Engine.h"
 #include "Engine/LocalPlayer.h"
@@ -18,6 +20,7 @@
 #include "Interfaces/IPv4/IPv4Address.h"
 #include "SocketSubsystem.h"
 #include "UObject/SoftObjectPath.h"
+#include "EngineUtils.h"
 
 const FString UShooterGameInstance::SaveSlot=TEXT("ShooterBedSave");
 const FString UShooterGameInstance::GameMap=TEXT("/Game/OpenWorld/OpenWorld");
@@ -150,6 +153,7 @@ bool UShooterGameInstance::HasSaveGame()const
 void UShooterGameInstance::StartNewGame()
 {
 	PendingSave=nullptr;
+	bPendingWorldRestored=false;
 	if(HasSaveGame())UGameplayStatics::DeleteGameInSlot(SaveSlot,0);
 	PrepareForGameplayTravel();
 	UGameplayStatics::OpenLevel(this,FName(*GameMap));
@@ -159,6 +163,7 @@ void UShooterGameInstance::ContinueGame()
 {
 	PendingSave=Cast<UShooterSaveGame>(UGameplayStatics::LoadGameFromSlot(SaveSlot,0));
 	if(!PendingSave){SetStatus(TEXT("Сохранение не найдено"));return;}
+	bPendingWorldRestored=false;
 	PrepareForGameplayTravel();
 	UGameplayStatics::OpenLevel(this,FName(*PendingSave->MapPath));
 }
@@ -193,10 +198,83 @@ bool UShooterGameInstance::SavePlayerAtBed(AShooterCharacter* Character)
 		Data.ReserveAmmo=Weapon->ReserveAmmo;
 		Save->Weapons.Add(Data);
 	}
+	if(UWorld* World=Character->GetWorld())
+	{
+		for(TActorIterator<ABuildableStructure> It(World);It;++It)
+		{
+			ABuildableStructure* Structure=*It;
+			if(!Structure||Structure->IsConstructionPreview()||Structure->IsCollapsing())continue;
+			FSavedBuildableData Data;
+			Data.StructureClassPath=Structure->GetClass()->GetPathName();
+			Data.Transform=Structure->GetActorTransform();
+			Data.Health=Structure->StructureHealth;
+			if(const AWoodGate* Gate=Cast<AWoodGate>(Structure))Data.bGateOpen=Gate->bOpen;
+			if(const AStorageChest* Chest=Cast<AStorageChest>(Structure))
+			{
+				if(Chest->Storage)Data.StoredItems=Chest->Storage->Items;
+				for(const AWeaponBase* Weapon:Chest->StoredWeapons)
+				{
+					if(!Weapon)continue;
+					FSavedWeaponData WeaponData;
+					WeaponData.WeaponClassPath=Weapon->GetClass()->GetPathName();
+					WeaponData.AmmoInMagazine=Weapon->AmmoInMagazine;
+					WeaponData.ReserveAmmo=Weapon->ReserveAmmo;
+					Data.StoredWeapons.Add(WeaponData);
+				}
+			}
+			Save->BuildableStructures.Add(Data);
+		}
+	}
 	const bool bSaved=UGameplayStatics::SaveGameToSlot(Save,SaveSlot,0);
 	if(bSaved)PendingSave=Save;
 	UE_LOG(LogTemp,Display,TEXT("Bed save %s at %s"),bSaved?TEXT("succeeded"):TEXT("failed"),*Save->PlayerTransform.GetLocation().ToString());
 	return bSaved;
+}
+
+bool UShooterGameInstance::RestorePendingWorld(UWorld* World)
+{
+	if(!PendingSave||!World||bPendingWorldRestored||World->GetNetMode()==NM_Client)return false;
+	bPendingWorldRestored=true;
+	if(PendingSave->BuildableStructures.Num()==0)return false;
+	for(TActorIterator<ABuildableStructure> It(World);It;++It)if(ABuildableStructure* Existing=*It)Existing->Destroy();
+	int32 RestoredCount=0;
+	for(const FSavedBuildableData& Data:PendingSave->BuildableStructures)
+	{
+		UClass* StructureClass=FSoftClassPath(Data.StructureClassPath).TryLoadClass<ABuildableStructure>();
+		if(!StructureClass)continue;
+		FActorSpawnParameters Parameters;
+		Parameters.SpawnCollisionHandlingOverride=ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		ABuildableStructure* Structure=World->SpawnActor<ABuildableStructure>(StructureClass,Data.Transform,Parameters);
+		if(!Structure)continue;
+		Structure->StructureHealth=FMath::Clamp(Data.Health,1.f,Structure->MaxStructureHealth);
+		if(AWoodGate* Gate=Cast<AWoodGate>(Structure))Gate->SetOpenForLoad(Data.bGateOpen);
+		if(AStorageChest* Chest=Cast<AStorageChest>(Structure))
+		{
+			if(Chest->Storage)
+			{
+				Chest->Storage->Items=Data.StoredItems;
+				Chest->Storage->MaxSlots=FMath::Max(0,20-Data.StoredWeapons.Num());
+				Chest->Storage->OnInventoryChanged.Broadcast();
+			}
+			for(const FSavedWeaponData& WeaponData:Data.StoredWeapons)
+			{
+				UClass* WeaponClass=FSoftClassPath(WeaponData.WeaponClassPath).TryLoadClass<AWeaponBase>();
+				if(!WeaponClass)continue;
+				FActorSpawnParameters WeaponParameters;WeaponParameters.Owner=Chest;WeaponParameters.SpawnCollisionHandlingOverride=ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+				if(AWeaponBase* Weapon=World->SpawnActor<AWeaponBase>(WeaponClass,FTransform::Identity,WeaponParameters))
+				{
+					Weapon->AmmoInMagazine=FMath::Clamp(WeaponData.AmmoInMagazine,0,Weapon->Stats.MagazineSize);
+					Weapon->ReserveAmmo=FMath::Clamp(WeaponData.ReserveAmmo,0,Weapon->MaxReserveAmmo);
+					Weapon->AttachToActor(Chest,FAttachmentTransformRules::KeepRelativeTransform);
+					Weapon->SetActorHiddenInGame(true);
+					Chest->StoredWeapons.Add(Weapon);
+				}
+			}
+		}
+		++RestoredCount;
+	}
+	UE_LOG(LogTemp,Display,TEXT("Restored %d/%d saved buildable structures"),RestoredCount,PendingSave->BuildableStructures.Num());
+	return RestoredCount>0;
 }
 
 bool UShooterGameInstance::GetPendingPlayerTransform(FTransform& OutTransform)const
@@ -222,7 +300,9 @@ bool UShooterGameInstance::ApplyPendingSave(AShooterCharacter* Character)
 	if(Character->Inventory)
 	{
 		Character->Inventory->MaxSlots=FMath::Clamp(PendingSave->InventoryMaxSlots,6,20);
-		Character->Inventory->MaxWeight=FMath::Max(1.f,PendingSave->InventoryMaxWeight);
+		Character->Inventory->MaxWeight=FMath::Max3(600.f,Character->Inventory->MaxSlots*100.f,PendingSave->InventoryMaxWeight);
+		Character->Inventory->OverrideMaxStack=100;
+		Character->Inventory->bAllowMultipleStacks=true;
 		Character->Inventory->Items=PendingSave->InventoryItems;
 		Character->Inventory->OnInventoryChanged.Broadcast();
 	}

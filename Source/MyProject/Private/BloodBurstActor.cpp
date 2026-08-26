@@ -14,7 +14,7 @@ ABloodBurstActor::ABloodBurstActor()
 	RootComponent=SceneRoot;
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> Sphere(TEXT("/Engine/BasicShapes/Sphere.Sphere"));
 	static ConstructorHelpers::FObjectFinder<UMaterialInterface> BaseMaterial(TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
-	for(int32 Index=0;Index<22;++Index)
+	for(int32 Index=0;Index<34;++Index)
 	{
 		UStaticMeshComponent* Drop=CreateDefaultSubobject<UStaticMeshComponent>(*FString::Printf(TEXT("BloodDrop_%02d"),Index));
 		Drop->SetupAttachment(SceneRoot);
@@ -32,7 +32,7 @@ void ABloodBurstActor::ActivateBurst(const FVector& ShotDirection,bool bFountain
 	bActive=true;Age=0.f;Velocities.Reset();
 	SetLifeSpan(4.f);
 	const FVector Forward=ShotDirection.IsNearlyZero()?GetActorForwardVector():ShotDirection.GetSafeNormal();
-	const int32 VisibleCount=bFountain?22:10;
+	const int32 VisibleCount=bFountain?34:16;
 	for(int32 Index=0;Index<Droplets.Num();++Index)
 	{
 		UStaticMeshComponent* Drop=Droplets[Index];
@@ -45,7 +45,7 @@ void ABloodBurstActor::ActivateBurst(const FVector& ShotDirection,bool bFountain
 			const FLinearColor BloodColor=Index%3==0?FLinearColor(.16f,.002f,.002f):FLinearColor(.42f,.006f,.004f);
 			Material->SetVectorParameterValue(TEXT("Color"),BloodColor);
 		}
-		const float Scale=bFountain?FMath::FRandRange(.025f,.065f):FMath::FRandRange(.018f,.045f);
+		const float Scale=bFountain?FMath::FRandRange(.032f,.085f):FMath::FRandRange(.024f,.058f);
 		Drop->SetWorldScale3D(FVector(Scale,FMath::FRandRange(Scale*.35f,Scale),Scale));
 		Drop->SetRelativeLocation(FMath::VRand()*FMath::FRandRange(0.f,8.f));
 		FVector Velocity;
@@ -66,6 +66,6 @@ void ABloodBurstActor::Tick(float DeltaSeconds)
 		if(!Droplets[Index]->IsVisible())continue;
 		Velocities[Index].Z-=980.f*DeltaSeconds;
 		Droplets[Index]->AddWorldOffset(Velocities[Index]*DeltaSeconds,false);
-		if(Age>1.15f)Droplets[Index]->SetVisibility(false);
+		if(Age>1.65f)Droplets[Index]->SetVisibility(false);
 	}
 }

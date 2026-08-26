@@ -22,6 +22,8 @@ ASpitterZombieCharacter::ASpitterZombieCharacter()
 	KillExperience=35;
 	HeadshotBonusExperience=15;
 	LootBagDropChance=.35f;
+	ArmDetachHits=4;
+	LegDetachHits=5;
 	AcidGlow=CreateDefaultSubobject<UPointLightComponent>(TEXT("AcidGlow"));
 	AcidGlow->SetupAttachment(RootComponent);
 	AcidGlow->SetRelativeLocation(FVector(0.f,0.f,72.f));

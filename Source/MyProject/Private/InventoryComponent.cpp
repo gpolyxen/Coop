@@ -54,7 +54,14 @@ int32 UInventoryComponent::AddItemPartial(FName Id,int32 RequestedQuantity)
 	return Low>0&&AddItem(Id,Low)?Low:0;
 }
 bool UInventoryComponent::RemoveItem(FName Id,int32 Quantity){if(!GetOwner()->HasAuthority()||Quantity<=0||GetQuantity(Id)<Quantity)return false;for(int32 i=Items.Num()-1;i>=0&&Quantity>0;--i)if(Items[i].ItemId==Id){const int32 Removed=FMath::Min(Quantity,Items[i].Quantity);Items[i].Quantity-=Removed;Quantity-=Removed;if(Items[i].Quantity==0)Items.RemoveAt(i);}OnInventoryChanged.Broadcast();return true;}
-bool UInventoryComponent::UpgradeCapacity(int32 NewMaxSlots){if(!GetOwner()->HasAuthority()||NewMaxSlots<=MaxSlots)return false;MaxSlots=FMath::Clamp(NewMaxSlots,6,20);OnInventoryChanged.Broadcast();return true;}
+bool UInventoryComponent::UpgradeCapacity(int32 NewMaxSlots)
+{
+	if(!GetOwner()->HasAuthority()||NewMaxSlots<=MaxSlots)return false;
+	MaxSlots=FMath::Clamp(NewMaxSlots,6,20);
+	MaxWeight=FMath::Max(MaxWeight,MaxSlots*100.f);
+	OnInventoryChanged.Broadcast();
+	return true;
+}
 void UInventoryComponent::OnRep_Items(){OnInventoryChanged.Broadcast();}
 void UInventoryComponent::OnRep_Capacity(){OnInventoryChanged.Broadcast();}
 void UInventoryComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps)const{Super::GetLifetimeReplicatedProps(OutLifetimeProps);DOREPLIFETIME(UInventoryComponent,Items);DOREPLIFETIME(UInventoryComponent,MaxSlots);DOREPLIFETIME(UInventoryComponent,MaxWeight);}

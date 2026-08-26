@@ -20,5 +20,7 @@ ARunnerZombieCharacter::ARunnerZombieCharacter()
 	KillExperience=25;
 	HeadshotBonusExperience=15;
 	LootBagDropChance=.25f;
+	ArmDetachHits=2;
+	LegDetachHits=3;
 	if(Health)Health->MaxHealth=1700.f;
 }
