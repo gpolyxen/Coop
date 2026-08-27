@@ -13,7 +13,7 @@ bool UInventoryComponent::CanAddItems(FName A,int32 AQ,FName B,int32 BQ)const
 	const FItemDefinition* AD=FindDefinition(A);const FItemDefinition* BD=FindDefinition(B);
 	const float AddedWeight=(AD?AD->Weight:1.f)*AQ+(BD?BD->Weight:1.f)*BQ;
 	if(CurrentWeight()+AddedWeight>MaxWeight)return false;
-	const int32 AMaxStack=OverrideMaxStack>0?OverrideMaxStack:((A==TEXT("Wood")||A==TEXT("Rope"))?999:(AD?AD->MaxStack:99));const int32 BMaxStack=OverrideMaxStack>0?OverrideMaxStack:((B==TEXT("Wood")||B==TEXT("Rope"))?999:(BD?BD->MaxStack:99));
+	const int32 AMaxStack=OverrideMaxStack>0?OverrideMaxStack:((A==TEXT("Wood")||A==TEXT("Stick")||A==TEXT("Rope"))?999:(AD?AD->MaxStack:99));const int32 BMaxStack=OverrideMaxStack>0?OverrideMaxStack:((B==TEXT("Wood")||B==TEXT("Stick")||B==TEXT("Rope"))?999:(BD?BD->MaxStack:99));
 	if(!bAllowMultipleStacks&&(GetQuantity(A)+AQ>AMaxStack||GetQuantity(B)+BQ>BMaxStack))return false;
 	auto NeededFor=[this](FName Id,int32 Quantity,int32 MaxStack){if(Quantity<=0||Id.IsNone())return 0;int32 Free=0;for(const FInventoryEntry& Entry:Items)if(Entry.ItemId==Id)Free+=FMath::Max(0,MaxStack-Entry.Quantity);return FMath::Max(0,FMath::DivideAndRoundUp(FMath::Max(0,Quantity-Free),MaxStack));};
 	int32 NeededSlots=NeededFor(A,AQ,AMaxStack);if(B!=A)NeededSlots+=NeededFor(B,BQ,BMaxStack);
@@ -30,7 +30,7 @@ bool UInventoryComponent::AddItem(FName Id, int32 Quantity)
 	if(!CanAddItems(Id,Quantity,NAME_None,0))return false;
 	const FItemDefinition* Definition=FindDefinition(Id);
 	const float UnitWeight=Definition?Definition->Weight:1.f;
-	const int32 MaxStack=OverrideMaxStack>0?OverrideMaxStack:((Id==TEXT("Wood")||Id==TEXT("Rope"))?999:(Definition?Definition->MaxStack:99));
+	const int32 MaxStack=OverrideMaxStack>0?OverrideMaxStack:((Id==TEXT("Wood")||Id==TEXT("Stick")||Id==TEXT("Rope"))?999:(Definition?Definition->MaxStack:99));
 	if(CurrentWeight()+UnitWeight*Quantity>MaxWeight)return false;
 	for(FInventoryEntry& Entry:Items)
 		if(Entry.ItemId==Id&&Entry.Quantity<MaxStack)

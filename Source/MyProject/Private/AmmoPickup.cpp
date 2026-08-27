@@ -35,7 +35,7 @@ AAmmoPickup::AAmmoPickup()
 	MarkerText->SetHorizontalAlignment(EHTA_Center);
 	MarkerText->SetWorldSize(28.f);
 	MarkerText->SetTextRenderColor(FColor(255,190,20));
-	MarkerText->SetText(FText::FromString(TEXT("AMMO")));
+	MarkerText->SetText(FText::FromString(TEXT("ПАТРОНЫ")));
 	MarkerText->bAlwaysRenderAsText=true;
 
 }

@@ -19,7 +19,14 @@
 #include "OpenWorldStreamingManager.h"
 #include "OpenWorldNavBoundsVolume.h"
 #include "RandomLootBuildingManager.h"
+#include "OpenWorldTile.h"
+#include "PickupActor.h"
+#include "ProceduralMeshComponent.h"
+#include "Components/CapsuleComponent.h"
+#include "Components/StaticMeshComponent.h"
+#include "TimerManager.h"
 #include "GameFramework/PlayerStart.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "NavigationSystem.h"
@@ -53,6 +60,41 @@ void AShooterGameMode::HandleStartingNewPlayer_Implementation(APlayerController*
 	if(!NewPlayer)return;
 	if(UShooterGameInstance* GI=GetGameInstance<UShooterGameInstance>())
 		if(AShooterCharacter* Character=Cast<AShooterCharacter>(NewPlayer->GetPawn()))GI->ApplyPendingSave(Character);
+	GetWorldTimerManager().SetTimer(StartupGroundingTimer,this,&AShooterGameMode::FixStartupPlacements,.15f,false);
+}
+
+bool AShooterGameMode::FindProceduralGround(const FVector& Location,FVector& OutGround)const
+{
+	if(!GetWorld())return false;
+	// The streamed level may contain saved ground components in addition to the
+	// generated tile. Query the actual world and select the highest static surface,
+	// which is exactly the surface visible to the player at this XY coordinate.
+	TArray<FHitResult> Hits;FCollisionObjectQueryParams Objects;Objects.AddObjectTypesToQuery(ECC_WorldStatic);FCollisionQueryParams Query(SCENE_QUERY_STAT(StartupHighestGround),true);
+	if(GetWorld()->LineTraceMultiByObjectType(Hits,FVector(Location.X,Location.Y,12000.f),FVector(Location.X,Location.Y,-12000.f),Objects,Query))
+	{
+		float Highest=-MAX_flt;for(const FHitResult& Hit:Hits)if(Hit.bBlockingHit&&Hit.ImpactNormal.Z>.45f&&Hit.ImpactPoint.Z>Highest){Highest=Hit.ImpactPoint.Z;OutGround=Hit.ImpactPoint;}
+		if(Highest>-MAX_flt)return true;
+	}
+	// Fallback for the first frame before a physics body is registered.
+	for(TActorIterator<AOpenWorldTile> It(GetWorld());It;++It){const AOpenWorldTile* Tile=*It;const FVector Local=Location-Tile->GetActorLocation();if(FMath::Abs(Local.X)<=Tile->TileSize*.5f&&FMath::Abs(Local.Y)<=Tile->TileSize*.5f){OutGround=FVector(Location.X,Location.Y,Tile->GetHeightAtWorldLocation(Location));return true;}}
+	return false;
+}
+
+void AShooterGameMode::FixStartupPlacements()
+{
+	if(!HasAuthority())return;
+	for(TActorIterator<AShooterCharacter> It(GetWorld());It;++It)
+	{
+		AShooterCharacter* Character=*It;FVector Ground;if(!Character||!FindProceduralGround(Character->GetActorLocation(),Ground))continue;
+		const float HalfHeight=Character->GetCapsuleComponent()?Character->GetCapsuleComponent()->GetScaledCapsuleHalfHeight():96.f;if(Character->GetActorLocation().Z<Ground.Z+HalfHeight-8.f){FVector Safe=Ground+FVector(0.f,0.f,HalfHeight+35.f);Character->SetActorLocation(Safe,false,nullptr,ETeleportType::TeleportPhysics);if(Character->GetCharacterMovement())Character->GetCharacterMovement()->StopMovementImmediately();}
+	}
+	APlayerStart* Start=Cast<APlayerStart>(EnsurePlayerStart());const FVector StartLocation=Start?Start->GetActorLocation():FVector::ZeroVector;
+	for(TActorIterator<APickupActor> It(GetWorld());It;++It)
+	{
+		APickupActor* Pickup=*It;if(!Pickup||FVector::DistSquared2D(Pickup->GetActorLocation(),StartLocation)>FMath::Square(2600.f))continue;FVector Ground;if(!FindProceduralGround(Pickup->GetActorLocation(),Ground))continue;
+		if(Pickup->GetActorLocation().Z<Ground.Z-10.f){Pickup->SetActorLocation(Ground+FVector(0.f,0.f,120.f),false,nullptr,ETeleportType::TeleportPhysics);if(Pickup->Mesh){Pickup->Mesh->SetPhysicsLinearVelocity(FVector::ZeroVector);Pickup->Mesh->SetPhysicsAngularVelocityInDegrees(FVector::ZeroVector);}}
+	}
+	if(++StartupGroundingPasses<12)GetWorldTimerManager().SetTimer(StartupGroundingTimer,this,&AShooterGameMode::FixStartupPlacements,.5f,false);
 }
 void AShooterGameMode::BeginPlay()
 {
@@ -71,6 +113,13 @@ void AShooterGameMode::BeginPlay()
 	for(TActorIterator<AOpenWorldStreamingManager> It(GetWorld());It;++It){StreamingManager=*It;break;}
 	if(!StreamingManager)StreamingManager=GetWorld()->SpawnActor<AOpenWorldStreamingManager>();
 	if(StreamingManager)StreamingManager->PrepareStartingTile(Start->GetActorLocation()+FVector(GetWorld()->OriginLocation));
+	// Procedural terrain now exists synchronously. Put PlayerStart above its real
+	// collision before the pawn and starter objects are created.
+	{
+		FHitResult StartGround;FVector StartLocation=Start->GetActorLocation();
+		if(GetWorld()->LineTraceSingleByChannel(StartGround,StartLocation+FVector(0.f,0.f,4000.f),StartLocation-FVector(0.f,0.f,5000.f),ECC_WorldStatic))
+		{StartLocation.Z=StartGround.ImpactPoint.Z+150.f;Start->SetActorLocation(StartLocation);}
+	}
 	bool bRestoredStructures=false;
 	if(UShooterGameInstance* GI=GetGameInstance<UShooterGameInstance>())bRestoredStructures=GI->RestorePendingWorld(GetWorld());
 	if(!bRestoredStructures)
@@ -95,7 +144,6 @@ void AShooterGameMode::BeginPlay()
 	if(!bHasWeaponPickup)
 	{
 		FVector Base=Start->GetActorLocation()+Start->GetActorForwardVector()*300.f;
-		Base.Z=100.f;
 		const TSubclassOf<AWeaponBase> Classes[7]={AStarterRifle::StaticClass(),AKA47Rifle::StaticClass(),ASMG11Weapon::StaticClass(),AASValRifle::StaticClass(),AP9Weapon::StaticClass(),AAK74UWeapon::StaticClass(),AWoodAxeWeapon::StaticClass()};
 		for(int32 Index=0;Index<7;++Index)
 		{
@@ -106,12 +154,7 @@ void AShooterGameMode::BeginPlay()
 			FVector SpawnLocation=Index==6
 				?Start->GetActorLocation()+Start->GetActorForwardVector()*210.f+Start->GetActorRightVector()*110.f+FVector(0.f,0.f,100.f)
 				:Base+Start->GetActorRightVector()*(Index-2.5f)*180.f;
-			if(Index==6)
-			{
-				FHitResult AxeGroundHit;
-				if(GetWorld()->LineTraceSingleByChannel(AxeGroundHit,SpawnLocation+FVector(0.f,0.f,1200.f),SpawnLocation-FVector(0.f,0.f,2500.f),ECC_WorldStatic))
-					SpawnLocation.Z=AxeGroundHit.ImpactPoint.Z+80.f;
-			}
+			FHitResult ItemGroundHit;if(GetWorld()->LineTraceSingleByChannel(ItemGroundHit,SpawnLocation+FVector(0.f,0.f,1500.f),SpawnLocation-FVector(0.f,0.f,3000.f),ECC_WorldStatic))SpawnLocation.Z=ItemGroundHit.ImpactPoint.Z+80.f;
 			AWeaponPickup* Pickup=GetWorld()->SpawnActor<AWeaponPickup>(AWeaponPickup::StaticClass(),SpawnLocation,FRotator(0,90,0),SpawnParameters);
 			if(Pickup)
 			{

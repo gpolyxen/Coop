@@ -23,7 +23,7 @@ ALootSuitcasePickup::ALootSuitcasePickup()
 	if(Cylinder.Succeeded())Handle->SetStaticMesh(Cylinder.Object);if(BasicMaterial.Succeeded())Handle->SetMaterial(0,BasicMaterial.Object);
 	Handle->SetRelativeLocation(FVector(0.f,0.f,72.f));Handle->SetRelativeRotation(FRotator(90.f,0.f,0.f));Handle->SetRelativeScale3D(FVector(.13f,.13f,.24f));
 	Handle->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	PickupText->SetText(FText::FromString(TEXT("E  LOOT SUITCASE")));
+	PickupText->SetText(FText::FromString(TEXT("E  ЧЕМОДАН С ПРИПАСАМИ")));
 	PickupText->SetRelativeLocation(FVector(0.f,0.f,105.f));
 }
 

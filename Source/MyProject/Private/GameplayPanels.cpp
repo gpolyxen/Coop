@@ -58,6 +58,14 @@ namespace
 	}
 
 	AShooterCharacter* GetCharacter(const UUserWidget* Widget){return Widget?Cast<AShooterCharacter>(Widget->GetOwningPlayerPawn()):nullptr;}
+	FString ItemName(FName Id)
+	{
+		if(Id==TEXT("Wood"))return TEXT("ДЕРЕВО");if(Id==TEXT("Stick"))return TEXT("ПАЛКИ");if(Id==TEXT("Rope"))return TEXT("ВЕРЁВКА");
+		if(Id==TEXT("Medicine"))return TEXT("МЕДИКАМЕНТЫ");if(Id==TEXT("Bandage"))return TEXT("БИНТЫ");if(Id==TEXT("Medkit"))return TEXT("АПТЕЧКА");
+		if(Id==TEXT("Leather"))return TEXT("КОЖА");if(Id==TEXT("Cloth"))return TEXT("ТКАНЬ");if(Id==TEXT("Gasoline"))return TEXT("БЕНЗИН");
+		if(Id==TEXT("RifleAmmo"))return TEXT("ПАТРОНЫ");if(Id==TEXT("Backpack"))return TEXT("РЮКЗАК");if(Id==TEXT("LootBag"))return TEXT("МЕШОК С ПРИПАСАМИ");
+		return Id.ToString();
+	}
 }
 
 void UInventoryItemSlotWidget::Setup(FName InItemId,int32 InQuantity,int32 InSlotIndex){ItemId=InItemId;Quantity=InQuantity;SlotIndex=InSlotIndex;RefreshLabel();}
@@ -68,7 +76,7 @@ void UInventoryItemSlotWidget::NativeOnInitialized()
 	USizeBox* Size=WidgetTree->ConstructWidget<USizeBox>();Size->SetWidthOverride(92.f);Size->SetHeightOverride(92.f);Border->AddChild(Size);
 	Label=MakeText(WidgetTree,FText::GetEmpty(),14,FLinearColor::White,ETextJustify::Center);Size->AddChild(Label);RefreshLabel();
 }
-void UInventoryItemSlotWidget::RefreshLabel(){if(!Label)return;if(ItemId.IsNone())Label->SetText(FText::FromString(TEXT("ПУСТО")));else if(ItemId==TEXT("Medkit"))Label->SetText(FText::FromString(FString::Printf(TEXT("%s\nx%d\nДВОЙНОЙ КЛИК"),*ItemId.ToString(),Quantity)));else Label->SetText(FText::FromString(FString::Printf(TEXT("%s\nx%d"),*ItemId.ToString(),Quantity)));}
+void UInventoryItemSlotWidget::RefreshLabel(){if(!Label)return;if(ItemId.IsNone())Label->SetText(FText::FromString(TEXT("ПУСТО")));else if(ItemId==TEXT("Medkit"))Label->SetText(FText::FromString(FString::Printf(TEXT("%s\nx%d\nДВОЙНОЙ КЛИК"),*ItemName(ItemId),Quantity)));else Label->SetText(FText::FromString(FString::Printf(TEXT("%s\nx%d"),*ItemName(ItemId),Quantity)));}
 FReply UInventoryItemSlotWidget::NativeOnMouseButtonDown(const FGeometry& G,const FPointerEvent& E){if(ItemId==TEXT("Medkit")&&E.GetEffectingButton()==EKeys::LeftMouseButton&&GetWorld()){const float Now=GetWorld()->GetRealTimeSeconds();if(Now-LastLeftClickTime<=.4f){if(AShooterCharacter* Character=GetCharacter(this))Character->UseMedkit();LastLeftClickTime=-100.f;return FReply::Handled();}LastLeftClickTime=Now;}if(!ItemId.IsNone()&&E.GetEffectingButton()==EKeys::LeftMouseButton)return UWidgetBlueprintLibrary::DetectDragIfPressed(E,this,EKeys::LeftMouseButton).NativeReply;return Super::NativeOnMouseButtonDown(G,E);}
 FReply UInventoryItemSlotWidget::NativeOnMouseButtonDoubleClick(const FGeometry& G,const FPointerEvent& E){if(ItemId==TEXT("Medkit")&&E.GetEffectingButton()==EKeys::LeftMouseButton){if(AShooterCharacter* Character=GetCharacter(this))Character->UseMedkit();return FReply::Handled();}return Super::NativeOnMouseButtonDoubleClick(G,E);}
 void UInventoryItemSlotWidget::NativeOnDragDetected(const FGeometry&,const FPointerEvent&,UDragDropOperation*& Operation){if(ItemId.IsNone())return;UItemDragOperation* Drag=NewObject<UItemDragOperation>(this);Drag->ItemId=ItemId;Drag->Quantity=Quantity;Drag->bFromChest=false;Operation=Drag;}
@@ -82,7 +90,7 @@ void UCraftingIngredientSlotWidget::NativeOnInitialized()
 	Label=MakeText(WidgetTree,FText::GetEmpty(),13,FLinearColor(1.f,.85f,.35f),ETextJustify::Center);Size->AddChild(Label);RefreshLabel();
 }
 void UCraftingIngredientSlotWidget::SetIngredient(FName InItemId){ItemId=InItemId;RefreshLabel();}
-void UCraftingIngredientSlotWidget::RefreshLabel(){if(Label)Label->SetText(FText::FromString(ItemId.IsNone()?FString::Printf(TEXT("СЛОТ %d"),Index+1):ItemId.ToString()));}
+void UCraftingIngredientSlotWidget::RefreshLabel(){if(Label)Label->SetText(FText::FromString(ItemId.IsNone()?FString::Printf(TEXT("СЛОТ %d"),Index+1):ItemName(ItemId)));}
 bool UCraftingIngredientSlotWidget::NativeOnDrop(const FGeometry&,const FDragDropEvent&,UDragDropOperation* Operation){if(UItemDragOperation* Drag=Cast<UItemDragOperation>(Operation)){if(OwnerWidget)OwnerWidget->SetCraftIngredient(Index,Drag->ItemId);return true;}return false;}
 FReply UCraftingIngredientSlotWidget::NativeOnMouseButtonDown(const FGeometry& G,const FPointerEvent& E){if(E.GetEffectingButton()==EKeys::RightMouseButton){if(OwnerWidget)OwnerWidget->SetCraftIngredient(Index,NAME_None);return FReply::Handled();}return Super::NativeOnMouseButtonDown(G,E);}
 
@@ -124,13 +132,13 @@ void UInventoryWidget::Refresh()
 		const FName Item=Inventory->Items.IsValidIndex(SlotIndex)?Inventory->Items[SlotIndex].ItemId:NAME_None;const int32 Quantity=Inventory->Items.IsValidIndex(SlotIndex)?Inventory->Items[SlotIndex].Quantity:0;
 		UInventoryItemSlotWidget* Cell=CreateWidget<UInventoryItemSlotWidget>(GetOwningPlayer(),UInventoryItemSlotWidget::StaticClass());Cell->Setup(Item,Quantity,SlotIndex);InventoryGrid->AddChildToUniformGrid(Cell,SlotIndex/5,SlotIndex%5);
 	}
-	int32 Medicine=0,Bandage=0;for(FName Ingredient:CraftIngredients){if(Ingredient==TEXT("Medicine"))++Medicine;else if(Ingredient==TEXT("Bandage"))++Bandage;}
-	const bool bMedkitRecipe=Medicine>=1&&Bandage>=1;if(RecipeList){RecipeList->ClearChildren();RecipeList->AddChildToVerticalBox(MakeText(WidgetTree,FText::FromString(bMedkitRecipe?TEXT("ДОСТУПНО:\nАПТЕЧКА — 1 медикамент + 2 бинта"):TEXT("ДОСТУПНЫХ РЕЦЕПТОВ НЕТ")),17,bMedkitRecipe?FLinearColor(.35f,1.f,.45f):FLinearColor(.55f,.55f,.55f)));}
-	if(CraftSelectedButton)CraftSelectedButton->SetIsEnabled(bMedkitRecipe&&Character->CanCraftMedkit());
+	int32 Medicine=0,Bandage=0,Wood=0;for(FName Ingredient:CraftIngredients){if(Ingredient==TEXT("Medicine"))++Medicine;else if(Ingredient==TEXT("Bandage"))++Bandage;else if(Ingredient==TEXT("Wood"))++Wood;}
+	const bool bMedkitRecipe=Medicine>=1&&Bandage>=2,bStickRecipe=Wood>=1;if(RecipeList){RecipeList->ClearChildren();FString Recipes;if(bMedkitRecipe)Recipes+=TEXT("АПТЕЧКА — 1 медикамент + 2 бинта");if(bStickRecipe){if(!Recipes.IsEmpty())Recipes+=TEXT("\n");Recipes+=TEXT("ПАЛКИ x4 — 1 дерево");}RecipeList->AddChildToVerticalBox(MakeText(WidgetTree,FText::FromString(Recipes.IsEmpty()?TEXT("ДОСТУПНЫХ РЕЦЕПТОВ НЕТ"):FString(TEXT("ДОСТУПНО:\n"))+Recipes),17,Recipes.IsEmpty()?FLinearColor(.55f,.55f,.55f):FLinearColor(.35f,1.f,.45f)));}
+	if(CraftSelectedButton)CraftSelectedButton->SetIsEnabled((bMedkitRecipe&&Character->CanCraftMedkit())||(bStickRecipe&&Character->CanCraftSticks()));
 }
 
 void UInventoryWidget::SetCraftIngredient(int32 Index,FName ItemId){if(!CraftIngredients.IsValidIndex(Index))return;CraftIngredients[Index]=ItemId;if(CraftSlots.IsValidIndex(Index)&&CraftSlots[Index])CraftSlots[Index]->SetIngredient(ItemId);Refresh();}
-void UInventoryWidget::CraftSelectedClicked(){AShooterCharacter* Character=GetCharacter(this);if(!Character)return;int32 Medicine=0,Bandage=0;for(FName Ingredient:CraftIngredients){if(Ingredient==TEXT("Medicine"))++Medicine;else if(Ingredient==TEXT("Bandage"))++Bandage;}if(Medicine>=1&&Bandage>=1)Character->CraftMedkit();Refresh();}
+void UInventoryWidget::CraftSelectedClicked(){AShooterCharacter* Character=GetCharacter(this);if(!Character)return;int32 Medicine=0,Bandage=0,Wood=0;for(FName Ingredient:CraftIngredients){if(Ingredient==TEXT("Medicine"))++Medicine;else if(Ingredient==TEXT("Bandage"))++Bandage;else if(Ingredient==TEXT("Wood"))++Wood;}if(Medicine>=1&&Bandage>=2)Character->CraftMedkit();else if(Wood>=1)Character->CraftSticks();Refresh();}
 
 void UInventoryWidget::CloseClicked(){if(AShooterPlayerController* PC=Cast<AShooterPlayerController>(GetOwningPlayer()))PC->CloseGameplayPanel();}
 FReply UInventoryWidget::NativeOnKeyDown(const FGeometry& InGeometry,const FKeyEvent& Event){if(Event.GetKey()==EKeys::I||Event.GetKey()==EKeys::Escape){CloseClicked();return FReply::Handled();}return Super::NativeOnKeyDown(InGeometry,Event);}
@@ -193,8 +201,8 @@ void UBuildingMenuWidget::ShowCategories()
 	UButton* Defense=MakeButton(WidgetTree,FText::FromString(TEXT("ЗАЩИТА\nСтены и ворота")));Defense->OnClicked.AddDynamic(this,&UBuildingMenuWidget::DefenseClicked);Content->AddChildToVerticalBox(Defense);
 	UButton* Lighting=MakeButton(WidgetTree,FText::FromString(TEXT("ОСВЕЩЕНИЕ\nНастенные источники света")));Lighting->OnClicked.AddDynamic(this,&UBuildingMenuWidget::LightingClicked);Content->AddChildToVerticalBox(Lighting);
 }
-void UBuildingMenuWidget::ShowFurniture(){Content->ClearChildren();UButton* Bed=MakeButton(WidgetTree,FText::FromString(TEXT("КРОВАТЬ\n10 палок + 10 верёвок\nСохранение игры")));Bed->OnClicked.AddDynamic(this,&UBuildingMenuWidget::BedClicked);Content->AddChildToVerticalBox(Bed);UButton* Chest=MakeButton(WidgetTree,FText::FromString(TEXT("СУНДУК\n20 ячеек | 20 дерева + 5 кожи")));Chest->OnClicked.AddDynamic(this,&UBuildingMenuWidget::ChestClicked);Content->AddChildToVerticalBox(Chest);UButton* Back=MakeButton(WidgetTree,FText::FromString(TEXT("НАЗАД К РАЗДЕЛАМ")));Back->OnClicked.AddDynamic(this,&UBuildingMenuWidget::BackClicked);Content->AddChildToVerticalBox(Back);}
-void UBuildingMenuWidget::ShowDefense(){Content->ClearChildren();UButton* Wall=MakeButton(WidgetTree,FText::FromString(TEXT("ДЕРЕВЯННАЯ СТЕНА\n6 дерева | 350 HP | сплошная секция 3 м")));Wall->OnClicked.AddDynamic(this,&UBuildingMenuWidget::WallClicked);Content->AddChildToVerticalBox(Wall);UButton* WindowWall=MakeButton(WidgetTree,FText::FromString(TEXT("СТЕНА С ОКНОМ\n7 дерева | 325 HP | секция 3 м")));WindowWall->OnClicked.AddDynamic(this,&UBuildingMenuWidget::WindowWallClicked);Content->AddChildToVerticalBox(WindowWall);UButton* Door=MakeButton(WidgetTree,FText::FromString(TEXT("ДЕРЕВЯННАЯ ДВЕРЬ\n8 дерева + 2 верёвки | 360 HP | модуль 3 м")));Door->OnClicked.AddDynamic(this,&UBuildingMenuWidget::DoorClicked);Content->AddChildToVerticalBox(Door);UButton* Gate=MakeButton(WidgetTree,FText::FromString(TEXT("ДЕРЕВЯННЫЕ ВОРОТА\n12 палок + 4 верёвки | 500 HP | модуль 3 м")));Gate->OnClicked.AddDynamic(this,&UBuildingMenuWidget::GateClicked);Content->AddChildToVerticalBox(Gate);UButton* Floor=MakeButton(WidgetTree,FText::FromString(TEXT("ДЕРЕВЯННЫЙ ПОЛ\n5 палок | площадка 3 x 3 м\nДо 3 секций от несущей опоры")));Floor->OnClicked.AddDynamic(this,&UBuildingMenuWidget::FloorClicked);Content->AddChildToVerticalBox(Floor);UButton* Stairs=MakeButton(WidgetTree,FText::FromString(TEXT("ДЕРЕВЯННАЯ ЛЕСТНИЦА\n8 палок | подъём на один этаж")));Stairs->OnClicked.AddDynamic(this,&UBuildingMenuWidget::StairsClicked);Content->AddChildToVerticalBox(Stairs);UButton* Pillar=MakeButton(WidgetTree,FText::FromString(TEXT("ДЕРЕВЯННАЯ КОЛОННА\n4 дерева | опора для пола второго этажа")));Pillar->OnClicked.AddDynamic(this,&UBuildingMenuWidget::PillarClicked);Content->AddChildToVerticalBox(Pillar);UButton* Back=MakeButton(WidgetTree,FText::FromString(TEXT("НАЗАД К РАЗДЕЛАМ")));Back->OnClicked.AddDynamic(this,&UBuildingMenuWidget::BackClicked);Content->AddChildToVerticalBox(Back);}
+void UBuildingMenuWidget::ShowFurniture(){Content->ClearChildren();UButton* Bed=MakeButton(WidgetTree,FText::FromString(TEXT("КРОВАТЬ\n10 дерева + 10 верёвок\nСохранение игры")));Bed->OnClicked.AddDynamic(this,&UBuildingMenuWidget::BedClicked);Content->AddChildToVerticalBox(Bed);UButton* Chest=MakeButton(WidgetTree,FText::FromString(TEXT("СУНДУК\n20 ячеек | 20 дерева + 5 кожи")));Chest->OnClicked.AddDynamic(this,&UBuildingMenuWidget::ChestClicked);Content->AddChildToVerticalBox(Chest);UButton* Back=MakeButton(WidgetTree,FText::FromString(TEXT("НАЗАД К РАЗДЕЛАМ")));Back->OnClicked.AddDynamic(this,&UBuildingMenuWidget::BackClicked);Content->AddChildToVerticalBox(Back);}
+void UBuildingMenuWidget::ShowDefense(){Content->ClearChildren();UButton* Wall=MakeButton(WidgetTree,FText::FromString(TEXT("ДЕРЕВЯННАЯ СТЕНА\n6 дерева | 10 ударов топором | секция 3 м")));Wall->OnClicked.AddDynamic(this,&UBuildingMenuWidget::WallClicked);Content->AddChildToVerticalBox(Wall);UButton* WindowWall=MakeButton(WidgetTree,FText::FromString(TEXT("СТЕНА С ОКНОМ\n7 дерева | 10 ударов топором | секция 3 м")));WindowWall->OnClicked.AddDynamic(this,&UBuildingMenuWidget::WindowWallClicked);Content->AddChildToVerticalBox(WindowWall);UButton* Door=MakeButton(WidgetTree,FText::FromString(TEXT("ДЕРЕВЯННАЯ ДВЕРЬ\n8 дерева + 2 верёвки | 10 ударов топором")));Door->OnClicked.AddDynamic(this,&UBuildingMenuWidget::DoorClicked);Content->AddChildToVerticalBox(Door);UButton* Gate=MakeButton(WidgetTree,FText::FromString(TEXT("ДЕРЕВЯННЫЕ ВОРОТА\n12 дерева + 4 верёвки | 10 ударов топором")));Gate->OnClicked.AddDynamic(this,&UBuildingMenuWidget::GateClicked);Content->AddChildToVerticalBox(Gate);UButton* Floor=MakeButton(WidgetTree,FText::FromString(TEXT("ДЕРЕВЯННЫЙ ПОЛ\n5 дерева | площадка 3 x 3 м\nДо 3 секций от несущей опоры")));Floor->OnClicked.AddDynamic(this,&UBuildingMenuWidget::FloorClicked);Content->AddChildToVerticalBox(Floor);UButton* Stairs=MakeButton(WidgetTree,FText::FromString(TEXT("ДЕРЕВЯННАЯ ЛЕСТНИЦА\n8 дерева | подъём на один этаж")));Stairs->OnClicked.AddDynamic(this,&UBuildingMenuWidget::StairsClicked);Content->AddChildToVerticalBox(Stairs);UButton* Pillar=MakeButton(WidgetTree,FText::FromString(TEXT("ДЕРЕВЯННАЯ КОЛОННА\n4 дерева | опора для пола второго этажа")));Pillar->OnClicked.AddDynamic(this,&UBuildingMenuWidget::PillarClicked);Content->AddChildToVerticalBox(Pillar);UButton* Back=MakeButton(WidgetTree,FText::FromString(TEXT("НАЗАД К РАЗДЕЛАМ")));Back->OnClicked.AddDynamic(this,&UBuildingMenuWidget::BackClicked);Content->AddChildToVerticalBox(Back);}
 void UBuildingMenuWidget::ShowLighting(){Content->ClearChildren();UButton* Torch=MakeButton(WidgetTree,FText::FromString(TEXT("НАСТЕННЫЙ ФАКЕЛ\n1 палка + 1 ткань + 1 бензин\nАвтоматически загорается ночью")));Torch->OnClicked.AddDynamic(this,&UBuildingMenuWidget::TorchClicked);Content->AddChildToVerticalBox(Torch);UButton* Back=MakeButton(WidgetTree,FText::FromString(TEXT("НАЗАД К РАЗДЕЛАМ")));Back->OnClicked.AddDynamic(this,&UBuildingMenuWidget::BackClicked);Content->AddChildToVerticalBox(Back);}
 void UBuildingMenuWidget::SelectBuildPiece(EBuildPieceType Type){if(AShooterCharacter* Character=GetCharacter(this))Character->BeginBuildPlacement(Type);CloseClicked();}
 void UBuildingMenuWidget::FurnitureClicked(){ShowFurniture();}void UBuildingMenuWidget::DefenseClicked(){ShowDefense();}void UBuildingMenuWidget::LightingClicked(){ShowLighting();}void UBuildingMenuWidget::BackClicked(){ShowCategories();}
@@ -210,6 +218,8 @@ void UCraftingWidget::NativeOnInitialized()
 	if(UVerticalBoxSlot* PanelSlot=Panel->AddChildToVerticalBox(MaterialsText))PanelSlot->SetPadding(FMargin(4.f,4.f,4.f,16.f));
 	CraftButton=MakeButton(WidgetTree,FText::FromString(TEXT("АПТЕЧКА\n1 медикамент + 2 бинта\nВосстанавливает 50 HP")));CraftButton->OnClicked.AddDynamic(this,&UCraftingWidget::CraftMedkitClicked);
 	if(UVerticalBoxSlot* PanelSlot=Panel->AddChildToVerticalBox(CraftButton))PanelSlot->SetPadding(FMargin(4.f,5.f));
+	CraftSticksButton=MakeButton(WidgetTree,FText::FromString(TEXT("ПАЛКИ x4\n1 дерево\nДля факелов и других рецептов")));CraftSticksButton->OnClicked.AddDynamic(this,&UCraftingWidget::CraftSticksClicked);
+	if(UVerticalBoxSlot* PanelSlot=Panel->AddChildToVerticalBox(CraftSticksButton))PanelSlot->SetPadding(FMargin(4.f,5.f));
 	UseButton=MakeButton(WidgetTree,FText::FromString(TEXT("ИСПОЛЬЗОВАТЬ АПТЕЧКУ")));UseButton->OnClicked.AddDynamic(this,&UCraftingWidget::UseMedkitClicked);
 	if(UVerticalBoxSlot* PanelSlot=Panel->AddChildToVerticalBox(UseButton))PanelSlot->SetPadding(FMargin(4.f,12.f,4.f,5.f));
 	UButton* Close=MakeButton(WidgetTree,FText::FromString(TEXT("ЗАКРЫТЬ")));Close->OnClicked.AddDynamic(this,&UCraftingWidget::CloseClicked);
@@ -219,17 +229,19 @@ void UCraftingWidget::NativeTick(const FGeometry& G,float Dt){Super::NativeTick(
 void UCraftingWidget::Refresh()
 {
 	AShooterCharacter* Character=GetCharacter(this);if(!Character||!Character->Inventory)return;
-	const int32 Medicine=Character->Inventory->GetQuantity(TEXT("Medicine")),Bandages=Character->Inventory->GetQuantity(TEXT("Bandage")),Medkits=Character->Inventory->GetQuantity(TEXT("Medkit"));
-	if(MaterialsText)MaterialsText->SetText(FText::FromString(FString::Printf(TEXT("МЕДИКАМЕНТЫ: %d     БИНТЫ: %d     АПТЕЧКИ: %d"),Medicine,Bandages,Medkits)));
+	const int32 Medicine=Character->Inventory->GetQuantity(TEXT("Medicine")),Bandages=Character->Inventory->GetQuantity(TEXT("Bandage")),Medkits=Character->Inventory->GetQuantity(TEXT("Medkit")),Wood=Character->Inventory->GetQuantity(TEXT("Wood")),Sticks=Character->Inventory->GetQuantity(TEXT("Stick"));
+	if(MaterialsText)MaterialsText->SetText(FText::FromString(FString::Printf(TEXT("ДЕРЕВО: %d     ПАЛКИ: %d\nМЕДИКАМЕНТЫ: %d     БИНТЫ: %d     АПТЕЧКИ: %d"),Wood,Sticks,Medicine,Bandages,Medkits)));
 	if(CraftButton)CraftButton->SetIsEnabled(Character->CanCraftMedkit());
+	if(CraftSticksButton)CraftSticksButton->SetIsEnabled(Character->CanCraftSticks());
 	if(UseButton)UseButton->SetIsEnabled(Medkits>0&&Character->Health&&Character->Health->Health<Character->Health->MaxHealth);
 }
 void UCraftingWidget::CraftMedkitClicked(){if(AShooterCharacter* Character=GetCharacter(this))Character->CraftMedkit();Refresh();}
+void UCraftingWidget::CraftSticksClicked(){if(AShooterCharacter* Character=GetCharacter(this))Character->CraftSticks();Refresh();}
 void UCraftingWidget::UseMedkitClicked(){if(AShooterCharacter* Character=GetCharacter(this))Character->UseMedkit();Refresh();}
 void UCraftingWidget::CloseClicked(){if(AShooterPlayerController* PC=Cast<AShooterPlayerController>(GetOwningPlayer()))PC->CloseGameplayPanel();}
 FReply UCraftingWidget::NativeOnKeyDown(const FGeometry& G,const FKeyEvent& E){if(E.GetKey()==EKeys::C||E.GetKey()==EKeys::Escape){CloseClicked();return FReply::Handled();}return Super::NativeOnKeyDown(G,E);}
 
-void UStorageTransferSlotWidget::Setup(FName InItemId,int32 InQuantity,bool bInFromChest){ItemId=InItemId;Quantity=InQuantity;bFromChest=bInFromChest;if(Label)Label->SetText(FText::FromString(ItemId.IsNone()?TEXT("ПУСТО"):FString::Printf(TEXT("%s\nx%d"),*ItemId.ToString(),Quantity)));}
+void UStorageTransferSlotWidget::Setup(FName InItemId,int32 InQuantity,bool bInFromChest){ItemId=InItemId;Quantity=InQuantity;bFromChest=bInFromChest;if(Label)Label->SetText(FText::FromString(ItemId.IsNone()?TEXT("ПУСТО"):FString::Printf(TEXT("%s\nx%d"),*ItemName(ItemId),Quantity)));}
 void UStorageTransferSlotWidget::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();bIsFocusable=true;

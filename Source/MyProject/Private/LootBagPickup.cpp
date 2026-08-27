@@ -61,7 +61,7 @@ ALootBagPickup::ALootBagPickup()
 	PickupText->SetHorizontalAlignment(EHTA_Center);
 	PickupText->SetWorldSize(18.f);
 	PickupText->SetTextRenderColor(FColor(255,220,90));
-	PickupText->SetText(FText::FromString(TEXT("E  SUPPLIES")));
+	PickupText->SetText(FText::FromString(TEXT("E  ПРИПАСЫ")));
 	PickupText->bAlwaysRenderAsText=true;
 }
 
@@ -70,7 +70,8 @@ void ALootBagPickup::BeginPlay()
 	Super::BeginPlay();
 	if(HasAuthority())
 	{
-		RemainingWood=FMath::RandRange(MinWood,MaxWood);
+		// Wood is now an axe-harvested resource. Zombie bags never create it.
+		RemainingWood=0;
 		RemainingRope=FMath::RandRange(MinRope,MaxRope);
 		RemainingMedicine=FMath::FRand()<=MedicineChance?1:0;
 		RemainingBandages=FMath::FRand()<=BandageChance?FMath::RandRange(1,FMath::Max(1,MaxBandages)):0;
@@ -88,6 +89,8 @@ void ALootBagPickup::BeginPlay()
 	Tint(RopeTie,FLinearColor(.72f,.48f,.19f));
 	Tint(StickA,FLinearColor(.13f,.035f,.01f));
 	Tint(StickB,FLinearColor(.16f,.045f,.012f));
+	StickA->SetVisibility(false,true);
+	StickB->SetVisibility(false,true);
 }
 
 bool ALootBagPickup::TryPickup(APawn* Pawn)
@@ -98,13 +101,13 @@ bool ALootBagPickup::TryPickup(APawn* Pawn)
 	UInventoryComponent* Inventory=Pawn->FindComponentByClass<UInventoryComponent>();
 	if(!Inventory)return false;
 	auto Take=[Inventory](FName Id,int32& Remaining){const int32 Added=Inventory->AddItemPartial(Id,Remaining);Remaining-=Added;return Added;};
-	const int32 AddedWood=Take(TEXT("Wood"),RemainingWood),AddedRope=Take(TEXT("Rope"),RemainingRope);
+	const int32 AddedWood=0,AddedRope=Take(TEXT("Rope"),RemainingRope);
 	const int32 AddedMedicine=Take(TEXT("Medicine"),RemainingMedicine),AddedBandages=Take(TEXT("Bandage"),RemainingBandages);
 	const int32 AddedLeather=Take(TEXT("Leather"),RemainingLeather),AddedCloth=Take(TEXT("Cloth"),RemainingCloth),AddedGasoline=Take(TEXT("Gasoline"),RemainingGasoline);
 	const int32 TotalAdded=AddedWood+AddedRope+AddedMedicine+AddedBandages+AddedLeather+AddedCloth+AddedGasoline;
 	if(AShooterCharacter* Shooter=Cast<AShooterCharacter>(Pawn))
 	{
-		FString Message=TotalAdded>0?FString::Printf(TEXT("ВЗЯТО: ПАЛКИ +%d, ВЕРЕВКИ +%d"),AddedWood,AddedRope):TEXT("ИНВЕНТАРЬ ЗАПОЛНЕН — СОДЕРЖИМОЕ ОСТАЛОСЬ В МЕШКЕ");
+		FString Message=TotalAdded>0?FString::Printf(TEXT("ВЗЯТО: ВЕРЁВКИ +%d"),AddedRope):TEXT("ИНВЕНТАРЬ ЗАПОЛНЕН — СОДЕРЖИМОЕ ОСТАЛОСЬ В МЕШКЕ");
 		if(AddedMedicine)Message+=TEXT(", МЕДИКАМЕНТ +1");if(AddedBandages)Message+=FString::Printf(TEXT(", БИНТЫ +%d"),AddedBandages);if(AddedLeather)Message+=FString::Printf(TEXT(", КОЖА +%d"),AddedLeather);if(AddedCloth)Message+=FString::Printf(TEXT(", ТКАНЬ +%d"),AddedCloth);if(AddedGasoline)Message+=TEXT(", БЕНЗИН +1");
 		Shooter->ShowLocalNotification(Message);
 	}

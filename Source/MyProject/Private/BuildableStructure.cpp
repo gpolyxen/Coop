@@ -73,6 +73,9 @@ void ABuildableStructure::GetSnapPoints(TArray<FVector>& OutPoints)const
 float ABuildableStructure::TakeDamage(float Amount,const FDamageEvent&,AController* EventInstigator,AActor* DamageCauser)
 {
 	if(!HasAuthority()||Amount<=0.f)return 0.f;
+	// Every wooden structure takes exactly ten axe strikes from full health.
+	// Other damage sources (zombies, bullets, explosions) retain normal damage.
+	if(Cast<AWoodAxeWeapon>(DamageCauser))Amount=MaxStructureHealth/FMath::Max(1,AxeHitsToDestroy);
 	const float Applied=FMath::Min(StructureHealth,Amount);StructureHealth-=Applied;
 	if(StructureHealth<=0.f)
 	{
@@ -86,7 +89,7 @@ float ABuildableStructure::TakeDamage(float Amount,const FDamageEvent&,AControll
 				if(IsA<AWoodWall>()||IsA<AWoodWindowWall>())WoodReward=4;
 				else if(IsA<AWoodGate>()||IsA<AWoodDoor>())WoodReward=6;
 				const int32 Added=Gatherer->Inventory->AddItemPartial(TEXT("Wood"),WoodReward);
-				if(Added>0)Gatherer->ShowLocalNotification(FString::Printf(TEXT("WOOD +%d"),Added),2.f);
+				if(Added>0)Gatherer->ShowLocalNotification(FString::Printf(TEXT("ДЕРЕВО +%d"),Added),2.f);
 			}
 		}
 		Destroy();

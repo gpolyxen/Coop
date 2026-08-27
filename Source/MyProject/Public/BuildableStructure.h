@@ -24,6 +24,7 @@ public:
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly)USceneComponent* SceneRoot;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Construction")float MaxStructureHealth=350.f;
 	UPROPERTY(Replicated,VisibleAnywhere,BlueprintReadOnly,Category="Construction")float StructureHealth=350.f;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Construction",meta=(ClampMin="1"))int32 AxeHitsToDestroy=10;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Construction")float HalfModuleLength=150.f;
 	void SetConstructionPreview(bool bPreview){bConstructionPreview=bPreview;}
 	bool IsConstructionPreview()const{return bConstructionPreview;}

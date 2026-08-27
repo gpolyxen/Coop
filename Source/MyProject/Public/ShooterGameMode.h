@@ -15,4 +15,8 @@ protected:
 	virtual void HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer)override;
 private:
 	AActor* EnsurePlayerStart();
+	void FixStartupPlacements();
+	bool FindProceduralGround(const FVector& Location,FVector& OutGround)const;
+	FTimerHandle StartupGroundingTimer;
+	int32 StartupGroundingPasses=0;
 };

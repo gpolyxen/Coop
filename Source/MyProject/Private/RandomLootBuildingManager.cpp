@@ -20,9 +20,13 @@ void ARandomLootBuildingManager::BeginPlay()
 
 bool ARandomLootBuildingManager::FindGround(const FVector& Candidate,FVector& OutGround)const
 {
-	FHitResult Hit;FCollisionQueryParams Query(SCENE_QUERY_STAT(RandomBuildingGround),false,this);
-	if(!GetWorld()->LineTraceSingleByChannel(Hit,Candidate+FVector(0,0,2500.f),Candidate-FVector(0,0,5000.f),ECC_WorldStatic,Query))return false;
-	if(Hit.ImpactNormal.Z<.82f)return false;OutGround=Hit.ImpactPoint;return true;
+	// Reserve the whole river corridor and the guaranteed starting lake. The
+	// margin includes a four-module building footprint, not just its centre.
+	const float RiverCenterY=2800.f+FMath::Sin(Candidate.X/5200.f)*520.f;
+	if(FMath::Abs(Candidate.Y-RiverCenterY)<2200.f)return false;
+	FCollisionQueryParams Query(SCENE_QUERY_STAT(RandomBuildingGround),false,this);float MinimumZ=MAX_flt,MaximumZ=-MAX_flt,SumZ=0.f;const FVector2D Samples[]={{0,0},{-600,-600},{-600,600},{600,-600},{600,600}};
+	for(const FVector2D& Offset:Samples){FHitResult Hit;const FVector Point=Candidate+FVector(Offset.X,Offset.Y,0.f);if(!GetWorld()->LineTraceSingleByChannel(Hit,Point+FVector(0,0,3500.f),Point-FVector(0,0,5000.f),ECC_WorldStatic,Query)||Hit.ImpactNormal.Z<.9f)return false;MinimumZ=FMath::Min(MinimumZ,Hit.ImpactPoint.Z);MaximumZ=FMath::Max(MaximumZ,Hit.ImpactPoint.Z);SumZ+=Hit.ImpactPoint.Z;}
+	if(MaximumZ-MinimumZ>55.f)return false;OutGround=FVector(Candidate.X,Candidate.Y,SumZ/UE_ARRAY_COUNT(Samples)+3.f);return true;
 }
 
 void ARandomLootBuildingManager::Generate()

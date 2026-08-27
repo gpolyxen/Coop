@@ -68,7 +68,7 @@ bool ABackpackPickup::TryPickup(APawn* Pawn)
 	if(UInventoryComponent* Inventory=Pawn->FindComponentByClass<UInventoryComponent>())
 		if(Inventory->UpgradeCapacity(Capacity))
 		{
-			if(AShooterCharacter* Character=Cast<AShooterCharacter>(Pawn))Character->ShowLocalNotification(FString::Printf(TEXT("INVENTORY EXPANDED: %d SLOTS"),Capacity),4.f);
+			if(AShooterCharacter* Character=Cast<AShooterCharacter>(Pawn))Character->ShowLocalNotification(FString::Printf(TEXT("ИНВЕНТАРЬ РАСШИРЕН: %d ЯЧЕЕК"),Capacity),4.f);
 			Destroy();
 			return true;
 		}

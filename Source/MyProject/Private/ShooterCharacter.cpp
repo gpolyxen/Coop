@@ -55,7 +55,7 @@ namespace
 	};
 	struct FBuildCost
 	{
-		int32 Wood=0;int32 Rope=0;int32 Leather=0;int32 Cloth=0;int32 Gasoline=0;
+		int32 Wood=0;int32 Stick=0;int32 Rope=0;int32 Leather=0;int32 Cloth=0;int32 Gasoline=0;
 	};
 	FBuildCost GetBuildCost(EBuildPieceType Piece)
 	{
@@ -71,19 +71,19 @@ namespace
 		case EBuildPieceType::WoodFloor:Cost.Wood=5;break;
 		case EBuildPieceType::WoodStairs:Cost.Wood=8;break;
 		case EBuildPieceType::WoodPillar:Cost.Wood=4;break;
-		case EBuildPieceType::WallTorch:Cost.Wood=1;Cost.Cloth=1;Cost.Gasoline=1;break;
+		case EBuildPieceType::WallTorch:Cost.Stick=1;Cost.Cloth=1;Cost.Gasoline=1;break;
 		default:break;
 		}
 		return Cost;
 	}
 	bool CanAffordBuild(const UInventoryComponent* Inventory,const FBuildCost& Cost)
 	{
-		return Inventory&&Inventory->GetQuantity(TEXT("Wood"))>=Cost.Wood&&Inventory->GetQuantity(TEXT("Rope"))>=Cost.Rope&&Inventory->GetQuantity(TEXT("Leather"))>=Cost.Leather&&Inventory->GetQuantity(TEXT("Cloth"))>=Cost.Cloth&&Inventory->GetQuantity(TEXT("Gasoline"))>=Cost.Gasoline;
+		return Inventory&&Inventory->GetQuantity(TEXT("Wood"))>=Cost.Wood&&Inventory->GetQuantity(TEXT("Stick"))>=Cost.Stick&&Inventory->GetQuantity(TEXT("Rope"))>=Cost.Rope&&Inventory->GetQuantity(TEXT("Leather"))>=Cost.Leather&&Inventory->GetQuantity(TEXT("Cloth"))>=Cost.Cloth&&Inventory->GetQuantity(TEXT("Gasoline"))>=Cost.Gasoline;
 	}
 	void ConsumeBuildCost(UInventoryComponent* Inventory,const FBuildCost& Cost)
 	{
 		if(!Inventory)return;
-		if(Cost.Wood)Inventory->RemoveItem(TEXT("Wood"),Cost.Wood);if(Cost.Rope)Inventory->RemoveItem(TEXT("Rope"),Cost.Rope);if(Cost.Leather)Inventory->RemoveItem(TEXT("Leather"),Cost.Leather);if(Cost.Cloth)Inventory->RemoveItem(TEXT("Cloth"),Cost.Cloth);if(Cost.Gasoline)Inventory->RemoveItem(TEXT("Gasoline"),Cost.Gasoline);
+		if(Cost.Wood)Inventory->RemoveItem(TEXT("Wood"),Cost.Wood);if(Cost.Stick)Inventory->RemoveItem(TEXT("Stick"),Cost.Stick);if(Cost.Rope)Inventory->RemoveItem(TEXT("Rope"),Cost.Rope);if(Cost.Leather)Inventory->RemoveItem(TEXT("Leather"),Cost.Leather);if(Cost.Cloth)Inventory->RemoveItem(TEXT("Cloth"),Cost.Cloth);if(Cost.Gasoline)Inventory->RemoveItem(TEXT("Gasoline"),Cost.Gasoline);
 	}
 	bool FindWallTorchPlacement(UWorld* World,const FVector& Desired,FBuildSnapCandidate& Out)
 	{
@@ -511,6 +511,7 @@ void AShooterCharacter::StopFire(){GetWorldTimerManager().ClearTimer(FireTimer);
 
 bool AShooterCharacter::CanCraftBed()const{return Inventory&&Inventory->HasItems(TEXT("Wood"),10,TEXT("Rope"),10);}
 bool AShooterCharacter::CanCraftMedkit()const{return Inventory&&Inventory->HasItems(TEXT("Medicine"),1,TEXT("Bandage"),2);}
+bool AShooterCharacter::CanCraftSticks()const{return Inventory&&Inventory->GetQuantity(TEXT("Wood"))>=1&&Inventory->CanAddItems(TEXT("Stick"),4,NAME_None,0);}
 void AShooterCharacter::CraftMedkit()
 {
 	if(!HasAuthority()){ServerCraftMedkit();return;}
@@ -519,6 +520,13 @@ void AShooterCharacter::CraftMedkit()
 	if(!Inventory->AddItem(TEXT("Medkit"),1)){Inventory->AddItem(TEXT("Medicine"),1);Inventory->AddItem(TEXT("Bandage"),2);return;}
 	ShowLocalNotification(TEXT("СОЗДАНА АПТЕЧКА"),2.f);
 }
+void AShooterCharacter::CraftSticks()
+{
+	if(!HasAuthority()){ServerCraftSticks();return;}
+	if(!CanCraftSticks()||!Inventory->RemoveItem(TEXT("Wood"),1))return;
+	if(!Inventory->AddItem(TEXT("Stick"),4)){Inventory->AddItem(TEXT("Wood"),1);return;}
+	ShowLocalNotification(TEXT("СОЗДАНО: ПАЛКИ x4"),2.f);
+}
 void AShooterCharacter::UseMedkit()
 {
 	if(!HasAuthority()){ServerUseMedkit();return;}
@@ -526,6 +534,7 @@ void AShooterCharacter::UseMedkit()
 	if(Inventory->RemoveItem(TEXT("Medkit"),1))Health->Heal(50.f*GetHealingMultiplier());
 }
 bool AShooterCharacter::ServerCraftMedkit_Validate(){return true;}void AShooterCharacter::ServerCraftMedkit_Implementation(){CraftMedkit();}
+bool AShooterCharacter::ServerCraftSticks_Validate(){return true;}void AShooterCharacter::ServerCraftSticks_Implementation(){CraftSticks();}
 bool AShooterCharacter::ServerUseMedkit_Validate(){return true;}void AShooterCharacter::ServerUseMedkit_Implementation(){UseMedkit();}
 FString AShooterCharacter::GetSelectedBuildName()const
 {
@@ -974,7 +983,7 @@ void AShooterCharacter::AddExperience(int32 Amount)
 		Experience-=GetExperienceForNextLevel();
 		++CharacterLevel;
 		++SkillPoints;
-		ShowLocalNotification(FString::Printf(TEXT("LEVEL %d: +1 SKILL POINT"),CharacterLevel),5.f);
+		ShowLocalNotification(FString::Printf(TEXT("УРОВЕНЬ %d: +1 ОЧКО НАВЫКА"),CharacterLevel),5.f);
 		UE_LOG(LogTemp,Display,TEXT("Player %s reached level %d"),*GetName(),CharacterLevel);
 	}
 }
@@ -1046,7 +1055,7 @@ bool AShooterCharacter::PurchaseSkill(EShooterSkill Skill)
 	SkillPoints-=GetSkillCost(Skill);
 	UnlockedSkills.AddUnique(Skill);
 	ApplyUnlockedSkillEffects();
-	ShowLocalNotification(FString::Printf(TEXT("UNLOCKED: %s"),*GetSkillName(Skill).ToString()),4.f);
+	ShowLocalNotification(FString::Printf(TEXT("ОТКРЫТО: %s"),*GetSkillName(Skill).ToString()),4.f);
 	return true;
 }
 
@@ -1078,7 +1087,7 @@ bool AShooterCharacter::TryActivateLastLife()
 	if(!HasAuthority()||!HasSkill(EShooterSkill::LastLife)||bLastLifeConsumed)return false;
 	bLastLifeConsumed=true;
 	LastLifeInvulnerableUntil=GetWorld()->GetTimeSeconds()+5.f;
-	ShowLocalNotification(TEXT("LAST LIFE: 5 SECONDS OF INVULNERABILITY"),5.f);
+	ShowLocalNotification(TEXT("ПОСЛЕДНЯЯ ЖИЗНЬ: НЕУЯЗВИМОСТЬ НА 5 СЕКУНД"),5.f);
 	return true;
 }
 

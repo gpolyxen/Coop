@@ -51,7 +51,9 @@ public:
 	UFUNCTION(BlueprintCallable) int32 AddAmmunition(int32 Amount);
 	UFUNCTION(BlueprintPure) bool CanCraftBed()const;
 	UFUNCTION(BlueprintPure) bool CanCraftMedkit()const;
+	UFUNCTION(BlueprintPure) bool CanCraftSticks()const;
 	UFUNCTION(BlueprintCallable) void CraftMedkit();
+	UFUNCTION(BlueprintCallable) void CraftSticks();
 	UFUNCTION(BlueprintCallable) void UseMedkit();
 	UFUNCTION(BlueprintCallable)void TransferItemToChest(AStorageChest* Chest,FName ItemId,int32 Quantity=1);
 	UFUNCTION(BlueprintCallable)void TransferItemFromChest(AStorageChest* Chest,FName ItemId,int32 Quantity=1);
@@ -132,6 +134,7 @@ protected:
 	UFUNCTION(Client,Reliable)void ClientBuildPlacementResult(EBuildPieceType PieceType,bool bPlaced,bool bCanContinue);
 	UFUNCTION(Server,Reliable,WithValidation)void ServerPurchaseSkill(EShooterSkill Skill);
 	UFUNCTION(Server,Reliable,WithValidation)void ServerCraftMedkit();
+	UFUNCTION(Server,Reliable,WithValidation)void ServerCraftSticks();
 	UFUNCTION(Server,Reliable,WithValidation)void ServerUseMedkit();
 	UFUNCTION(Server,Reliable,WithValidation)void ServerTransferItemToChest(AStorageChest* Chest,FName ItemId,int32 Quantity);
 	UFUNCTION(Server,Reliable,WithValidation)void ServerTransferItemFromChest(AStorageChest* Chest,FName ItemId,int32 Quantity);

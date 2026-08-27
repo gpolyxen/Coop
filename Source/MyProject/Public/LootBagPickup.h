@@ -18,8 +18,8 @@ public:
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly,Category="Loot") UStaticMeshComponent* StickA;
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly,Category="Loot") UStaticMeshComponent* StickB;
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly,Category="Loot") class UTextRenderComponent* PickupText;
-	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category="Loot") int32 MinWood=1;
-	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category="Loot") int32 MaxWood=4;
+	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category="Loot") int32 MinWood=0;
+	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category="Loot") int32 MaxWood=0;
 	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category="Loot") int32 MinRope=1;
 	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category="Loot") int32 MaxRope=3;
 	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category="Loot",meta=(ClampMin="0.0",ClampMax="1.0")) float MedicineChance=.32f;

@@ -55,7 +55,7 @@ ASaveBed::ASaveBed()
 	SaveText->SetHorizontalAlignment(EHTA_Center);
 	SaveText->SetWorldSize(25.f);
 	SaveText->SetTextRenderColor(FColor(70,180,255));
-	SaveText->SetText(FText::FromString(TEXT("E  SAVE")));
+	SaveText->SetText(FText::FromString(TEXT("E  СОХРАНИТЬСЯ")));
 	SaveText->bAlwaysRenderAsText=true;
 }
 
