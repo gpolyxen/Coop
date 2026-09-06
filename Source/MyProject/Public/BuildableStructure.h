@@ -96,6 +96,7 @@ class MYPROJECT_API AWoodStairs : public ABuildableStructure
 {
 	GENERATED_BODY()
 public:AWoodStairs();virtual void GetSnapPoints(TArray<FVector>& OutPoints)const override;
+protected:virtual bool HasStructuralSupport()const override;
 	UPROPERTY(VisibleAnywhere)UInstancedStaticMeshComponent* Pieces;
 	UPROPERTY(VisibleAnywhere)UNavLinkComponent* NavigationLink;
 };

@@ -147,7 +147,7 @@ namespace
 			if(AWoodFloor* Floor=Cast<AWoodFloor>(Target))
 			{
 				Out.Add({T,Floor->GetActorRotation(),Target});
-				Out.Add({T-FVector(0.f,0.f,220.f),Floor->GetActorRotation(),Target});
+				Out.Add({T-FVector(0.f,0.f,300.f),Floor->GetActorRotation(),Target});
 			}
 			return;
 		}
@@ -159,11 +159,11 @@ namespace
 			}
 			else if(Target->IsA<AWoodWall>()||Target->IsA<AWoodWindowWall>()||Target->IsA<AWoodGate>())
 			{
-				for(float Side:{-1.f,1.f})Out.Add({T+Forward*(150.f*Side)+FVector(0,0,220.f),Target->GetActorRotation(),Target});
+				for(float Side:{-1.f,1.f})Out.Add({T+Forward*(150.f*Side)+FVector(0,0,300.f),Target->GetActorRotation(),Target});
 			}
 			else if(Target->IsA<AWoodStairs>())
 			{
-				Out.Add({T+Right*300.f+FVector(0,0,220.f),Target->GetActorRotation(),Target});
+				Out.Add({T+Right*300.f+FVector(0,0,300.f),Target->GetActorRotation(),Target});
 			}
 			return;
 		}
@@ -209,7 +209,7 @@ namespace
 			if(*It==Parent||It->IsConstructionPreview()||It->IsCollapsing())continue;const FVector Other=It->GetActorLocation();
 			if(Piece==EBuildPieceType::WoodPillar&&It->IsA<AWoodPillar>()&&FMath::Abs(Location.Z-Other.Z)<80.f&&FVector::Dist2D(Location,Other)<80.f)return true;
 			if(Piece==EBuildPieceType::WallTorch&&It->IsA<AWallTorch>()&&FVector::Dist(Location,Other)<100.f)return true;
-			if(Piece==EBuildPieceType::WoodFloor&&It->IsA<AWoodStairs>()&&FMath::Abs(Location.Z-(Other.Z+220.f))<90.f&&FVector::Dist2D(Location,Other)<210.f)return true;
+			if(Piece==EBuildPieceType::WoodFloor&&It->IsA<AWoodStairs>()&&FMath::Abs(Location.Z-(Other.Z+300.f))<90.f&&FVector::Dist2D(Location,Other)<210.f)return true;
 			if(Piece==EBuildPieceType::WoodStairs&&FMath::Abs(Location.Z-Other.Z)<180.f&&FVector::Dist2D(Location,Other)<125.f)return true;
 		}
 		return false;

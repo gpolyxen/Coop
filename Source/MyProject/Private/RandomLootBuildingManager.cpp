@@ -65,20 +65,29 @@ void ARandomLootBuildingManager::SpawnBuilding(const FVector& GroundLocation,flo
 	TArray<float> XPositions;for(int32 XIndex=0;XIndex<WidthModules;++XIndex)XPositions.Add((XIndex-(WidthModules-1)*.5f)*300.f);
 	const float EdgeX=WidthModules*150.f;
 	const bool bRoofAccess=FloorCount>1&&(BuildingIndex%2==0);
-	// The stair flight is 260 cm wide.  Put its outside edge directly against the
-	// left wall instead of leaving the old 20 cm slot that trapped capsules.
-	const float StairX=-EdgeX+130.f;
+	// Put every flight alongside the front exterior wall. Its side touches the
+	// wall, while the run stays parallel to it, leaving a full floor module before
+	// the first step and keeping the ground-floor entrance completely clear.
+	TArray<FVector2D> StairCells;TArray<float> StairYaws;
+	TArray<float> InnerX;for(float X:XPositions)if(FMath::Abs(X)<=EdgeX-300.f)InnerX.Add(X);if(InnerX.Num()==0)InnerX.Add(0.f);
+	FRandomStream StairRandom(7919+BuildingIndex*101+FloorCount*17+WidthModules);
+	for(int32 Level=0;Level<FloorCount;++Level)
+	{
+		const float X=InnerX[StairRandom.RandRange(0,InnerX.Num()-1)];
+		StairCells.Add(FVector2D(X,150.f));StairYaws.Add(StairRandom.FRand()<.5f?-90.f:90.f);
+	}
 	// Each level is made from ordinary saved/destructible build pieces. Upper
 	// levels leave a deliberate stairwell tile so both players and AI have a route.
 	for(int32 Level=0;Level<FloorCount;++Level)
 	{
-		const float Z=Level*220.f;
+		const float Z=Level*300.f;
 		for(float X:XPositions)for(float Y:{-150.f,150.f})
 		{
 			// A flight occupies both halves of its 3x6 m stairwell.  Keeping the
 			// lower-half ceiling was the invisible obstruction that stopped both
 			// players and AI halfway up the stairs.
-			const bool bAboveStairwell=Level>0&&FMath::Abs(X-StairX)<=170.f;
+			const FVector2D Incoming=StairCells[FMath::Max(0,Level-1)];
+			const bool bAboveStairwell=Level>0&&FMath::Abs(X-Incoming.X)<=20.f&&FMath::Abs(Y-Incoming.Y)<=20.f;
 			if(!bAboveStairwell)SpawnStructure(AWoodFloor::StaticClass(),X,Y,Z+2.f,0.f);
 		}
 		for(float Y:{-150.f,150.f})
@@ -109,12 +118,15 @@ void ARandomLootBuildingManager::SpawnBuilding(const FVector& GroundLocation,flo
 		// the roof. Alternating its direction keeps both landings inside the shared
 		// open shaft and prevents the second flight from terminating in a wall.
 		if(Level<FloorCount-1||(Level==FloorCount-1&&bRoofAccess))
-			SpawnStructure(AWoodStairs::StaticClass(),StairX,0.f,Z,(Level&1)?180.f:0.f);
+		{
+			SpawnStructure(AWoodStairs::StaticClass(),StairCells[Level].X,StairCells[Level].Y,Z,StairYaws[Level]);
+		}
 	}
 	for(float X:XPositions)for(float Y:{-150.f,150.f})
 	{
-		const bool bRoofStairwell=bRoofAccess&&FMath::Abs(X-StairX)<=170.f;
-		if(!bRoofStairwell)SpawnStructure(AWoodFloor::StaticClass(),X,Y,FloorCount*220.f+2.f,0.f);
+		const FVector2D RoofIncoming=StairCells[FloorCount-1];
+		const bool bRoofStairwell=bRoofAccess&&FMath::Abs(X-RoofIncoming.X)<=20.f&&FMath::Abs(Y-RoofIncoming.Y)<=20.f;
+		if(!bRoofStairwell)SpawnStructure(AWoodFloor::StaticClass(),X,Y,FloorCount*300.f+2.f,0.f);
 	}
 	if(ALootSuitcasePickup* Suitcase=GetWorld()->SpawnActor<ALootSuitcasePickup>(ALootSuitcasePickup::StaticClass(),WorldPoint(60.f,30.f,55.f),BuildingRotation,Parameters))
 	{
@@ -134,12 +146,12 @@ void ARandomLootBuildingManager::SpawnBuilding(const FVector& GroundLocation,flo
 		const int32 XSlot=bRightRoom?XPositions.Num()-1:FMath::Min(1,XPositions.Num()-1);
 		const float X=XPositions[XSlot];
 		const float Y=(Index&1)?110.f:-110.f;
-		if(AZombieCharacter* Resident=GetWorld()->SpawnActor<AZombieCharacter>(AZombieCharacter::StaticClass(),WorldPoint(X,Y,Level*220.f+100.f),BuildingRotation,Parameters))
+		if(AZombieCharacter* Resident=GetWorld()->SpawnActor<AZombieCharacter>(AZombieCharacter::StaticClass(),WorldPoint(X,Y,Level*300.f+100.f),BuildingRotation,Parameters))
 		{
 			Resident->SetDormant((Index+BuildingIndex)%3==0);
 			if(!Resident->GetController())Resident->SpawnDefaultController();
 			if(AZombieAIController* ResidentAI=Cast<AZombieAIController>(Resident->GetController()))
-				ResidentAI->SetPatrolArea(WorldPoint(0.f,0.f,Level*220.f+100.f),260.f);
+				ResidentAI->SetPatrolArea(WorldPoint(0.f,0.f,Level*300.f+100.f),260.f);
 		}
 	}
 }

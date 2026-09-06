@@ -61,7 +61,7 @@ bool ABuildableStructure::HasStructuralSupport()const
 		if(*It==this||It->IsCollapsing())continue;
 		if(!(It->IsA<AWoodWall>()||It->IsA<AWoodWindowWall>()||It->IsA<AWoodGate>()||It->IsA<AWoodPillar>()))continue;
 		const FVector Other=It->GetActorLocation();
-		if(FMath::Abs(Here.Z-(Other.Z+220.f))<=30.f&&FVector::Dist2D(Here,Other)<=85.f)return true;
+		if(FMath::Abs(Here.Z-(Other.Z+300.f))<=30.f&&FVector::Dist2D(Here,Other)<=85.f)return true;
 	}
 	return false;
 }
@@ -105,11 +105,11 @@ AWoodWall::AWoodWall()
 	static ConstructorHelpers::FObjectFinder<UMaterialInterface> WoodAsset(TEXT("/Game/StarterContent/Materials/M_Wood_Walnut.M_Wood_Walnut"));
 	Pieces=CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("WallPieces"));Pieces->SetupAttachment(SceneRoot);
 	if(CubeAsset.Succeeded())Pieces->SetStaticMesh(CubeAsset.Object);if(WoodAsset.Succeeded())Pieces->SetMaterial(0,WoodAsset.Object);Pieces->SetCollisionProfileName(TEXT("BlockAll"));
-	// Ten slightly overlapping planks fill the complete 3 x 2.1 m module. The
-	// former five boards left sight/fire gaps large enough to see through.
-	for(int32 Row=0;Row<10;++Row)Pieces->AddInstance(FTransform(FRotator::ZeroRotator,FVector(0,0,10.5f+Row*21.f),FVector(.22f,3.f,.215f)));
-	Pieces->AddInstance(FTransform(FRotator::ZeroRotator,FVector(0,-145,105),FVector(.3f,.22f,2.15f)));
-	Pieces->AddInstance(FTransform(FRotator::ZeroRotator,FVector(0,145,105),FVector(.3f,.22f,2.15f)));
+	// Exact 0..300 cm module: no part protrudes through the floor above or hangs
+	// into the room below.
+	for(int32 Row=0;Row<10;++Row)Pieces->AddInstance(FTransform(FRotator::ZeroRotator,FVector(0,0,15.f+Row*30.f),FVector(.22f,3.04f,.30f)));
+	Pieces->AddInstance(FTransform(FRotator::ZeroRotator,FVector(0,-145,150),FVector(.3f,.26f,3.f)));
+	Pieces->AddInstance(FTransform(FRotator::ZeroRotator,FVector(0,145,150),FVector(.3f,.26f,3.f)));
 }
 
 AWoodWindowWall::AWoodWindowWall()
@@ -121,12 +121,12 @@ AWoodWindowWall::AWoodWindowWall()
 	if(CubeAsset.Succeeded())Pieces->SetStaticMesh(CubeAsset.Object);if(WoodAsset.Succeeded())Pieces->SetMaterial(0,WoodAsset.Object);Pieces->SetCollisionProfileName(TEXT("BlockAll"));
 	// Solid lower and upper bands plus side jambs leave one deliberate opening
 	// (180 x 80 cm) while the rest of the module remains opaque and blocking.
-	Pieces->AddInstance(FTransform(FRotator::ZeroRotator,FVector(0,0,35.f),FVector(.22f,3.f,.70f)));
-	Pieces->AddInstance(FTransform(FRotator::ZeroRotator,FVector(0,0,180.f),FVector(.22f,3.f,.60f)));
-	Pieces->AddInstance(FTransform(FRotator::ZeroRotator,FVector(0,-120.f,110.f),FVector(.22f,.60f,.80f)));
-	Pieces->AddInstance(FTransform(FRotator::ZeroRotator,FVector(0,120.f,110.f),FVector(.22f,.60f,.80f)));
-	Pieces->AddInstance(FTransform(FRotator::ZeroRotator,FVector(0,-145.f,105.f),FVector(.30f,.22f,2.15f)));
-	Pieces->AddInstance(FTransform(FRotator::ZeroRotator,FVector(0,145.f,105.f),FVector(.30f,.22f,2.15f)));
+	Pieces->AddInstance(FTransform(FRotator::ZeroRotator,FVector(0,0,50.f),FVector(.22f,3.04f,1.f)));
+	Pieces->AddInstance(FTransform(FRotator::ZeroRotator,FVector(0,0,250.f),FVector(.22f,3.04f,1.f)));
+	Pieces->AddInstance(FTransform(FRotator::ZeroRotator,FVector(0,-120.f,150.f),FVector(.22f,.60f,1.f)));
+	Pieces->AddInstance(FTransform(FRotator::ZeroRotator,FVector(0,120.f,150.f),FVector(.22f,.60f,1.f)));
+	Pieces->AddInstance(FTransform(FRotator::ZeroRotator,FVector(0,-145.f,150.f),FVector(.30f,.26f,3.f)));
+	Pieces->AddInstance(FTransform(FRotator::ZeroRotator,FVector(0,145.f,150.f),FVector(.30f,.26f,3.f)));
 }
 
 AWoodGate::AWoodGate()
@@ -137,10 +137,11 @@ AWoodGate::AWoodGate()
 	Pieces=CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("GatePieces"));Pieces->SetupAttachment(SceneRoot);
 	Pieces->SetRelativeLocation(FVector(0.f,0.f,-30.f));
 	if(CubeAsset.Succeeded())Pieces->SetStaticMesh(CubeAsset.Object);if(WoodAsset.Succeeded())Pieces->SetMaterial(0,WoodAsset.Object);Pieces->SetCollisionProfileName(TEXT("BlockAll"));
-	Pieces->AddInstance(FTransform(FRotator::ZeroRotator,FVector(0,-145,100),FVector(.34f,.28f,2.30f)));
-	Pieces->AddInstance(FTransform(FRotator::ZeroRotator,FVector(0,145,100),FVector(.34f,.28f,2.30f)));
-	LeftHinge=CreateDefaultSubobject<USceneComponent>(TEXT("LeftGateHinge"));LeftHinge->SetupAttachment(SceneRoot);LeftHinge->SetRelativeLocation(FVector(0.f,-145.f,-30.f));
-	RightHinge=CreateDefaultSubobject<USceneComponent>(TEXT("RightGateHinge"));RightHinge->SetupAttachment(SceneRoot);RightHinge->SetRelativeLocation(FVector(0.f,145.f,-30.f));
+	Pieces->SetRelativeLocation(FVector::ZeroVector);
+	Pieces->AddInstance(FTransform(FRotator::ZeroRotator,FVector(0,-145,150),FVector(.34f,.28f,3.f)));
+	Pieces->AddInstance(FTransform(FRotator::ZeroRotator,FVector(0,145,150),FVector(.34f,.28f,3.f)));
+	LeftHinge=CreateDefaultSubobject<USceneComponent>(TEXT("LeftGateHinge"));LeftHinge->SetupAttachment(SceneRoot);LeftHinge->SetRelativeLocation(FVector(0.f,-145.f,0.f));
+	RightHinge=CreateDefaultSubobject<USceneComponent>(TEXT("RightGateHinge"));RightHinge->SetupAttachment(SceneRoot);RightHinge->SetRelativeLocation(FVector(0.f,145.f,0.f));
 	DoorPieces=CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("LeftGateDoor"));DoorPieces->SetupAttachment(LeftHinge);
 	RightDoorPieces=CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("RightGateDoor"));RightDoorPieces->SetupAttachment(RightHinge);
 	for(UInstancedStaticMeshComponent* Door:{DoorPieces,RightDoorPieces})
@@ -151,8 +152,8 @@ AWoodGate::AWoodGate()
 	// matching the wall/gate module foundation instead of floating above it.
 	for(int32 Index=0;Index<2;++Index)
 	{
-		DoorPieces->AddInstance(FTransform(FRotator::ZeroRotator,FVector(0.f,36.25f+Index*72.5f,100.f),FVector(.20f,.725f,2.30f)));
-		RightDoorPieces->AddInstance(FTransform(FRotator::ZeroRotator,FVector(0.f,-36.25f-Index*72.5f,100.f),FVector(.20f,.725f,2.30f)));
+		DoorPieces->AddInstance(FTransform(FRotator::ZeroRotator,FVector(0.f,36.25f+Index*72.5f,150.f),FVector(.20f,.725f,3.f)));
+		RightDoorPieces->AddInstance(FTransform(FRotator::ZeroRotator,FVector(0.f,-36.25f-Index*72.5f,150.f),FVector(.20f,.725f,3.f)));
 	}
 	DoorPieces->AddInstance(FTransform(FRotator(28.f,0,0),FVector(0.f,72.f,100.f),FVector(.22f,1.35f,.13f)));
 	RightDoorPieces->AddInstance(FTransform(FRotator(-28.f,0,0),FVector(0.f,-72.f,100.f),FVector(.22f,1.35f,.13f)));
@@ -181,12 +182,12 @@ AWoodDoor::AWoodDoor()
 	Pieces->SetRelativeLocation(FVector::ZeroVector);
 	LeftHinge->SetRelativeLocation(FVector(0.f,-112.f,0.f));
 	RightHinge->SetRelativeLocation(FVector::ZeroVector);
-	Pieces->AddInstance(FTransform(FRotator::ZeroRotator,FVector(0.f,-140.f,105.f),FVector(.28f,.28f,2.15f)));
-	Pieces->AddInstance(FTransform(FRotator::ZeroRotator,FVector(0.f,140.f,105.f),FVector(.28f,.28f,2.15f)));
-	Pieces->AddInstance(FTransform(FRotator::ZeroRotator,FVector(0.f,0.f,210.f),FVector(.28f,3.f,.22f)));
+	Pieces->AddInstance(FTransform(FRotator::ZeroRotator,FVector(0.f,-140.f,150.f),FVector(.28f,.32f,3.f)));
+	Pieces->AddInstance(FTransform(FRotator::ZeroRotator,FVector(0.f,140.f,150.f),FVector(.28f,.32f,3.f)));
+	Pieces->AddInstance(FTransform(FRotator::ZeroRotator,FVector(0.f,0.f,270.f),FVector(.28f,3.04f,.60f)));
 	// The leaf pivots at its left jamb and closes the 224 cm clear opening. Its
 	// bottom is at the module foundation so there is no crawl-sized gap.
-	DoorPieces->AddInstance(FTransform(FRotator::ZeroRotator,FVector(0.f,112.f,100.f),FVector(.20f,2.24f,2.f)));
+	DoorPieces->AddInstance(FTransform(FRotator::ZeroRotator,FVector(0.f,112.f,120.f),FVector(.20f,2.24f,2.4f)));
 	DoorPieces->AddInstance(FTransform(FRotator::ZeroRotator,FVector(-4.f,112.f,102.f),FVector(.10f,2.f,.08f)));
 	RightDoorPieces->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	RightDoorPieces->SetVisibility(false,true);
@@ -222,9 +223,9 @@ bool AWoodFloor::HasStructuralSupport()const
 		{
 			if(*It==Floor||It->IsPendingKill()||It->IsCollapsing())continue;
 			const FVector Other=It->GetActorLocation();const float XY=FVector::Dist2D(Here,Other);
-			if((It->IsA<AWoodWall>()||It->IsA<AWoodWindowWall>()||It->IsA<AWoodGate>())&&FMath::Abs(Here.Z-(Other.Z+220.f))<=28.f&&XY<=235.f)return true;
-			if(It->IsA<AWoodStairs>()&&FMath::Abs(Here.Z-(Other.Z+220.f))<=28.f&&XY<=340.f)return true;
-			if(It->IsA<AWoodPillar>()&&FMath::Abs(Here.Z-(Other.Z+220.f))<=28.f&&XY<=185.f)return true;
+			if((It->IsA<AWoodWall>()||It->IsA<AWoodWindowWall>()||It->IsA<AWoodGate>())&&FMath::Abs(Here.Z-(Other.Z+300.f))<=28.f&&XY<=235.f)return true;
+			if(It->IsA<AWoodStairs>()&&FMath::Abs(Here.Z-(Other.Z+300.f))<=28.f&&XY<=340.f)return true;
+			if(It->IsA<AWoodPillar>()&&FMath::Abs(Here.Z-(Other.Z+300.f))<=28.f&&XY<=185.f)return true;
 		}
 		return false;
 	};
@@ -259,11 +260,11 @@ AWoodStairs::AWoodStairs()
 	// Use most of the three-metre module width. The former 180 cm staircase was
 	// technically walkable, but too narrow for several character capsules to
 	// enter reliably from different approach angles.
-	for(int32 Step=0;Step<10;++Step)Pieces->AddInstance(FTransform(FRotator::ZeroRotator,FVector(0.f,-135.f+Step*30.f,11.f+Step*22.f),FVector(2.6f,.3f,.22f)));
+	for(int32 Step=0;Step<12;++Step)Pieces->AddInstance(FTransform(FRotator::ZeroRotator,FVector(0.f,-137.5f+Step*25.f,12.5f+Step*25.f),FVector(3.f,.255f,.25f)));
 	// A physical hidden ramp blocks the player's capsule.  A navigation link gives
 	// Recast the same bottom-to-top connection without adding collision to stairs.
 	NavigationLink=CreateDefaultSubobject<UNavLinkComponent>(TEXT("StairNavigationLink"));NavigationLink->SetupAttachment(SceneRoot);
-	FNavigationLink StairLink(FVector(0.f,-150.f,15.f),FVector(0.f,150.f,220.f));
+	FNavigationLink StairLink(FVector(0.f,-150.f,15.f),FVector(0.f,150.f,300.f));
 	StairLink.Direction=ENavLinkDirection::BothWays;StairLink.SnapRadius=120.f;StairLink.bUseSnapHeight=true;StairLink.SnapHeight=180.f;
 	NavigationLink->Links.Add(StairLink);
 }
@@ -271,7 +272,22 @@ void AWoodStairs::GetSnapPoints(TArray<FVector>& OutPoints)const
 {
 	const FVector Along=GetActorRotation().RotateVector(FVector::RightVector).GetSafeNormal2D();
 	OutPoints.Add(GetActorLocation()-Along*150.f);
-	OutPoints.Add(GetActorLocation()+Along*150.f+FVector(0.f,0.f,220.f));
+	OutPoints.Add(GetActorLocation()+Along*150.f+FVector(0.f,0.f,300.f));
+}
+bool AWoodStairs::HasStructuralSupport()const
+{
+	if(ABuildableStructure::HasStructuralSupport())return true;
+	if(!GetWorld())return true;
+	// A vertically aligned flight carries the next flight in a multi-storey
+	// stairwell. Without this, every generated flight above the ground floor
+	// entered the collapse state shortly after spawning.
+	for(TActorIterator<AWoodStairs> It(GetWorld());It;++It)
+	{
+		if(*It==this||It->IsCollapsing())continue;
+		if(FMath::Abs(GetActorLocation().Z-(It->GetActorLocation().Z+300.f))<=28.f
+			&&FVector::Dist2D(GetActorLocation(),It->GetActorLocation())<=335.f)return true;
+	}
+	return false;
 }
 
 AWoodPillar::AWoodPillar()
@@ -281,7 +297,7 @@ AWoodPillar::AWoodPillar()
 	static ConstructorHelpers::FObjectFinder<UMaterialInterface> WoodAsset(TEXT("/Game/StarterContent/Materials/M_Wood_Walnut.M_Wood_Walnut"));
 	Piece=CreateDefaultSubobject<UStaticMeshComponent>(TEXT("PillarPiece"));Piece->SetupAttachment(SceneRoot);
 	if(CubeAsset.Succeeded())Piece->SetStaticMesh(CubeAsset.Object);if(WoodAsset.Succeeded())Piece->SetMaterial(0,WoodAsset.Object);
-	Piece->SetCollisionProfileName(TEXT("BlockAll"));Piece->SetRelativeLocation(FVector(0.f,0.f,110.f));Piece->SetRelativeScale3D(FVector(.28f,.28f,2.2f));
+	Piece->SetCollisionProfileName(TEXT("BlockAll"));Piece->SetRelativeLocation(FVector(0.f,0.f,150.f));Piece->SetRelativeScale3D(FVector(.28f,.28f,3.f));
 }
 
 AWallTorch::AWallTorch()
