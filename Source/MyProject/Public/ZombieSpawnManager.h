@@ -5,6 +5,7 @@
 #include "ZombieSpawnManager.generated.h"
 
 class AShooterCharacter;
+class ABanditCharacter;
 
 UCLASS(Blueprintable)
 class MYPROJECT_API AZombieSpawnManager : public AActor
@@ -37,6 +38,7 @@ public:
 	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="Health",meta=(ClampMin="0.0",ClampMax="1.0"))float HealthSpawnChance=.65f;
 	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="Health",meta=(ClampMin="1"))int32 MaxHealthPickups=4;
 	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="Health",meta=(ClampMin="2.0"))float HealthSpawnInterval=10.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Bandits")TSubclassOf<ABanditCharacter>BanditClass;
 	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="Bandits",meta=(ClampMin="1"))int32 BanditUnlockLevel=20;
 	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="Bandits",meta=(ClampMin="1"))int32 InitialBanditGroupSize=3;
 	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="Bandits",meta=(ClampMin="10.0"))float BanditGroupCooldown=90.f;
