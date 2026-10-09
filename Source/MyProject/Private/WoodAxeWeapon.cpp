@@ -8,7 +8,7 @@ AWoodAxeWeapon::AWoodAxeWeapon()
 {
 	WeaponName=TEXT("WOOD AXE");bAutomatic=false;bMeleeWeapon=true;ProjectileClass=nullptr;
 	EquippedSocketOverride=TEXT("two_hands_weapon");
-	Stats.RoundsPerMinute=72.f;MeleeRange=245.f;MeleeRadius=34.f;MeleeDamage=58.f;WoodDamageMultiplier=4.5f;MeleeDismembermentHitPower=2;
+	Stats.RoundsPerMinute=72.f;MeleeRange=245.f;MeleeRadius=34.f;MeleeDamage=58.f;MeleeStaminaCost=12.f;WoodDamageMultiplier=4.5f;MeleeDismembermentHitPower=2;
 	Stats.MagazineSize=0;AmmoInMagazine=0;ReserveAmmo=0;MaxReserveAmmo=0;
 	AxeMesh=CreateDefaultSubobject<UStaticMeshComponent>(TEXT("WoodAxeMesh"));AxeMesh->SetupAttachment(Mesh);
 	AxeMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);AxeMesh->SetRelativeLocation(FVector::ZeroVector);

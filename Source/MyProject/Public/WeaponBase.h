@@ -89,6 +89,8 @@ public:
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Melee",meta=(ClampMin="10.0"))float MeleeRange=230.f;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Melee",meta=(ClampMin="0.0"))float MeleeRadius=32.f;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Melee",meta=(ClampMin="0.0"))float MeleeDamage=55.f;
+	/** Stamina paid for every accepted melee swing. Zero keeps stamina-free melee weapons possible. */
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Melee",meta=(ClampMin="0.0"))float MeleeStaminaCost=0.f;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Melee",meta=(ClampMin="1.0"))float WoodDamageMultiplier=4.f;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Melee")TArray<UAnimSequence*> CharacterMeleeAttackAnimations;
 	// A melee tool owns its complete authored pose set.  This keeps an axe from

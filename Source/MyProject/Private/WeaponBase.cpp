@@ -24,13 +24,25 @@
 AWeaponBase::AWeaponBase(){PrimaryActorTick.bCanEverTick=true;bReplicates=true;SetReplicateMovement(true);Mesh=CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("WorldWeaponMesh"));RootComponent=Mesh;Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);Mesh->SetOwnerNoSee(false);FirstPersonMesh=CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("FirstPersonWeaponMesh"));FirstPersonMesh->SetupAttachment(RootComponent);FirstPersonMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);FirstPersonMesh->SetVisibility(false,true);FirstPersonMesh->SetHiddenInGame(true);FirstPersonMesh->CastShadow=false;ProjectileClass=ABallisticProjectile::StaticClass();static ConstructorHelpers::FObjectFinder<UAnimMontage>HipFire(TEXT("/Game/ThirdPersonBP/Player_0/Anim/Montages/Fire_Rifle_Hip_Montage.Fire_Rifle_Hip_Montage"));if(HipFire.Succeeded())CharacterFireMontage=HipFire.Object;static ConstructorHelpers::FObjectFinder<UAnimMontage>AimFire(TEXT("/Game/ThirdPersonBP/Player_0/Anim/Montages/Fire_Rifle_ironsights_Montage.Fire_Rifle_ironsights_Montage"));if(AimFire.Succeeded())CharacterAimFireMontage=AimFire.Object;AmmoInMagazine=Stats.MagazineSize;ReserveAmmo=90;}
 void AWeaponBase::Tick(float D){Super::Tick(D);}
 FVector AWeaponBase::GetMuzzleLocation()const{static const FName MuzzleBone(TEXT("b_gun_muzzleflash"));return Mesh->DoesSocketExist(MuzzleBone)?Mesh->GetSocketLocation(MuzzleBone):Mesh->GetComponentLocation()+GetActorForwardVector()*100.f;}
-bool AWeaponBase::CanFire()const{return !bIsReloading&&GetWorld()&&GetWorld()->GetTimeSeconds()-LastFireTime>=60./FMath::Max(1.f,Stats.RoundsPerMinute)&&(bMeleeWeapon||(AmmoInMagazine>0&&ProjectileClass!=nullptr));}
+bool AWeaponBase::CanFire()const
+{
+	if(bIsReloading||!GetWorld()||GetWorld()->GetTimeSeconds()-LastFireTime<60./FMath::Max(1.f,Stats.RoundsPerMinute))return false;
+	if(bMeleeWeapon)
+	{
+		const AShooterCharacter* Shooter=Cast<AShooterCharacter>(GetOwner());
+		return !Shooter||Shooter->HasStaminaForAction(MeleeStaminaCost);
+	}
+	return AmmoInMagazine>0&&ProjectileClass!=nullptr;
+}
 bool AWeaponBase::IsMeleeActionAnimationPlaying()const{return GetWorld()&&GetWorld()->GetTimeSeconds()<MeleeActionAnimationUntil;}
 bool AWeaponBase::Fire(FVector AimPoint){if(!HasAuthority()){if(!CanFire())return false;ServerFire(AimPoint);return true;}return FireAuthoritative(AimPoint);}
 bool AWeaponBase::ServerFire_Validate(FVector_NetQuantize AimPoint){return !AimPoint.ContainsNaN();}void AWeaponBase::ServerFire_Implementation(FVector_NetQuantize AimPoint){FireAuthoritative(AimPoint);}
 bool AWeaponBase::FireAuthoritative(FVector AimPoint)
 {
 	if(!CanFire())return false;
+	if(bMeleeWeapon)
+		if(AShooterCharacter* Shooter=Cast<AShooterCharacter>(GetOwner()))
+			if(!Shooter->ConsumeStaminaForAction(MeleeStaminaCost))return false;
 	LastFireTime=GetWorld()->GetTimeSeconds();
 	if(bMeleeWeapon)
 	{

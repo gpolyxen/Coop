@@ -406,13 +406,13 @@ void AShooterCharacter::Tick(float D)
 			LastPursuitTrailTime=TrailNow;
 			if(PursuitTrail.Num()>MaximumPursuitTrailPoints)PursuitTrail.RemoveAt(0,PursuitTrail.Num()-MaximumPursuitTrailPoints,false);
 		}
-		if(HasSkill(EShooterSkill::Marathon))Stamina=MaxStamina;
-		else
 		{
-			const bool bDraining=bWantsToSprint&&GetVelocity().Size2D()>10.f&&GetCharacterMovement()->IsMovingOnGround();
+			// Marathon removes only sprint/jump costs (as its UI description says).
+			// Melee actions still spend stamina and use the normal recovery rules.
+			const bool bDraining=!HasSkill(EShooterSkill::Marathon)&&bWantsToSprint&&GetVelocity().Size2D()>10.f&&GetCharacterMovement()->IsMovingOnGround();
 			if(bDraining){Stamina=FMath::Max(0.f,Stamina-SprintStaminaPerSecond*D);LastStaminaUseTime=GetWorld()->GetTimeSeconds();}
 			else if(GetWorld()->GetTimeSeconds()-LastStaminaUseTime>=StaminaRecoveryDelay)Stamina=FMath::Min(MaxStamina,Stamina+StaminaRecoveryPerSecond*D);
-			if(Stamina<=0.f)bWantsToSprint=false;
+			if(Stamina<=0.f&&!HasSkill(EShooterSkill::Marathon))bWantsToSprint=false;
 		}
 		GetCharacterMovement()->MaxWalkSpeed=bWantsToSprint&&(HasSkill(EShooterSkill::Marathon)||Stamina>0.f)?SprintSpeed*(HasSkill(EShooterSkill::Marathon)?1.15f:1.f):WalkSpeed;
 	}
@@ -508,6 +508,18 @@ void AShooterCharacter::StartFire()
 }
 
 void AShooterCharacter::StopFire(){GetWorldTimerManager().ClearTimer(FireTimer);}
+
+bool AShooterCharacter::ConsumeStaminaForAction(float Cost)
+{
+	if(!HasAuthority())return false;
+	Cost=FMath::Max(0.f,Cost);
+	if(!HasStaminaForAction(Cost))return false;
+	if(Cost<=0.f)return true;
+	Stamina=FMath::Max(0.f,Stamina-Cost);
+	LastStaminaUseTime=GetWorld()?GetWorld()->GetTimeSeconds():LastStaminaUseTime;
+	ForceNetUpdate();
+	return true;
+}
 
 bool AShooterCharacter::CanCraftBed()const{return Inventory&&Inventory->HasItems(TEXT("Wood"),10,TEXT("Rope"),10);}
 bool AShooterCharacter::CanCraftMedkit()const{return Inventory&&Inventory->HasItems(TEXT("Medicine"),1,TEXT("Bandage"),2);}

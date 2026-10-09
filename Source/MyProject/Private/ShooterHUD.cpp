@@ -70,7 +70,10 @@ void AShooterHUD::DrawHUD()
 	const float StaminaX=36.f,StaminaY=Canvas->ClipY-42.f,StaminaWidth=260.f,StaminaHeight=10.f;
 	DrawRect(FLinearColor(0.f,0.f,0.f,.7f),StaminaX-2.f,StaminaY-2.f,StaminaWidth+4.f,StaminaHeight+4.f);
 	DrawRect(C->HasSkill(EShooterSkill::Marathon)?FLinearColor(.2f,.8f,1.f):FLinearColor(1.f,.72f,.12f),StaminaX,StaminaY,StaminaWidth*C->GetStaminaRatio(),StaminaHeight);
-	DrawText(C->HasSkill(EShooterSkill::Marathon)?TEXT("STAMINA: MARATHON"):FString::Printf(TEXT("STAMINA %.0f / %.0f"),C->Stamina,C->MaxStamina),FLinearColor::White,StaminaX,StaminaY-20.f,GEngine->GetSmallFont(),.8f,false);
+	const FString StaminaLabel=C->HasSkill(EShooterSkill::Marathon)
+		?FString::Printf(TEXT("STAMINA %.0f / %.0f (MARATHON)"),C->Stamina,C->MaxStamina)
+		:FString::Printf(TEXT("STAMINA %.0f / %.0f"),C->Stamina,C->MaxStamina);
+	DrawText(StaminaLabel,FLinearColor::White,StaminaX,StaminaY-20.f,GEngine->GetSmallFont(),.8f,false);
 	const int32 ExperienceNeeded=FMath::Max(1,C->GetExperienceForNextLevel());
 	const float ExperienceRatio=FMath::Clamp(static_cast<float>(C->Experience)/ExperienceNeeded,0.f,1.f);
 	const float ExperienceX=36.f,ExperienceY=Canvas->ClipY-122.f,ExperienceWidth=260.f;

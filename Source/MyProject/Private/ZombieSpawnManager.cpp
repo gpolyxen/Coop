@@ -21,6 +21,7 @@ AZombieSpawnManager::AZombieSpawnManager()
 {
 	PrimaryActorTick.bCanEverTick=false;
 	bReplicates=true;bAlwaysRelevant=true;SetReplicateMovement(false);
+	BanditClass=ABanditCharacter::StaticClass();
 }
 
 void AZombieSpawnManager::BeginPlay()
@@ -160,13 +161,14 @@ void AZombieSpawnManager::MaintainBanditPopulation(int32 HighestPlayerLevel,ASho
 	const int32 GroupSize=InitialBanditGroupSize+Milestones*2;
 	FVector GroupCenter;if(!FindGroundedLocation(NearPlayer->GetActorLocation(),MinimumBanditSpawnDistance,MaximumBanditSpawnDistance,GroupCenter)){NextBanditGroupTime=Now+15.f;return;}
 	int32 Spawned=0;
+	UClass* ClassToSpawn=BanditClass?BanditClass.Get():ABanditCharacter::StaticClass();
 	for(int32 Index=0;Index<GroupSize;++Index)
 	{
 		const float Angle=2.f*PI*Index/FMath::Max(1,GroupSize);FVector Location=GroupCenter+FVector(FMath::Cos(Angle),FMath::Sin(Angle),0.f)*FMath::FRandRange(80.f,240.f);
 		FHitResult Ground;FCollisionQueryParams Query(SCENE_QUERY_STAT(BanditGroupGround),false,this);
 		if(GetWorld()->LineTraceSingleByChannel(Ground,Location+FVector(0,0,600),Location-FVector(0,0,1000),ECC_WorldStatic,Query))Location=Ground.ImpactPoint;
 		Location.Z+=95.f;FActorSpawnParameters Params;Params.SpawnCollisionHandlingOverride=ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
-		if(ABanditCharacter* Bandit=GetWorld()->SpawnActor<ABanditCharacter>(ABanditCharacter::StaticClass(),Location,(NearPlayer->GetActorLocation()-Location).Rotation(),Params))
+		if(ABanditCharacter* Bandit=GetWorld()->SpawnActor<ABanditCharacter>(ClassToSpawn,Location,(NearPlayer->GetActorLocation()-Location).Rotation(),Params))
 		{
 			if(!Bandit->GetController())Bandit->SpawnDefaultController();++Spawned;
 		}

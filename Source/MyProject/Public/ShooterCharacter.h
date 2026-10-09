@@ -116,6 +116,9 @@ public:
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Stamina")float StaminaRecoveryPerSecond=16.f;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Stamina")float StaminaRecoveryDelay=1.25f;
 	UFUNCTION(BlueprintPure)float GetStaminaRatio()const{return MaxStamina>0.f?FMath::Clamp(Stamina/MaxStamina,0.f,1.f):0.f;}
+	UFUNCTION(BlueprintPure,Category="Stamina")bool HasStaminaForAction(float Cost)const{return Cost<=0.f||Stamina+KINDA_SMALL_NUMBER>=Cost;}
+	/** Server-authoritative atomic stamina payment used by melee weapons. */
+	bool ConsumeStaminaForAction(float Cost);
 protected:
 	void RestoreLocalGameplayInput();
 	void MoveForward(float Value);void MoveRight(float Value);void TurnAtRate(float Value);void LookUpAtRate(float Value);void SwitchWeapon(float Value);void StartFire();void StopFire();void FireOnce();void StartAim();void StopAim();void Reload();void Interact();void SprintPressed();void SprintReleased();void JumpPressed();void JumpReleased();void ToggleCrouch();void UpdateBuildPreview();void ConfirmBuildPlacement();void CancelBuildMode();void RotateBuildPreview();
