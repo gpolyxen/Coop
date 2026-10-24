@@ -33,9 +33,8 @@ void AZombieSpawnManager::BeginPlay()
 	NextBanditGroupTime=PreparationEndServerTime+15.f;
 	for(TActorIterator<AZombieCharacter> It(GetWorld());It;++It)It->Destroy();
 	GetWorldTimerManager().SetTimer(ZombieTimer,this,&AZombieSpawnManager::MaintainZombiePopulation,SpawnInterval,true,PreparationDuration);
-	GetWorldTimerManager().SetTimer(InitialSuppliesTimer,this,&AZombieSpawnManager::SpawnInitialSupplies,1.25f,false);
-	GetWorldTimerManager().SetTimer(AmmoTimer,this,&AZombieSpawnManager::TrySpawnAmmunition,AmmoSpawnInterval,true,7.f);
-	GetWorldTimerManager().SetTimer(HealthTimer,this,&AZombieSpawnManager::TrySpawnHealth,HealthSpawnInterval,true,8.f);
+	// Supplies now come exclusively from generated buildings and zombie drops.
+	// The old world-wide timers produced unrelated cubes across the landscape.
 }
 
 float AZombieSpawnManager::GetPreparationRemaining()const

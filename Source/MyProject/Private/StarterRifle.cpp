@@ -8,6 +8,7 @@
 AStarterRifle::AStarterRifle()
 {
 	WeaponName=TEXT("AR4");
+	AmmoType=TEXT("M4A1Ammo");
 	AimCameraOffset=FVector(0.f,-8.f,0.f);WeaponAimFOV=72.f;
 	FirstPersonCameraRotation=FRotator::ZeroRotator;
 	RecoilPitch=.65f;RecoilYaw=.18f;RecoilKickback=.9f;RecoilRecoverySpeed=13.f;

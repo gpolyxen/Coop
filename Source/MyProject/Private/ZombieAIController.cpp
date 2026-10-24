@@ -84,6 +84,7 @@ void AZombieAIController::ClearStairTraversal()
 		if(UCharacterMovementComponent* Movement=Zombie->GetCharacterMovement())
 		{
 			if(Movement->MovementMode==MOVE_Flying)Movement->SetMovementMode(MOVE_Walking);
+			Movement->bOrientRotationToMovement=true;
 			Movement->Velocity.Z=0.f;
 		}
 	}
@@ -305,6 +306,7 @@ bool AZombieAIController::UpdateStairTraversal(const FVector& Destination)
 			if(UCharacterMovementComponent* Movement=Zombie->GetCharacterMovement())
 			{
 				Movement->MaxFlySpeed=FMath::Max(270.f,Movement->MaxWalkSpeed);
+				Movement->bOrientRotationToMovement=false;
 				Movement->SetMovementMode(MOVE_Flying);
 			}
 		}
@@ -370,8 +372,8 @@ bool AZombieAIController::UpdateStairTraversal(const FVector& Destination)
 			Zombie->LaunchCharacter(Along*260.f+FVector(0.f,0.f,VerticalBoost),false,true);
 			return true;
 		}
-		FVector Facing=Along;Facing.Z=0.f;
-		if(Facing.Normalize())Zombie->SetActorRotation(FMath::RInterpTo(Zombie->GetActorRotation(),Facing.Rotation(),GetWorld()->GetDeltaSeconds(),8.f));
+		FVector Facing=StairExit-StairEntry;Facing.Z=0.f;
+		if(Facing.Normalize())Zombie->SetActorRotation(FMath::RInterpConstantTo(Zombie->GetActorRotation(),Facing.Rotation(),GetWorld()->GetDeltaSeconds(),360.f));
 		Zombie->AddMovementInput(Along,1.f);
 	}
 	return true;

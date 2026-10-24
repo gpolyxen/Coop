@@ -10,6 +10,7 @@
 AAK74UWeapon::AAK74UWeapon()
 {
 	WeaponName=TEXT("AK74U");
+	AmmoType=TEXT("AK74Ammo");
 	bAutomatic=true;
 	// Keep the AK74U as a normal sktGun weapon. The downloaded FPS animation
 	// package is intentionally not used; local and remote players share the

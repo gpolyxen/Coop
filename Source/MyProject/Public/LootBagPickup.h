@@ -30,6 +30,11 @@ public:
 	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category="Loot",meta=(ClampMin="0.0",ClampMax="1.0")) float ClothChance=.38f;
 	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category="Loot") int32 MaxCloth=2;
 	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category="Loot",meta=(ClampMin="0.0",ClampMax="1.0")) float GasolineChance=.18f;
+	/** Zombie drop chances. Kept deliberately low because the bag itself is already a random drop. */
+	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category="Loot|Rare Drops",meta=(ClampMin="0.0",ClampMax="1.0"))float MedkitChance=.04f;
+	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category="Loot|Rare Drops",meta=(ClampMin="0.0",ClampMax="1.0"))float AKAmmoChance=.14f;
+	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category="Loot|Rare Drops",meta=(ClampMin="1"))int32 MinAKAmmo=10;
+	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category="Loot|Rare Drops",meta=(ClampMin="1"))int32 MaxAKAmmo=30;
 	UPROPERTY(Replicated,VisibleAnywhere,BlueprintReadOnly,Category="Loot")int32 RemainingWood=0;
 	UPROPERTY(Replicated,VisibleAnywhere,BlueprintReadOnly,Category="Loot")int32 RemainingRope=0;
 	UPROPERTY(Replicated,VisibleAnywhere,BlueprintReadOnly,Category="Loot")int32 RemainingMedicine=0;
@@ -37,4 +42,6 @@ public:
 	UPROPERTY(Replicated,VisibleAnywhere,BlueprintReadOnly,Category="Loot")int32 RemainingLeather=0;
 	UPROPERTY(Replicated,VisibleAnywhere,BlueprintReadOnly,Category="Loot")int32 RemainingCloth=0;
 	UPROPERTY(Replicated,VisibleAnywhere,BlueprintReadOnly,Category="Loot")int32 RemainingGasoline=0;
+	UPROPERTY(Replicated,VisibleAnywhere,BlueprintReadOnly,Category="Loot")int32 RemainingMedkits=0;
+	UPROPERTY(Replicated,VisibleAnywhere,BlueprintReadOnly,Category="Loot")int32 RemainingAKAmmo=0;
 };

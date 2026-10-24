@@ -2,11 +2,14 @@
 
 #include "Animation/AnimSequence.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "Engine/SkeletalMesh.h"
 #include "UObject/ConstructorHelpers.h"
 
 AWalkerZombieCharacter::AWalkerZombieCharacter()
 {
+	// Match the slow shuffling walk cycle. Faster variants keep their own speeds.
+	GetCharacterMovement()->MaxWalkSpeed=155.f;
 	static ConstructorHelpers::FObjectFinder<USkeletalMesh> WalkerMesh(TEXT("/Game/ThirdPersonBP/Bot/Walkers/Infected_walker_00/Anim/T-Pose.T-Pose"));
 	if(WalkerMesh.Succeeded())
 	{

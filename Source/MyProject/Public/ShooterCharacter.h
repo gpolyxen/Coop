@@ -48,16 +48,18 @@ public:
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly,Category="Animation")bool bUsingTwoHandedMelee=false;
 	UFUNCTION(BlueprintPure,Category="Animation")bool IsUsingTwoHandedMelee()const{return bUsingTwoHandedMelee;}
 	UFUNCTION(BlueprintCallable) void EquipWeapon(TSubclassOf<AWeaponBase> WeaponClass);
-	UFUNCTION(BlueprintCallable) int32 AddAmmunition(int32 Amount);
+	UFUNCTION(BlueprintCallable) int32 AddAmmunition(FName AmmoType,int32 Amount);
 	UFUNCTION(BlueprintPure) bool CanCraftBed()const;
 	UFUNCTION(BlueprintPure) bool CanCraftMedkit()const;
 	UFUNCTION(BlueprintPure) bool CanCraftSticks()const;
 	UFUNCTION(BlueprintCallable) void CraftMedkit();
 	UFUNCTION(BlueprintCallable) void CraftSticks();
+	UFUNCTION(BlueprintCallable) void CraftStickBatches(int32 BatchCount);
 	UFUNCTION(BlueprintCallable) void UseMedkit();
 	UFUNCTION(BlueprintCallable)void TransferItemToChest(AStorageChest* Chest,FName ItemId,int32 Quantity=1);
 	UFUNCTION(BlueprintCallable)void TransferItemFromChest(AStorageChest* Chest,FName ItemId,int32 Quantity=1);
 	UFUNCTION(BlueprintCallable)void StoreEquippedWeaponInChest(AStorageChest* Chest);
+	UFUNCTION(BlueprintCallable)void TakeAllFromChest(AStorageChest* Chest);
 	UFUNCTION(BlueprintPure) bool IsBuildingBed()const{return SelectedBuildPiece==EBuildPieceType::Bed;}
 	UFUNCTION(BlueprintPure) bool IsBuilding()const{return SelectedBuildPiece!=EBuildPieceType::None;}
 	UFUNCTION(BlueprintPure) bool IsBuildPreviewValid()const{return bBuildPreviewValid;}
@@ -138,10 +140,12 @@ protected:
 	UFUNCTION(Server,Reliable,WithValidation)void ServerPurchaseSkill(EShooterSkill Skill);
 	UFUNCTION(Server,Reliable,WithValidation)void ServerCraftMedkit();
 	UFUNCTION(Server,Reliable,WithValidation)void ServerCraftSticks();
+	UFUNCTION(Server,Reliable,WithValidation)void ServerCraftStickBatches(int32 BatchCount);
 	UFUNCTION(Server,Reliable,WithValidation)void ServerUseMedkit();
 	UFUNCTION(Server,Reliable,WithValidation)void ServerTransferItemToChest(AStorageChest* Chest,FName ItemId,int32 Quantity);
 	UFUNCTION(Server,Reliable,WithValidation)void ServerTransferItemFromChest(AStorageChest* Chest,FName ItemId,int32 Quantity);
 	UFUNCTION(Server,Reliable,WithValidation)void ServerStoreEquippedWeaponInChest(AStorageChest* Chest);
+	UFUNCTION(Server,Reliable,WithValidation)void ServerTakeAllFromChest(AStorageChest* Chest);
 	UFUNCTION()void OnRep_Weapon();
 	UFUNCTION()void OnRep_ReviveState();
 	UFUNCTION()void OnRep_BeingBitten();

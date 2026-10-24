@@ -1,0 +1,2 @@
+Content/ThirdPersonBP/Items/7_62/ammo-ak-47.uasset filter=lfs diff=lfs merge=lfs -text
+Content/ThirdPersonBP/Items/Small_Medkit/tactical_medkit_pouch.uasset filter=lfs diff=lfs merge=lfs -text

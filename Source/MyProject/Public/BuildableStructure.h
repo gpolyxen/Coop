@@ -87,9 +87,12 @@ class MYPROJECT_API AWoodDoor : public AWoodGate
 	GENERATED_BODY()
 public:AWoodDoor();
 	virtual void GetSnapPoints(TArray<FVector>& OutPoints)const override;
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps)const override;
+	void SetOpenDirection(float InOpenAngle){OpenAngle=FMath::Clamp(InOpenAngle,-90.f,90.f);ForceNetUpdate();}
 	UPROPERTY(VisibleAnywhere)UStaticMeshComponent* DoorVisual;
 	UPROPERTY(VisibleAnywhere)UBoxComponent* DoorCollision;
 protected:virtual void ApplyOpenState()override;
+private:UPROPERTY(Replicated)float OpenAngle=90.f;
 };
 
 UCLASS()

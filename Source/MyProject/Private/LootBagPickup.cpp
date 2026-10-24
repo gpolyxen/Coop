@@ -78,6 +78,8 @@ void ALootBagPickup::BeginPlay()
 		RemainingLeather=FMath::FRand()<=LeatherChance?FMath::RandRange(1,FMath::Max(1,MaxLeather)):0;
 		RemainingCloth=FMath::FRand()<=ClothChance?FMath::RandRange(1,FMath::Max(1,MaxCloth)):0;
 		RemainingGasoline=FMath::FRand()<=GasolineChance?1:0;
+		RemainingMedkits=FMath::FRand()<=MedkitChance?1:0;
+		RemainingAKAmmo=FMath::FRand()<=AKAmmoChance?FMath::RandRange(MinAKAmmo,FMath::Max(MinAKAmmo,MaxAKAmmo)):0;
 	}
 	auto Tint=[this](UStaticMeshComponent* Component,const FLinearColor& Color)
 	{
@@ -104,14 +106,22 @@ bool ALootBagPickup::TryPickup(APawn* Pawn)
 	const int32 AddedWood=0,AddedRope=Take(TEXT("Rope"),RemainingRope);
 	const int32 AddedMedicine=Take(TEXT("Medicine"),RemainingMedicine),AddedBandages=Take(TEXT("Bandage"),RemainingBandages);
 	const int32 AddedLeather=Take(TEXT("Leather"),RemainingLeather),AddedCloth=Take(TEXT("Cloth"),RemainingCloth),AddedGasoline=Take(TEXT("Gasoline"),RemainingGasoline);
-	const int32 TotalAdded=AddedWood+AddedRope+AddedMedicine+AddedBandages+AddedLeather+AddedCloth+AddedGasoline;
+	const int32 AddedMedkits=Take(TEXT("Medkit"),RemainingMedkits);
+	int32 AddedAKAmmo=0;
+	if(AShooterCharacter* Shooter=Cast<AShooterCharacter>(Pawn))
+	{
+		AddedAKAmmo=Shooter->AddAmmunition(TEXT("AK74Ammo"),RemainingAKAmmo);
+		RemainingAKAmmo-=AddedAKAmmo;
+	}
+	const int32 TotalAdded=AddedWood+AddedRope+AddedMedicine+AddedBandages+AddedLeather+AddedCloth+AddedGasoline+AddedMedkits+AddedAKAmmo;
 	if(AShooterCharacter* Shooter=Cast<AShooterCharacter>(Pawn))
 	{
 		FString Message=TotalAdded>0?FString::Printf(TEXT("ВЗЯТО: ВЕРЁВКИ +%d"),AddedRope):TEXT("ИНВЕНТАРЬ ЗАПОЛНЕН — СОДЕРЖИМОЕ ОСТАЛОСЬ В МЕШКЕ");
 		if(AddedMedicine)Message+=TEXT(", МЕДИКАМЕНТ +1");if(AddedBandages)Message+=FString::Printf(TEXT(", БИНТЫ +%d"),AddedBandages);if(AddedLeather)Message+=FString::Printf(TEXT(", КОЖА +%d"),AddedLeather);if(AddedCloth)Message+=FString::Printf(TEXT(", ТКАНЬ +%d"),AddedCloth);if(AddedGasoline)Message+=TEXT(", БЕНЗИН +1");
+		if(AddedMedkits)Message+=TEXT(", АПТЕЧКА +1");if(AddedAKAmmo)Message+=FString::Printf(TEXT(", ПАТРОНЫ АК +%d"),AddedAKAmmo);
 		Shooter->ShowLocalNotification(Message);
 	}
-	const bool bEmpty=RemainingWood+RemainingRope+RemainingMedicine+RemainingBandages+RemainingLeather+RemainingCloth+RemainingGasoline<=0;
+	const bool bEmpty=RemainingWood+RemainingRope+RemainingMedicine+RemainingBandages+RemainingLeather+RemainingCloth+RemainingGasoline+RemainingMedkits+RemainingAKAmmo<=0;
 	if(bEmpty)Destroy();else ForceNetUpdate();
 	return TotalAdded>0;
 }
@@ -121,4 +131,5 @@ void ALootBagPickup::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(ALootBagPickup,RemainingWood);DOREPLIFETIME(ALootBagPickup,RemainingRope);DOREPLIFETIME(ALootBagPickup,RemainingMedicine);
 	DOREPLIFETIME(ALootBagPickup,RemainingBandages);DOREPLIFETIME(ALootBagPickup,RemainingLeather);DOREPLIFETIME(ALootBagPickup,RemainingCloth);DOREPLIFETIME(ALootBagPickup,RemainingGasoline);
+	DOREPLIFETIME(ALootBagPickup,RemainingMedkits);DOREPLIFETIME(ALootBagPickup,RemainingAKAmmo);
 }

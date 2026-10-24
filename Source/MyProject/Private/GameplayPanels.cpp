@@ -11,8 +11,11 @@
 #include "Components/Border.h"
 #include "Components/Button.h"
 #include "Components/ButtonSlot.h"
+#include "Components/CanvasPanel.h"
+#include "Components/CanvasPanelSlot.h"
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
+#include "Components/Image.h"
 #include "Components/Overlay.h"
 #include "Components/OverlaySlot.h"
 #include "Components/ScrollBox.h"
@@ -24,6 +27,7 @@
 #include "Components/UniformGridSlot.h"
 #include "Input/Reply.h"
 #include "InputCoreTypes.h"
+#include "Engine/Texture2D.h"
 
 namespace
 {
@@ -50,7 +54,8 @@ namespace
 		if(UOverlaySlot* Slot=Root->AddChildToOverlay(Dim)){Slot->SetHorizontalAlignment(HAlign_Fill);Slot->SetVerticalAlignment(VAlign_Fill);}
 		USizeBox* Size=Tree->ConstructWidget<USizeBox>();Size->SetWidthOverride(Width);Size->SetMaxDesiredHeight(720.f);
 		if(UOverlaySlot* Slot=Root->AddChildToOverlay(Size)){Slot->SetHorizontalAlignment(HAlign_Center);Slot->SetVerticalAlignment(VAlign_Center);}
-		UBorder* Border=Tree->ConstructWidget<UBorder>();Border->SetBrushColor(FLinearColor(.018f,.055f,.075f,.98f));Border->SetPadding(FMargin(25.f));Size->AddChild(Border);
+		UBorder* Border=Tree->ConstructWidget<UBorder>();Border->SetBrushColor(FLinearColor(.16f,.10f,.055f,.98f));Border->SetPadding(FMargin(25.f));Size->AddChild(Border);
+		if(UTexture2D* Background=LoadObject<UTexture2D>(nullptr,TEXT("/Game/ThirdPersonBP/UI/Generated/T_InventoryWoodPanel.T_InventoryWoodPanel")))Border->SetBrushFromTexture(Background);
 		UVerticalBox* Panel=Tree->ConstructWidget<UVerticalBox>();Border->AddChild(Panel);
 		UTextBlock* Header=MakeText(Tree,Title,34,FLinearColor(.65f,.9f,1.f),ETextJustify::Center);
 		if(UVerticalBoxSlot* Slot=Panel->AddChildToVerticalBox(Header))Slot->SetPadding(FMargin(5.f,3.f,5.f,15.f));
@@ -63,8 +68,16 @@ namespace
 		if(Id==TEXT("Wood"))return TEXT("ДЕРЕВО");if(Id==TEXT("Stick"))return TEXT("ПАЛКИ");if(Id==TEXT("Rope"))return TEXT("ВЕРЁВКА");
 		if(Id==TEXT("Medicine"))return TEXT("МЕДИКАМЕНТЫ");if(Id==TEXT("Bandage"))return TEXT("БИНТЫ");if(Id==TEXT("Medkit"))return TEXT("АПТЕЧКА");
 		if(Id==TEXT("Leather"))return TEXT("КОЖА");if(Id==TEXT("Cloth"))return TEXT("ТКАНЬ");if(Id==TEXT("Gasoline"))return TEXT("БЕНЗИН");
-		if(Id==TEXT("RifleAmmo"))return TEXT("ПАТРОНЫ");if(Id==TEXT("Backpack"))return TEXT("РЮКЗАК");if(Id==TEXT("LootBag"))return TEXT("МЕШОК С ПРИПАСАМИ");
+		if(Id==TEXT("RifleAmmo"))return TEXT("ПАТРОНЫ");if(Id==TEXT("AK74Ammo"))return TEXT("7,62 ММ");if(Id==TEXT("M4A1Ammo"))return TEXT("5,56 ММ");if(Id==TEXT("Backpack"))return TEXT("РЮКЗАК");if(Id==TEXT("LootBag"))return TEXT("МЕШОК С ПРИПАСАМИ");
 		return Id.ToString();
+	}
+	UTexture2D* ItemIcon(FName Id)
+	{
+		if(Id==TEXT("Wood"))return LoadObject<UTexture2D>(nullptr,TEXT("/Game/ThirdPersonBP/UI/Generated/T_ItemWood.T_ItemWood"));
+		if(Id==TEXT("AK74Ammo"))return LoadObject<UTexture2D>(nullptr,TEXT("/Game/ThirdPersonBP/Items/7_62/7_62.7_62"));
+		if(Id==TEXT("M4A1Ammo"))return LoadObject<UTexture2D>(nullptr,TEXT("/Game/ThirdPersonBP/Items/5_56_NATO/5_56NATO.5_56NATO"));
+		if(Id==TEXT("Medkit"))return LoadObject<UTexture2D>(nullptr,TEXT("/Game/ThirdPersonBP/Items/Small_Medkit/small_medkit.small_medkit"));
+		return nullptr;
 	}
 }
 
@@ -72,76 +85,100 @@ void UInventoryItemSlotWidget::Setup(FName InItemId,int32 InQuantity,int32 InSlo
 void UInventoryItemSlotWidget::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();bIsFocusable=true;
-	UBorder* Border=WidgetTree->ConstructWidget<UBorder>();WidgetTree->RootWidget=Border;Border->SetBrushColor(ItemId.IsNone()?FLinearColor(.03f,.07f,.09f,.9f):FLinearColor(.08f,.22f,.28f,.98f));Border->SetPadding(FMargin(5.f));
-	USizeBox* Size=WidgetTree->ConstructWidget<USizeBox>();Size->SetWidthOverride(92.f);Size->SetHeightOverride(92.f);Border->AddChild(Size);
-	Label=MakeText(WidgetTree,FText::GetEmpty(),14,FLinearColor::White,ETextJustify::Center);Size->AddChild(Label);RefreshLabel();
+	UBorder* Border=WidgetTree->ConstructWidget<UBorder>();WidgetTree->RootWidget=Border;Border->SetBrushColor(FLinearColor(0.f,0.f,0.f,0.f));Border->SetPadding(FMargin(0.f));
+	USizeBox* Size=WidgetTree->ConstructWidget<USizeBox>();Size->SetWidthOverride(66.f);Size->SetHeightOverride(67.f);Border->AddChild(Size);
+	UOverlay* Contents=WidgetTree->ConstructWidget<UOverlay>();Size->AddChild(Contents);
+	Icon=WidgetTree->ConstructWidget<UImage>();Icon->SetOpacity(.9f);Icon->SetVisibility(ESlateVisibility::Collapsed);
+	if(UOverlaySlot* IconSlot=Contents->AddChildToOverlay(Icon)){IconSlot->SetPadding(FMargin(4.f));IconSlot->SetHorizontalAlignment(HAlign_Fill);IconSlot->SetVerticalAlignment(VAlign_Fill);}
+	Label=MakeText(WidgetTree,FText::GetEmpty(),15,FLinearColor::White,ETextJustify::Center);Label->SetVisibility(ESlateVisibility::HitTestInvisible);Label->SetShadowOffset(FVector2D(2.f,2.f));Label->SetShadowColorAndOpacity(FLinearColor::Black);
+	if(UOverlaySlot* LabelSlot=Contents->AddChildToOverlay(Label)){LabelSlot->SetHorizontalAlignment(HAlign_Fill);LabelSlot->SetVerticalAlignment(VAlign_Bottom);LabelSlot->SetPadding(FMargin(3.f));}RefreshLabel();
 }
-void UInventoryItemSlotWidget::RefreshLabel(){if(!Label)return;if(ItemId.IsNone())Label->SetText(FText::FromString(TEXT("ПУСТО")));else if(ItemId==TEXT("Medkit"))Label->SetText(FText::FromString(FString::Printf(TEXT("%s\nx%d\nДВОЙНОЙ КЛИК"),*ItemName(ItemId),Quantity)));else Label->SetText(FText::FromString(FString::Printf(TEXT("%s\nx%d"),*ItemName(ItemId),Quantity)));}
-FReply UInventoryItemSlotWidget::NativeOnMouseButtonDown(const FGeometry& G,const FPointerEvent& E){if(ItemId==TEXT("Medkit")&&E.GetEffectingButton()==EKeys::LeftMouseButton&&GetWorld()){const float Now=GetWorld()->GetRealTimeSeconds();if(Now-LastLeftClickTime<=.4f){if(AShooterCharacter* Character=GetCharacter(this))Character->UseMedkit();LastLeftClickTime=-100.f;return FReply::Handled();}LastLeftClickTime=Now;}if(!ItemId.IsNone()&&E.GetEffectingButton()==EKeys::LeftMouseButton)return UWidgetBlueprintLibrary::DetectDragIfPressed(E,this,EKeys::LeftMouseButton).NativeReply;return Super::NativeOnMouseButtonDown(G,E);}
+void UInventoryItemSlotWidget::RefreshLabel(){if(!Label)return;UTexture2D* Texture=ItemIcon(ItemId);if(Icon){Icon->SetVisibility(Texture?ESlateVisibility::HitTestInvisible:ESlateVisibility::Collapsed);if(Texture)Icon->SetBrushFromTexture(Texture,true);}const FString Selection=SelectedQuantity>0?FString::Printf(TEXT(" [%d]"),SelectedQuantity):TEXT("");if(ItemId.IsNone())Label->SetText(FText::GetEmpty());else if(Texture)Label->SetText(FText::FromString(FString::Printf(TEXT("%d%s"),Quantity,*Selection)));else Label->SetText(FText::FromString(FString::Printf(TEXT("%s\n%d%s"),*ItemName(ItemId),Quantity,*Selection)));}
+FReply UInventoryItemSlotWidget::NativeOnMouseButtonDown(const FGeometry& G,const FPointerEvent& E){if(ItemId==TEXT("Medkit")&&E.GetEffectingButton()==EKeys::LeftMouseButton&&GetWorld()){const float Now=GetWorld()->GetRealTimeSeconds();if(Now-LastLeftClickTime<=.4f){if(AShooterCharacter* Character=GetCharacter(this))Character->UseMedkit();LastLeftClickTime=-100.f;return FReply::Handled();}LastLeftClickTime=Now;}if(!ItemId.IsNone()&&E.GetEffectingButton()==EKeys::LeftMouseButton){SelectedQuantity=FMath::Clamp(SelectedQuantity+(E.IsShiftDown()?10:1),1,Quantity);RefreshLabel();return UWidgetBlueprintLibrary::DetectDragIfPressed(E,this,EKeys::LeftMouseButton).NativeReply;}return Super::NativeOnMouseButtonDown(G,E);}
 FReply UInventoryItemSlotWidget::NativeOnMouseButtonDoubleClick(const FGeometry& G,const FPointerEvent& E){if(ItemId==TEXT("Medkit")&&E.GetEffectingButton()==EKeys::LeftMouseButton){if(AShooterCharacter* Character=GetCharacter(this))Character->UseMedkit();return FReply::Handled();}return Super::NativeOnMouseButtonDoubleClick(G,E);}
-void UInventoryItemSlotWidget::NativeOnDragDetected(const FGeometry&,const FPointerEvent&,UDragDropOperation*& Operation){if(ItemId.IsNone())return;UItemDragOperation* Drag=NewObject<UItemDragOperation>(this);Drag->ItemId=ItemId;Drag->Quantity=Quantity;Drag->bFromChest=false;Operation=Drag;}
+void UInventoryItemSlotWidget::NativeOnDragDetected(const FGeometry&,const FPointerEvent&,UDragDropOperation*& Operation){if(ItemId.IsNone())return;const int32 TransferQuantity=FMath::Clamp(SelectedQuantity,1,Quantity);UItemDragOperation* Drag=NewObject<UItemDragOperation>(this);Drag->ItemId=ItemId;Drag->Quantity=TransferQuantity;Drag->bFromChest=false;UTextBlock* Visual=NewObject<UTextBlock>(Drag);Visual->SetText(FText::FromString(FString::Printf(TEXT("%s  x%d"),*ItemName(ItemId),TransferQuantity)));Visual->SetColorAndOpacity(FSlateColor(FLinearColor(1.f,.85f,.35f)));Visual->SetShadowOffset(FVector2D(2.f,2.f));Visual->SetShadowColorAndOpacity(FLinearColor::Black);Visual->SetVisibility(ESlateVisibility::HitTestInvisible);Drag->DefaultDragVisual=Visual;Drag->Pivot=EDragPivot::CenterCenter;Operation=Drag;}
 
 void UCraftingIngredientSlotWidget::Setup(UInventoryWidget* InOwner,int32 InIndex){OwnerWidget=InOwner;Index=InIndex;RefreshLabel();}
 void UCraftingIngredientSlotWidget::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();bIsFocusable=true;
-	UBorder* Border=WidgetTree->ConstructWidget<UBorder>();WidgetTree->RootWidget=Border;Border->SetBrushColor(FLinearColor(.16f,.12f,.035f,.98f));Border->SetPadding(FMargin(5.f));
-	USizeBox* Size=WidgetTree->ConstructWidget<USizeBox>();Size->SetWidthOverride(78.f);Size->SetHeightOverride(78.f);Border->AddChild(Size);
-	Label=MakeText(WidgetTree,FText::GetEmpty(),13,FLinearColor(1.f,.85f,.35f),ETextJustify::Center);Size->AddChild(Label);RefreshLabel();
+	UBorder* Border=WidgetTree->ConstructWidget<UBorder>();WidgetTree->RootWidget=Border;Border->SetBrushColor(FLinearColor(0.f,0.f,0.f,0.f));Border->SetPadding(FMargin(0.f));
+	USizeBox* Size=WidgetTree->ConstructWidget<USizeBox>();Size->SetWidthOverride(54.f);Size->SetHeightOverride(55.f);Border->AddChild(Size);
+	UOverlay* Contents=WidgetTree->ConstructWidget<UOverlay>();Size->AddChild(Contents);Icon=WidgetTree->ConstructWidget<UImage>();Icon->SetVisibility(ESlateVisibility::Collapsed);if(UOverlaySlot* S=Contents->AddChildToOverlay(Icon)){S->SetPadding(FMargin(2.f));S->SetHorizontalAlignment(HAlign_Fill);S->SetVerticalAlignment(VAlign_Fill);}Label=MakeText(WidgetTree,FText::GetEmpty(),11,FLinearColor(1.f,.85f,.35f),ETextJustify::Center);Label->SetVisibility(ESlateVisibility::HitTestInvisible);Label->SetShadowOffset(FVector2D(2.f,2.f));if(UOverlaySlot* S=Contents->AddChildToOverlay(Label)){S->SetHorizontalAlignment(HAlign_Fill);S->SetVerticalAlignment(VAlign_Bottom);}RefreshLabel();
 }
-void UCraftingIngredientSlotWidget::SetIngredient(FName InItemId){ItemId=InItemId;RefreshLabel();}
-void UCraftingIngredientSlotWidget::RefreshLabel(){if(Label)Label->SetText(FText::FromString(ItemId.IsNone()?FString::Printf(TEXT("СЛОТ %d"),Index+1):ItemName(ItemId)));}
-bool UCraftingIngredientSlotWidget::NativeOnDrop(const FGeometry&,const FDragDropEvent&,UDragDropOperation* Operation){if(UItemDragOperation* Drag=Cast<UItemDragOperation>(Operation)){if(OwnerWidget)OwnerWidget->SetCraftIngredient(Index,Drag->ItemId);return true;}return false;}
-FReply UCraftingIngredientSlotWidget::NativeOnMouseButtonDown(const FGeometry& G,const FPointerEvent& E){if(E.GetEffectingButton()==EKeys::RightMouseButton){if(OwnerWidget)OwnerWidget->SetCraftIngredient(Index,NAME_None);return FReply::Handled();}return Super::NativeOnMouseButtonDown(G,E);}
+void UCraftingIngredientSlotWidget::SetIngredient(FName InItemId,int32 InQuantity){ItemId=InItemId;Quantity=InQuantity;RefreshLabel();}
+void UCraftingIngredientSlotWidget::RefreshLabel(){if(Icon){UTexture2D* T=ItemIcon(ItemId);Icon->SetVisibility(T?ESlateVisibility::HitTestInvisible:ESlateVisibility::Collapsed);if(T)Icon->SetBrushFromTexture(T,true);}if(Label)Label->SetText(ItemId.IsNone()?FText::GetEmpty():FText::FromString(FString::Printf(TEXT("%d"),Quantity)));}
+bool UCraftingIngredientSlotWidget::NativeOnDrop(const FGeometry&,const FDragDropEvent&,UDragDropOperation* Operation){if(UItemDragOperation* Drag=Cast<UItemDragOperation>(Operation)){if(OwnerWidget)OwnerWidget->SetCraftIngredient(Index,Drag->ItemId,Drag->Quantity);return true;}return false;}
+FReply UCraftingIngredientSlotWidget::NativeOnMouseButtonDown(const FGeometry& G,const FPointerEvent& E){if(E.GetEffectingButton()==EKeys::RightMouseButton){if(OwnerWidget)OwnerWidget->SetCraftIngredient(Index,NAME_None,0);return FReply::Handled();}return Super::NativeOnMouseButtonDown(G,E);}
 
 void UInventoryWidget::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();bIsFocusable=true;
-	UVerticalBox* Panel=CreatePanel(WidgetTree,FText::FromString(TEXT("ИНВЕНТАРЬ И КРАФТ  [I]")),1050.f);
-	CapacityText=MakeText(WidgetTree,FText::GetEmpty(),20,FLinearColor(.55f,.85f,1.f),ETextJustify::Center);
-	if(UVerticalBoxSlot* PanelSlot=Panel->AddChildToVerticalBox(CapacityText))PanelSlot->SetPadding(FMargin(4.f,2.f,4.f,10.f));
-	UHorizontalBox* Columns=WidgetTree->ConstructWidget<UHorizontalBox>();if(UVerticalBoxSlot* PanelSlot=Panel->AddChildToVerticalBox(Columns))PanelSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
-	UVerticalBox* Left=WidgetTree->ConstructWidget<UVerticalBox>();if(UHorizontalBoxSlot* ColumnSlot=Columns->AddChildToHorizontalBox(Left)){ColumnSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));ColumnSlot->SetPadding(FMargin(5.f,5.f,18.f,5.f));}
-	Left->AddChildToVerticalBox(MakeText(WidgetTree,FText::FromString(TEXT("ИНВЕНТАРЬ — ПЕРЕТАЩИТЕ ПРЕДМЕТЫ В КРАФТ")),17,FLinearColor(.65f,.9f,1.f),ETextJustify::Center));
-	InventoryGrid=WidgetTree->ConstructWidget<UUniformGridPanel>();if(UVerticalBoxSlot* GridSlot=Left->AddChildToVerticalBox(InventoryGrid))GridSlot->SetPadding(FMargin(4.f,12.f));
-	UVerticalBox* Right=WidgetTree->ConstructWidget<UVerticalBox>();if(UHorizontalBoxSlot* ColumnSlot=Columns->AddChildToHorizontalBox(Right)){ColumnSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));ColumnSlot->SetPadding(FMargin(18.f,5.f,5.f,5.f));}
-	Right->AddChildToVerticalBox(MakeText(WidgetTree,FText::FromString(TEXT("КРАФТ — 8 ЯЧЕЕК")),19,FLinearColor(1.f,.78f,.25f),ETextJustify::Center));
-	CraftGrid=WidgetTree->ConstructWidget<UUniformGridPanel>();if(UVerticalBoxSlot* GridSlot=Right->AddChildToVerticalBox(CraftGrid))GridSlot->SetPadding(FMargin(4.f,12.f));
-	CraftIngredients.SetNum(8);for(int32 Index=0;Index<8;++Index){UCraftingIngredientSlotWidget* SlotWidget=CreateWidget<UCraftingIngredientSlotWidget>(GetOwningPlayer(),UCraftingIngredientSlotWidget::StaticClass());SlotWidget->Setup(this,Index);CraftSlots.Add(SlotWidget);CraftGrid->AddChildToUniformGrid(SlotWidget,Index/4,Index%4);}
-	RecipeList=WidgetTree->ConstructWidget<UVerticalBox>();if(UVerticalBoxSlot* RecipeSlot=Right->AddChildToVerticalBox(RecipeList))RecipeSlot->SetPadding(FMargin(4.f,12.f));
-	CraftSelectedButton=MakeButton(WidgetTree,FText::FromString(TEXT("СКРАФТИТЬ ВЫБРАННОЕ")));CraftSelectedButton->OnClicked.AddDynamic(this,&UInventoryWidget::CraftSelectedClicked);Right->AddChildToVerticalBox(CraftSelectedButton);
-	UButton* Close=MakeButton(WidgetTree,FText::FromString(TEXT("ЗАКРЫТЬ")));Close->OnClicked.AddDynamic(this,&UInventoryWidget::CloseClicked);
-	if(UVerticalBoxSlot* PanelSlot=Panel->AddChildToVerticalBox(Close))PanelSlot->SetPadding(FMargin(4.f,14.f,4.f,2.f));
+	UOverlay* Root=WidgetTree->ConstructWidget<UOverlay>();WidgetTree->RootWidget=Root;
+	UBorder* Dim=WidgetTree->ConstructWidget<UBorder>();Dim->SetBrushColor(FLinearColor(0.f,0.f,0.f,.58f));if(UOverlaySlot* S=Root->AddChildToOverlay(Dim)){S->SetHorizontalAlignment(HAlign_Fill);S->SetVerticalAlignment(VAlign_Fill);}
+	USizeBox* Frame=WidgetTree->ConstructWidget<USizeBox>();Frame->SetWidthOverride(1280.f);Frame->SetHeightOverride(720.f);if(UOverlaySlot* S=Root->AddChildToOverlay(Frame)){S->SetHorizontalAlignment(HAlign_Center);S->SetVerticalAlignment(VAlign_Center);}
+	UBorder* Background=WidgetTree->ConstructWidget<UBorder>();Background->SetPadding(FMargin(0.f));if(UTexture2D* T=LoadObject<UTexture2D>(nullptr,TEXT("/Game/ThirdPersonBP/UI/Generated/T_InventoryWoodPanel.T_InventoryWoodPanel")))Background->SetBrushFromTexture(T);Frame->AddChild(Background);
+	UCanvasPanel* Canvas=WidgetTree->ConstructWidget<UCanvasPanel>();Background->AddChild(Canvas);
+	auto Place=[&](UWidget* Widget,float X,float Y,float W,float H){if(UCanvasPanelSlot* S=Canvas->AddChildToCanvas(Widget)){S->SetPosition(FVector2D(X,Y));S->SetSize(FVector2D(W,H));}};
+	Place(MakeText(WidgetTree,FText::FromString(TEXT("ИНВЕНТАРЬ [I]")),28,FLinearColor(.8f,.93f,1.f),ETextJustify::Center),35.f,35.f,545.f,42.f);
+	CapacityText=MakeText(WidgetTree,FText::GetEmpty(),17,FLinearColor(.55f,.85f,1.f),ETextJustify::Center);Place(CapacityText,35.f,75.f,545.f,30.f);
+	InventoryGrid=WidgetTree->ConstructWidget<UUniformGridPanel>();InventoryGrid->SetMinDesiredSlotWidth(68.5f);InventoryGrid->SetMinDesiredSlotHeight(70.f);Place(InventoryGrid,32.f,111.f,550.f,560.f);
+	UVerticalBox* CharacterPanel=WidgetTree->ConstructWidget<UVerticalBox>();Place(CharacterPanel,612.f,32.f,365.f,455.f);
+	CharacterPanel->AddChildToVerticalBox(MakeText(WidgetTree,FText::FromString(TEXT("ПЕРСОНАЖ")),19,FLinearColor(1.f,.82f,.45f),ETextJustify::Center));
+	USizeBox* Preview=WidgetTree->ConstructWidget<USizeBox>();Preview->SetHeightOverride(320.f);UBorder* PreviewBorder=WidgetTree->ConstructWidget<UBorder>();PreviewBorder->SetBrushColor(FLinearColor(.025f,.018f,.012f,.45f));PreviewBorder->SetPadding(FMargin(12.f));Preview->AddChild(PreviewBorder);PreviewBorder->AddChild(MakeText(WidgetTree,FText::FromString(TEXT("МЕСТО ДЛЯ МОДЕЛИ\nПЕРСОНАЖА")),15,FLinearColor(.62f,.58f,.5f),ETextJustify::Center));CharacterPanel->AddChildToVerticalBox(Preview);
+	CharacterPanel->AddChildToVerticalBox(MakeText(WidgetTree,FText::FromString(TEXT("ОРУЖИЕ — 2 АКТИВНЫХ СЛОТА")),15,FLinearColor(.9f,.75f,.42f),ETextJustify::Center));
+	UUniformGridPanel* WeaponSlots=WidgetTree->ConstructWidget<UUniformGridPanel>();for(int32 Index=0;Index<2;++Index){USizeBox* Cell=WidgetTree->ConstructWidget<USizeBox>();Cell->SetWidthOverride(170.f);Cell->SetHeightOverride(58.f);UBorder* CellBorder=WidgetTree->ConstructWidget<UBorder>();CellBorder->SetBrushColor(FLinearColor(.08f,.055f,.03f,.62f));CellBorder->SetPadding(FMargin(5.f));Cell->AddChild(CellBorder);CellBorder->AddChild(MakeText(WidgetTree,FText::FromString(FString::Printf(TEXT("ОРУЖИЕ %d"),Index+1)),13,FLinearColor::White,ETextJustify::Center));WeaponSlots->AddChildToUniformGrid(Cell,0,Index);}CharacterPanel->AddChildToVerticalBox(WeaponSlots);
+	Place(MakeText(WidgetTree,FText::FromString(TEXT("КРАФТ — 8 ЯЧЕЕК  [ENTER]")),17,FLinearColor(1.f,.78f,.25f),ETextJustify::Center),1015.f,118.f,245.f,35.f);
+	CraftGrid=WidgetTree->ConstructWidget<UUniformGridPanel>();CraftGrid->SetMinDesiredSlotWidth(57.f);CraftGrid->SetMinDesiredSlotHeight(57.f);Place(CraftGrid,1018.f,166.f,228.f,114.f);
+	CraftIngredients.SetNum(8);CraftQuantities.Init(0,8);for(int32 Index=0;Index<8;++Index){UCraftingIngredientSlotWidget* SlotWidget=CreateWidget<UCraftingIngredientSlotWidget>(GetOwningPlayer(),UCraftingIngredientSlotWidget::StaticClass());SlotWidget->Setup(this,Index);CraftSlots.Add(SlotWidget);CraftGrid->AddChildToUniformGrid(SlotWidget,Index/4,Index%4);}
+	RecipeList=WidgetTree->ConstructWidget<UVerticalBox>();Place(RecipeList,1015.f,305.f,245.f,85.f);
+	CraftSelectedButton=nullptr;
 	Refresh();
 }
 
 void UInventoryWidget::NativeTick(const FGeometry& MyGeometry,float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry,InDeltaTime);
-	if(GetWorld()&&GetWorld()->GetTimeSeconds()>=NextRefreshTime){NextRefreshTime=GetWorld()->GetTimeSeconds()+.5f;Refresh();}
+	if(GetWorld()&&GetWorld()->GetTimeSeconds()>=NextRefreshTime){NextRefreshTime=GetWorld()->GetTimeSeconds()+.5f;if(CalculateInventoryHash()!=LastInventoryHash)Refresh();}
+}
+
+int32 UInventoryWidget::CalculateInventoryHash()const
+{
+	const AShooterCharacter* Character=GetCharacter(this);if(!Character||!Character->Inventory)return 0;
+	uint32 Hash=GetTypeHash(Character->Inventory->Items.Num());
+	for(const FInventoryEntry& Entry:Character->Inventory->Items){Hash=HashCombine(Hash,GetTypeHash(Entry.ItemId));Hash=HashCombine(Hash,GetTypeHash(Entry.Quantity));}
+	return static_cast<int32>(Hash);
 }
 
 void UInventoryWidget::Refresh()
 {
 	AShooterCharacter* Character=GetCharacter(this);if(!Character||!Character->Inventory||!CapacityText||!InventoryGrid)return;
 	UInventoryComponent* Inventory=Character->Inventory;
+	LastInventoryHash=CalculateInventoryHash();
 	CapacityText->SetText(FText::FromString(FString::Printf(TEXT("СЛОТЫ: %d / %d     МАКС. ВЕС: %.0f КГ"),Inventory->Items.Num(),Inventory->MaxSlots,Inventory->MaxWeight)));
 	InventoryGrid->ClearChildren();
-	for(int32 SlotIndex=0;SlotIndex<Inventory->MaxSlots;++SlotIndex)
+	TMap<FName,int32> Reserved;for(int32 Index=0;Index<CraftIngredients.Num();++Index)if(!CraftIngredients[Index].IsNone()&&CraftQuantities.IsValidIndex(Index))Reserved.FindOrAdd(CraftIngredients[Index])+=CraftQuantities[Index];
+	// Always create the complete 8x8 visual grid painted into the background.
+	// UniformGrid otherwise divides
+	// its width by 6 when capacity is six, then suddenly changes to eight columns
+	// as soon as a second row is present, stretching the first row across the art.
+	const int32 DisplaySlotCount=FMath::Max(64,Inventory->MaxSlots);
+	for(int32 SlotIndex=0;SlotIndex<DisplaySlotCount;++SlotIndex)
 	{
-		const FName Item=Inventory->Items.IsValidIndex(SlotIndex)?Inventory->Items[SlotIndex].ItemId:NAME_None;const int32 Quantity=Inventory->Items.IsValidIndex(SlotIndex)?Inventory->Items[SlotIndex].Quantity:0;
-		UInventoryItemSlotWidget* Cell=CreateWidget<UInventoryItemSlotWidget>(GetOwningPlayer(),UInventoryItemSlotWidget::StaticClass());Cell->Setup(Item,Quantity,SlotIndex);InventoryGrid->AddChildToUniformGrid(Cell,SlotIndex/5,SlotIndex%5);
+		const FName Item=Inventory->Items.IsValidIndex(SlotIndex)?Inventory->Items[SlotIndex].ItemId:NAME_None;int32 Quantity=Inventory->Items.IsValidIndex(SlotIndex)?Inventory->Items[SlotIndex].Quantity:0;if(int32* Pending=Reserved.Find(Item)){const int32 Taken=FMath::Min(Quantity,*Pending);Quantity-=Taken;*Pending-=Taken;}
+		UInventoryItemSlotWidget* Cell=CreateWidget<UInventoryItemSlotWidget>(GetOwningPlayer(),UInventoryItemSlotWidget::StaticClass());Cell->Setup(Item,Quantity,SlotIndex);InventoryGrid->AddChildToUniformGrid(Cell,SlotIndex/8,SlotIndex%8);
 	}
-	int32 Medicine=0,Bandage=0,Wood=0;for(FName Ingredient:CraftIngredients){if(Ingredient==TEXT("Medicine"))++Medicine;else if(Ingredient==TEXT("Bandage"))++Bandage;else if(Ingredient==TEXT("Wood"))++Wood;}
-	const bool bMedkitRecipe=Medicine>=1&&Bandage>=2,bStickRecipe=Wood>=1;if(RecipeList){RecipeList->ClearChildren();FString Recipes;if(bMedkitRecipe)Recipes+=TEXT("АПТЕЧКА — 1 медикамент + 2 бинта");if(bStickRecipe){if(!Recipes.IsEmpty())Recipes+=TEXT("\n");Recipes+=TEXT("ПАЛКИ x4 — 1 дерево");}RecipeList->AddChildToVerticalBox(MakeText(WidgetTree,FText::FromString(Recipes.IsEmpty()?TEXT("ДОСТУПНЫХ РЕЦЕПТОВ НЕТ"):FString(TEXT("ДОСТУПНО:\n"))+Recipes),17,Recipes.IsEmpty()?FLinearColor(.55f,.55f,.55f):FLinearColor(.35f,1.f,.45f)));}
+	int32 Medicine=0,Bandage=0,Wood=0;for(int32 Index=0;Index<CraftIngredients.Num();++Index){const int32 Q=CraftQuantities.IsValidIndex(Index)?CraftQuantities[Index]:0;if(CraftIngredients[Index]==TEXT("Medicine"))Medicine+=Q;else if(CraftIngredients[Index]==TEXT("Bandage"))Bandage+=Q;else if(CraftIngredients[Index]==TEXT("Wood"))Wood+=Q;}
+	const bool bMedkitRecipe=Medicine>=1&&Bandage>=2,bStickRecipe=Wood>=1;if(RecipeList){RecipeList->ClearChildren();FString Recipes;if(bMedkitRecipe)Recipes+=TEXT("АПТЕЧКА — 1 медикамент + 2 бинта");if(bStickRecipe){if(!Recipes.IsEmpty())Recipes+=TEXT("\n");Recipes+=FString::Printf(TEXT("%d дерева → %d палок  [ENTER]"),Wood,Wood*4);}RecipeList->AddChildToVerticalBox(MakeText(WidgetTree,FText::FromString(Recipes.IsEmpty()?TEXT("ДОСТУПНЫХ РЕЦЕПТОВ НЕТ"):FString(TEXT("ДОСТУПНО:\n"))+Recipes),15,Recipes.IsEmpty()?FLinearColor(.55f,.55f,.55f):FLinearColor(.35f,1.f,.45f)));}
 	if(CraftSelectedButton)CraftSelectedButton->SetIsEnabled((bMedkitRecipe&&Character->CanCraftMedkit())||(bStickRecipe&&Character->CanCraftSticks()));
 }
 
-void UInventoryWidget::SetCraftIngredient(int32 Index,FName ItemId){if(!CraftIngredients.IsValidIndex(Index))return;CraftIngredients[Index]=ItemId;if(CraftSlots.IsValidIndex(Index)&&CraftSlots[Index])CraftSlots[Index]->SetIngredient(ItemId);Refresh();}
-void UInventoryWidget::CraftSelectedClicked(){AShooterCharacter* Character=GetCharacter(this);if(!Character)return;int32 Medicine=0,Bandage=0,Wood=0;for(FName Ingredient:CraftIngredients){if(Ingredient==TEXT("Medicine"))++Medicine;else if(Ingredient==TEXT("Bandage"))++Bandage;else if(Ingredient==TEXT("Wood"))++Wood;}if(Medicine>=1&&Bandage>=2)Character->CraftMedkit();else if(Wood>=1)Character->CraftSticks();Refresh();}
+void UInventoryWidget::SetCraftIngredient(int32 Index,FName ItemId,int32 Quantity){if(!CraftIngredients.IsValidIndex(Index)||!CraftQuantities.IsValidIndex(Index))return;if(ItemId.IsNone()){CraftIngredients[Index]=NAME_None;CraftQuantities[Index]=0;}else if(CraftIngredients[Index]==ItemId)CraftQuantities[Index]=FMath::Clamp(CraftQuantities[Index]+FMath::Max(1,Quantity),1,999);else{CraftIngredients[Index]=ItemId;CraftQuantities[Index]=FMath::Max(1,Quantity);}if(CraftSlots.IsValidIndex(Index)&&CraftSlots[Index])CraftSlots[Index]->SetIngredient(CraftIngredients[Index],CraftQuantities[Index]);Refresh();}
+void UInventoryWidget::CraftSelectedClicked(){AShooterCharacter* Character=GetCharacter(this);if(!Character)return;int32 Medicine=0,Bandage=0,Wood=0;for(int32 Index=0;Index<CraftIngredients.Num();++Index){const int32 Q=CraftQuantities.IsValidIndex(Index)?CraftQuantities[Index]:0;if(CraftIngredients[Index]==TEXT("Medicine"))Medicine+=Q;else if(CraftIngredients[Index]==TEXT("Bandage"))Bandage+=Q;else if(CraftIngredients[Index]==TEXT("Wood"))Wood+=Q;}if(Medicine>=1&&Bandage>=2)Character->CraftMedkit();else if(Wood>=1)Character->CraftStickBatches(Wood);else return;for(int32 Index=0;Index<CraftIngredients.Num();++Index){CraftIngredients[Index]=NAME_None;CraftQuantities[Index]=0;if(CraftSlots.IsValidIndex(Index)&&CraftSlots[Index])CraftSlots[Index]->SetIngredient(NAME_None,0);}Refresh();}
 
 void UInventoryWidget::CloseClicked(){if(AShooterPlayerController* PC=Cast<AShooterPlayerController>(GetOwningPlayer()))PC->CloseGameplayPanel();}
-FReply UInventoryWidget::NativeOnKeyDown(const FGeometry& InGeometry,const FKeyEvent& Event){if(Event.GetKey()==EKeys::I||Event.GetKey()==EKeys::Escape){CloseClicked();return FReply::Handled();}return Super::NativeOnKeyDown(InGeometry,Event);}
+FReply UInventoryWidget::NativeOnPreviewKeyDown(const FGeometry& InGeometry,const FKeyEvent& Event){if(Event.GetKey()==EKeys::Enter){CraftSelectedClicked();return FReply::Handled();}return Super::NativeOnPreviewKeyDown(InGeometry,Event);}
+FReply UInventoryWidget::NativeOnKeyDown(const FGeometry& InGeometry,const FKeyEvent& Event){if(Event.GetKey()==EKeys::I||Event.GetKey()==EKeys::Escape){CloseClicked();return FReply::Handled();}if(Event.GetKey()==EKeys::Enter){CraftSelectedClicked();return FReply::Handled();}return Super::NativeOnKeyDown(InGeometry,Event);}
 
 void USkillTreeEntryWidget::Setup(EShooterSkill InSkill){Skill=InSkill;Refresh();}
 void USkillTreeEntryWidget::NativeOnInitialized()
@@ -267,6 +304,7 @@ void UStorageChestWidget::NativeOnInitialized()
 	UVerticalBox* Left=WidgetTree->ConstructWidget<UVerticalBox>();if(UHorizontalBoxSlot* ColumnSlot=Columns->AddChildToHorizontalBox(Left)){ColumnSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));ColumnSlot->SetPadding(FMargin(5.f,5.f,15.f,5.f));}Left->AddChildToVerticalBox(MakeText(WidgetTree,FText::FromString(TEXT("ВАШ ИНВЕНТАРЬ\nПеретащите стопку в сундук")),17,FLinearColor(.65f,.9f,1.f),ETextJustify::Center));USizeBox* PlayerGridArea=WidgetTree->ConstructWidget<USizeBox>();PlayerGridArea->SetHeightOverride(350.f);PlayerGrid=WidgetTree->ConstructWidget<UUniformGridPanel>();PlayerGridArea->AddChild(PlayerGrid);if(UVerticalBoxSlot* GridSlot=Left->AddChildToVerticalBox(PlayerGridArea))GridSlot->SetPadding(FMargin(2.f,8.f));
 	UVerticalBox* Right=WidgetTree->ConstructWidget<UVerticalBox>();if(UHorizontalBoxSlot* ColumnSlot=Columns->AddChildToHorizontalBox(Right)){ColumnSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));ColumnSlot->SetPadding(FMargin(15.f,5.f,5.f,5.f));}Right->AddChildToVerticalBox(MakeText(WidgetTree,FText::FromString(TEXT("СОДЕРЖИМОЕ СУНДУКА\nПеретащите стопку обратно в инвентарь\nПредметы: 100 в ячейке, оружие: 1")),17,FLinearColor(1.f,.8f,.3f),ETextJustify::Center));USizeBox* ChestGridArea=WidgetTree->ConstructWidget<USizeBox>();ChestGridArea->SetHeightOverride(350.f);ChestGrid=WidgetTree->ConstructWidget<UUniformGridPanel>();ChestGridArea->AddChild(ChestGrid);if(UVerticalBoxSlot* GridSlot=Right->AddChildToVerticalBox(ChestGridArea))GridSlot->SetPadding(FMargin(2.f,8.f));
 	StoreWeaponButton=MakeButton(WidgetTree,FText::FromString(TEXT("ПОЛОЖИТЬ ТЕКУЩЕЕ ОРУЖИЕ В СУНДУК")));StoreWeaponButton->OnClicked.AddDynamic(this,&UStorageChestWidget::StoreWeaponClicked);if(UVerticalBoxSlot* WeaponButtonSlot=Left->AddChildToVerticalBox(StoreWeaponButton))WeaponButtonSlot->SetPadding(FMargin(4.f,12.f));
+	UButton* TakeAll=MakeButton(WidgetTree,FText::FromString(TEXT("ЗАБРАТЬ ВСЁ  [T]")));TakeAll->OnClicked.AddDynamic(this,&UStorageChestWidget::TakeAllClicked);if(UVerticalBoxSlot* TakeAllSlot=Right->AddChildToVerticalBox(TakeAll))TakeAllSlot->SetPadding(FMargin(4.f,12.f));
 	UButton* Close=MakeButton(WidgetTree,FText::FromString(TEXT("ЗАКРЫТЬ")));Close->OnClicked.AddDynamic(this,&UStorageChestWidget::CloseClicked);Panel->AddChildToVerticalBox(Close);Refresh();
 }
 void UStorageChestWidget::NativeTick(const FGeometry& G,float Dt){Super::NativeTick(G,Dt);if(GetWorld()&&GetWorld()->GetTimeSeconds()>=NextRefreshTime){NextRefreshTime=GetWorld()->GetTimeSeconds()+.2f;Refresh();}}
@@ -278,5 +316,6 @@ void UStorageChestWidget::Refresh()
 	ChestGrid->ClearChildren();int32 DisplayIndex=0;for(const FInventoryEntry& Entry:Chest->Storage->Items){UStorageTransferSlotWidget* Cell=CreateWidget<UStorageTransferSlotWidget>(GetOwningPlayer(),UStorageTransferSlotWidget::StaticClass());Cell->Setup(Entry.ItemId,Entry.Quantity,true);ChestGrid->AddChildToUniformGrid(Cell,DisplayIndex/5,DisplayIndex%5);++DisplayIndex;}for(AWeaponBase* Weapon:Chest->StoredWeapons){if(!Weapon||DisplayIndex>=20)continue;UStorageTransferSlotWidget* Cell=CreateWidget<UStorageTransferSlotWidget>(GetOwningPlayer(),UStorageTransferSlotWidget::StaticClass());Cell->Setup(Chest->GetStoredWeaponId(Weapon),1,true);ChestGrid->AddChildToUniformGrid(Cell,DisplayIndex/5,DisplayIndex%5);++DisplayIndex;}for(;DisplayIndex<20;++DisplayIndex){UStorageTransferSlotWidget* Cell=CreateWidget<UStorageTransferSlotWidget>(GetOwningPlayer(),UStorageTransferSlotWidget::StaticClass());Cell->Setup(NAME_None,0,true);ChestGrid->AddChildToUniformGrid(Cell,DisplayIndex/5,DisplayIndex%5);}
 }
 void UStorageChestWidget::StoreWeaponClicked(){AShooterPlayerController* PC=Cast<AShooterPlayerController>(GetOwningPlayer());AShooterCharacter* Character=GetCharacter(this);if(PC&&Character)Character->StoreEquippedWeaponInChest(PC->GetOpenStorageChest());}
+void UStorageChestWidget::TakeAllClicked(){AShooterPlayerController* PC=Cast<AShooterPlayerController>(GetOwningPlayer());AShooterCharacter* Character=GetCharacter(this);if(PC&&Character)Character->TakeAllFromChest(PC->GetOpenStorageChest());}
 void UStorageChestWidget::CloseClicked(){if(AShooterPlayerController* PC=Cast<AShooterPlayerController>(GetOwningPlayer()))PC->CloseGameplayPanel();}
-FReply UStorageChestWidget::NativeOnKeyDown(const FGeometry& G,const FKeyEvent& E){if(E.GetKey()==EKeys::Escape||E.GetKey()==EKeys::I){CloseClicked();return FReply::Handled();}return Super::NativeOnKeyDown(G,E);}
+FReply UStorageChestWidget::NativeOnKeyDown(const FGeometry& G,const FKeyEvent& E){if(E.GetKey()==EKeys::T){TakeAllClicked();return FReply::Handled();}if(E.GetKey()==EKeys::Escape||E.GetKey()==EKeys::I){CloseClicked();return FReply::Handled();}return Super::NativeOnKeyDown(G,E);}

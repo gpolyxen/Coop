@@ -239,7 +239,7 @@ AShooterCharacter::AShooterCharacter()
 	bReplicates=true;
 	bUseControllerRotationPitch=false;bUseControllerRotationYaw=true;bUseControllerRotationRoll=false;
 	CameraBoom=CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));CameraBoom->SetupAttachment(RootComponent);CameraBoom->TargetArmLength=0.f;CameraBoom->bDoCollisionTest=false;
-	Camera=CreateDefaultSubobject<UCameraComponent>(TEXT("CharacterCamera"));Camera->SetupAttachment(GetMesh(),TEXT("head"));Camera->SetRelativeLocation(FVector::ZeroVector);Camera->SetRelativeRotation(FRotator::ZeroRotator);Camera->bUsePawnControlRotation=true;Camera->FieldOfView=90.f;Camera->PostProcessSettings.bOverride_MotionBlurAmount=true;Camera->PostProcessSettings.MotionBlurAmount=0.f;
+	Camera=CreateDefaultSubobject<UCameraComponent>(TEXT("CharacterCamera"));Camera->SetupAttachment(GetMesh(),TEXT("head"));Camera->SetRelativeLocation(FVector::ZeroVector);Camera->SetRelativeRotation(FRotator::ZeroRotator);Camera->bUsePawnControlRotation=true;Camera->FieldOfView=90.f;Camera->PostProcessSettings.bOverride_MotionBlurAmount=true;Camera->PostProcessSettings.MotionBlurAmount=0.f;Camera->PostProcessSettings.bOverride_AutoExposureMinBrightness=true;Camera->PostProcessSettings.AutoExposureMinBrightness=.3f;Camera->PostProcessSettings.bOverride_AutoExposureMaxBrightness=true;Camera->PostProcessSettings.AutoExposureMaxBrightness=3.f;Camera->PostProcessSettings.bOverride_AutoExposureBias=true;Camera->PostProcessSettings.AutoExposureBias=.15f;Camera->PostProcessSettings.bOverride_BloomIntensity=true;Camera->PostProcessSettings.BloomIntensity=.4f;
 	FirstPersonBody=CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("FirstPersonBody"));FirstPersonBody->SetupAttachment(RootComponent);FirstPersonBody->SetRelativeLocation(FVector(0.f,0.f,-90.f));FirstPersonBody->SetRelativeRotation(FRotator(0.f,-90.f,0.f));FirstPersonBody->SetOnlyOwnerSee(true);FirstPersonBody->SetCollisionEnabled(ECollisionEnabled::NoCollision);FirstPersonBody->CastShadow=false;
 	// The legacy camera carries a non-unit scale copied from BP_Player. Keep a
 	// scale-neutral root so dedicated FPS rigs retain their authored dimensions.
@@ -552,10 +552,22 @@ void AShooterCharacter::CraftMedkit()
 }
 void AShooterCharacter::CraftSticks()
 {
-	if(!HasAuthority()){ServerCraftSticks();return;}
-	if(!CanCraftSticks()||!Inventory->RemoveItem(TEXT("Wood"),1))return;
-	if(!Inventory->AddItem(TEXT("Stick"),4)){Inventory->AddItem(TEXT("Wood"),1);return;}
-	ShowLocalNotification(TEXT("СОЗДАНО: ПАЛКИ x4"),2.f);
+	CraftStickBatches(1);
+}
+void AShooterCharacter::CraftStickBatches(int32 BatchCount)
+{
+	BatchCount=FMath::Clamp(BatchCount,1,999);
+	if(!HasAuthority()){ServerCraftStickBatches(BatchCount);return;}
+	if(!Inventory)return;const int32 TotalWood=Inventory->GetQuantity(TEXT("Wood"));if(TotalWood<BatchCount)return;
+	// Old saves may contain several Wood stacks although Wood now supports one
+	// stack of 999. Repacking them first releases the slot required by the result.
+	if(!Inventory->RemoveItem(TEXT("Wood"),TotalWood))return;
+	const int32 RemainingWood=TotalWood-BatchCount;
+	if((RemainingWood>0&&!Inventory->AddItem(TEXT("Wood"),RemainingWood))||!Inventory->AddItem(TEXT("Stick"),BatchCount*4))
+	{
+		Inventory->RemoveItem(TEXT("Wood"),Inventory->GetQuantity(TEXT("Wood")));Inventory->AddItem(TEXT("Wood"),TotalWood);ShowLocalNotification(TEXT("НЕДОСТАТОЧНО МЕСТА ДЛЯ РЕЗУЛЬТАТА"),2.f);return;
+	}
+	ShowLocalNotification(FString::Printf(TEXT("СОЗДАНО: ПАЛКИ x%d"),BatchCount*4),2.f);
 }
 void AShooterCharacter::UseMedkit()
 {
@@ -565,6 +577,7 @@ void AShooterCharacter::UseMedkit()
 }
 bool AShooterCharacter::ServerCraftMedkit_Validate(){return true;}void AShooterCharacter::ServerCraftMedkit_Implementation(){CraftMedkit();}
 bool AShooterCharacter::ServerCraftSticks_Validate(){return true;}void AShooterCharacter::ServerCraftSticks_Implementation(){CraftSticks();}
+bool AShooterCharacter::ServerCraftStickBatches_Validate(int32 BatchCount){return BatchCount>0&&BatchCount<=999;}void AShooterCharacter::ServerCraftStickBatches_Implementation(int32 BatchCount){CraftStickBatches(BatchCount);}
 bool AShooterCharacter::ServerUseMedkit_Validate(){return true;}void AShooterCharacter::ServerUseMedkit_Implementation(){UseMedkit();}
 FString AShooterCharacter::GetSelectedBuildName()const
 {
@@ -930,6 +943,7 @@ bool AShooterCharacter::ServerToggleGate_Validate(AWoodGate* Gate){return Gate&&
 void AShooterCharacter::TransferItemToChest(AStorageChest* Chest,FName ItemId,int32 Quantity){if(HasAuthority())ServerTransferItemToChest_Implementation(Chest,ItemId,Quantity);else ServerTransferItemToChest(Chest,ItemId,Quantity);}
 void AShooterCharacter::TransferItemFromChest(AStorageChest* Chest,FName ItemId,int32 Quantity){if(HasAuthority())ServerTransferItemFromChest_Implementation(Chest,ItemId,Quantity);else ServerTransferItemFromChest(Chest,ItemId,Quantity);}
 void AShooterCharacter::StoreEquippedWeaponInChest(AStorageChest* Chest){if(HasAuthority())ServerStoreEquippedWeaponInChest_Implementation(Chest);else ServerStoreEquippedWeaponInChest(Chest);}
+void AShooterCharacter::TakeAllFromChest(AStorageChest* Chest){if(HasAuthority())ServerTakeAllFromChest_Implementation(Chest);else ServerTakeAllFromChest(Chest);}
 bool AShooterCharacter::ServerTransferItemToChest_Validate(AStorageChest* Chest,FName ItemId,int32 Quantity){return Chest&&!ItemId.IsNone()&&Quantity>0&&Quantity<=999&&FVector::DistSquared(Chest->GetActorLocation(),GetActorLocation())<=FMath::Square(500.f);}
 void AShooterCharacter::ServerTransferItemToChest_Implementation(AStorageChest* Chest,FName ItemId,int32 Quantity){if(!Chest||!Chest->Storage||!Inventory)return;Chest->Storage->MaxSlots=FMath::Max(0,20-Chest->StoredWeapons.Num());if(Inventory->GetQuantity(ItemId)<Quantity||!Chest->Storage->CanAddItems(ItemId,Quantity,NAME_None,0))return;if(Inventory->RemoveItem(ItemId,Quantity)){if(!Chest->Storage->AddItem(ItemId,Quantity))Inventory->AddItem(ItemId,Quantity);}}
 bool AShooterCharacter::ServerTransferItemFromChest_Validate(AStorageChest* Chest,FName ItemId,int32 Quantity){return Chest&&!ItemId.IsNone()&&Quantity>0&&Quantity<=999&&FVector::DistSquared(Chest->GetActorLocation(),GetActorLocation())<=FMath::Square(500.f);}
@@ -950,6 +964,17 @@ void AShooterCharacter::ServerStoreEquippedWeaponInChest_Implementation(AStorage
 {
 	if(!Chest||!EquippedWeapon||Chest->Storage->Items.Num()+Chest->StoredWeapons.Num()>=20)return;AWeaponBase* Weapon=EquippedWeapon;Chest->StoredWeapons.Add(Weapon);Chest->Storage->MaxSlots=FMath::Max(0,20-Chest->StoredWeapons.Num());WeaponSlots.Remove(Weapon);Weapon->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);Weapon->SetOwner(Chest);Weapon->AttachToActor(Chest,FAttachmentTransformRules::KeepRelativeTransform);Weapon->SetActorHiddenInGame(true);
 	if(WeaponSlots.Num()>0){ActiveWeaponSlot=FMath::Clamp(ActiveWeaponSlot,0,WeaponSlots.Num()-1);EquippedWeapon=WeaponSlots[ActiveWeaponSlot];}else{ActiveWeaponSlot=INDEX_NONE;EquippedWeapon=nullptr;}OnRep_Weapon();
+}
+bool AShooterCharacter::ServerTakeAllFromChest_Validate(AStorageChest* Chest){return Chest&&FVector::DistSquared(Chest->GetActorLocation(),GetActorLocation())<=FMath::Square(500.f);}
+void AShooterCharacter::ServerTakeAllFromChest_Implementation(AStorageChest* Chest)
+{
+	if(!Chest||!Chest->Storage||!Inventory)return;
+	// Work on copies because every successful transfer mutates the replicated
+	// arrays. Items that do not fit remain safely in the chest.
+	const TArray<FInventoryEntry> ItemCopies=Chest->Storage->Items;
+	for(const FInventoryEntry& Entry:ItemCopies)ServerTransferItemFromChest_Implementation(Chest,Entry.ItemId,Entry.Quantity);
+	const TArray<AWeaponBase*> WeaponCopies=Chest->StoredWeapons;
+	for(AWeaponBase* Weapon:WeaponCopies)if(Weapon)ServerTransferItemFromChest_Implementation(Chest,Chest->GetStoredWeaponId(Weapon),1);
 }
 void AShooterCharacter::ClientSaveAtBed_Implementation(){if(UShooterGameInstance* GI=GetGameInstance<UShooterGameInstance>())ShowLocalNotification(GI->SavePlayerAtBed(this)?TEXT("ИГРА СОХРАНЕНА У КРОВАТИ"):TEXT("НЕ УДАЛОСЬ СОХРАНИТЬ ИГРУ"));}
 void AShooterCharacter::ShowLocalNotification(const FString& Message,float Duration){LocalNotification=Message;LocalNotificationEndTime=GetWorld()?GetWorld()->GetTimeSeconds()+FMath::Max(.1f,Duration):0.f;}
@@ -998,16 +1023,16 @@ void AShooterCharacter::SetActiveWeaponSlotForLoad(int32 SlotIndex)
 	OnRep_Weapon();
 }
 
-int32 AShooterCharacter::AddAmmunition(int32 Amount)
+int32 AShooterCharacter::AddAmmunition(FName AmmoType,int32 Amount)
 {
-	if(!HasAuthority()||Amount<=0)return 0;
+	if(!HasAuthority()||AmmoType.IsNone()||Amount<=0)return 0;
 	Amount=FMath::Max(1,FMath::RoundToInt(Amount*GetPickupMultiplier()));
 	int32 Remaining=Amount;
-	if(EquippedWeapon)Remaining-=EquippedWeapon->AddReserveAmmo(Remaining);
+	if(EquippedWeapon&&EquippedWeapon->AmmoType==AmmoType)Remaining-=EquippedWeapon->AddReserveAmmo(Remaining);
 	for(AWeaponBase* Weapon:WeaponSlots)
 	{
 		if(Remaining<=0)break;
-		if(Weapon&&Weapon!=EquippedWeapon)Remaining-=Weapon->AddReserveAmmo(Remaining);
+		if(Weapon&&Weapon!=EquippedWeapon&&Weapon->AmmoType==AmmoType)Remaining-=Weapon->AddReserveAmmo(Remaining);
 	}
 	return Amount-Remaining;
 }

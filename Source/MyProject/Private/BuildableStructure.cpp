@@ -68,6 +68,10 @@ void ABuildableStructure::BeginCollapse()
 bool ABuildableStructure::HasStructuralSupport()const
 {
 	if(!bNeedsFoundationSupport||!GetWorld())return true;
+	// Procedural houses are validated as a complete structure by their generator.
+	// Individual partition modules can sit on the seam between floor tiles and
+	// must never fall away later, leaving apparently random holes in rooms.
+	if(ActorHasTag(TEXT("GeneratedBuilding")))return true;
 	const FVector Here=GetActorLocation();
 	FCollisionQueryParams GroundQuery(SCENE_QUERY_STAT(StructureFoundationGround),false,this);
 	for(TActorIterator<ABuildableStructure> It(GetWorld());It;++It)GroundQuery.AddIgnoredActor(*It);
@@ -210,10 +214,12 @@ AWoodDoor::AWoodDoor()
 	for(UInstancedStaticMeshComponent* Legacy:{Pieces,DoorPieces,RightDoorPieces}){Legacy->SetCollisionEnabled(ECollisionEnabled::NoCollision);Legacy->SetVisibility(false,true);}
 	LeftHinge->SetRelativeLocation(FVector(0.f,-75.f,0.f));RightHinge->SetRelativeLocation(FVector::ZeroVector);
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> DoorAsset(TEXT("/Game/ThirdPersonBP/Build/Meshes/Door/wood_door.wood_door"));
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> WallAsset(TEXT("/Game/ThirdPersonBP/Build/Meshes/Wood_wall/wood_wall.wood_wall"));
 	DoorVisual=CreateDefaultSubobject<UStaticMeshComponent>(TEXT("DoorVisual"));DoorVisual->SetupAttachment(LeftHinge);
-	if(DoorAsset.Succeeded())ConfigureBuildVisual(DoorVisual,DoorAsset.Object,FVector(18.f,150.f,270.f),FVector(0.f,75.f,135.f));
-	DoorCollision=CreateBuildCollision(this,LeftHinge,TEXT("DoorCollision"),FVector(0.f,75.f,135.f),FVector(9.f,75.f,135.f));
+	if(DoorAsset.Succeeded()){ConfigureBuildVisual(DoorVisual,DoorAsset.Object,FVector(18.f,150.f,300.f),FVector(0.f,75.f,150.f));if(WallAsset.Succeeded()&&WallAsset.Object->GetMaterial(0))DoorVisual->SetMaterial(0,WallAsset.Object->GetMaterial(0));}
+	DoorCollision=CreateBuildCollision(this,LeftHinge,TEXT("DoorCollision"),FVector(0.f,75.f,150.f),FVector(9.f,75.f,150.f));
 }
+void AWoodDoor::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps)const{Super::GetLifetimeReplicatedProps(OutLifetimeProps);DOREPLIFETIME(AWoodDoor,OpenAngle);}
 void AWoodDoor::GetSnapPoints(TArray<FVector>& OutPoints)const
 {
 	const FVector Along=GetActorRotation().RotateVector(FVector::RightVector);
@@ -221,7 +227,7 @@ void AWoodDoor::GetSnapPoints(TArray<FVector>& OutPoints)const
 }
 void AWoodDoor::ApplyOpenState()
 {
-	AWoodGate::ApplyOpenState();
+	if(LeftHinge)LeftHinge->SetRelativeRotation(bOpen?FRotator(0.f,OpenAngle,0.f):FRotator::ZeroRotator);
 	if(DoorCollision){DoorCollision->SetCollisionEnabled(bOpen?ECollisionEnabled::NoCollision:ECollisionEnabled::QueryAndPhysics);UNavigationSystemV1::UpdateComponentInNavOctree(*DoorCollision);}
 }
 

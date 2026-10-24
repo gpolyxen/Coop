@@ -11,6 +11,7 @@ class UButton;
 class UTextBlock;
 class UVerticalBox;
 class UUniformGridPanel;
+class UImage;
 class UInventoryWidget;
 class AStorageChest;
 
@@ -29,29 +30,31 @@ class MYPROJECT_API UInventoryItemSlotWidget : public UUserWidget
 	GENERATED_BODY()
 public:void Setup(FName InItemId,int32 InQuantity,int32 InSlotIndex);
 protected:virtual void NativeOnInitialized()override;virtual FReply NativeOnMouseButtonDown(const FGeometry& G,const FPointerEvent& E)override;virtual FReply NativeOnMouseButtonDoubleClick(const FGeometry& G,const FPointerEvent& E)override;virtual void NativeOnDragDetected(const FGeometry& G,const FPointerEvent& E,UDragDropOperation*& Operation)override;
-private:void RefreshLabel();UPROPERTY()UTextBlock* Label=nullptr;FName ItemId=NAME_None;int32 Quantity=0;int32 SlotIndex=INDEX_NONE;float LastLeftClickTime=-100.f;
+private:void RefreshLabel();UPROPERTY()UTextBlock* Label=nullptr;UPROPERTY()UImage* Icon=nullptr;FName ItemId=NAME_None;int32 Quantity=0;int32 SelectedQuantity=0;int32 SlotIndex=INDEX_NONE;float LastLeftClickTime=-100.f;
 };
 
 UCLASS()
 class MYPROJECT_API UCraftingIngredientSlotWidget : public UUserWidget
 {
 	GENERATED_BODY()
-public:void Setup(UInventoryWidget* InOwner,int32 InIndex);void SetIngredient(FName InItemId);
+public:void Setup(UInventoryWidget* InOwner,int32 InIndex);void SetIngredient(FName InItemId,int32 InQuantity);
 protected:virtual void NativeOnInitialized()override;virtual bool NativeOnDrop(const FGeometry& G,const FDragDropEvent& E,UDragDropOperation* Operation)override;virtual FReply NativeOnMouseButtonDown(const FGeometry& G,const FPointerEvent& E)override;
-private:void RefreshLabel();UPROPERTY()UTextBlock* Label=nullptr;UPROPERTY()UInventoryWidget* OwnerWidget=nullptr;FName ItemId=NAME_None;int32 Index=INDEX_NONE;
+private:void RefreshLabel();UPROPERTY()UTextBlock* Label=nullptr;UPROPERTY()UImage* Icon=nullptr;UPROPERTY()UInventoryWidget* OwnerWidget=nullptr;FName ItemId=NAME_None;int32 Quantity=0;int32 Index=INDEX_NONE;
 };
 
 UCLASS()
 class MYPROJECT_API UInventoryWidget : public UUserWidget
 {
 	GENERATED_BODY()
-public:void SetCraftIngredient(int32 Index,FName ItemId);
+public:void SetCraftIngredient(int32 Index,FName ItemId,int32 Quantity);
 protected:
 	virtual void NativeOnInitialized()override;
 	virtual void NativeTick(const FGeometry& MyGeometry,float InDeltaTime)override;
+	virtual FReply NativeOnPreviewKeyDown(const FGeometry& InGeometry,const FKeyEvent& InKeyEvent)override;
 	virtual FReply NativeOnKeyDown(const FGeometry& InGeometry,const FKeyEvent& InKeyEvent)override;
 private:
 	void Refresh();
+	int32 CalculateInventoryHash()const;
 	UFUNCTION()void CloseClicked();
 	UFUNCTION()void CraftSelectedClicked();
 	UPROPERTY()UTextBlock* CapacityText=nullptr;
@@ -61,7 +64,9 @@ private:
 	UPROPERTY()UButton* CraftSelectedButton=nullptr;
 	UPROPERTY()TArray<UCraftingIngredientSlotWidget*> CraftSlots;
 	TArray<FName> CraftIngredients;
+	TArray<int32> CraftQuantities;
 	float NextRefreshTime=0.f;
+	int32 LastInventoryHash=MIN_int32;
 };
 
 UCLASS()
@@ -145,5 +150,5 @@ class MYPROJECT_API UStorageChestWidget : public UUserWidget
 {
 	GENERATED_BODY()
 protected:virtual void NativeOnInitialized()override;virtual void NativeTick(const FGeometry& G,float Dt)override;virtual FReply NativeOnKeyDown(const FGeometry& G,const FKeyEvent& E)override;
-private:void Refresh();UFUNCTION()void StoreWeaponClicked();UFUNCTION()void CloseClicked();UPROPERTY()UUniformGridPanel* PlayerGrid=nullptr;UPROPERTY()UUniformGridPanel* ChestGrid=nullptr;UPROPERTY()UButton* StoreWeaponButton=nullptr;float NextRefreshTime=0.f;
+private:void Refresh();UFUNCTION()void StoreWeaponClicked();UFUNCTION()void TakeAllClicked();UFUNCTION()void CloseClicked();UPROPERTY()UUniformGridPanel* PlayerGrid=nullptr;UPROPERTY()UUniformGridPanel* ChestGrid=nullptr;UPROPERTY()UButton* StoreWeaponButton=nullptr;float NextRefreshTime=0.f;
 };

@@ -27,7 +27,7 @@ AOpenWorldStreamingManager::AOpenWorldStreamingManager()
 	Sun=CreateDefaultSubobject<UDirectionalLightComponent>(TEXT("Sun"));
 	Sun->SetupAttachment(SceneRoot);
 	Sun->SetRelativeRotation(FRotator(-40.f,-35.f,0.f));
-	Sun->SetIntensity(6.f);
+	Sun->SetIntensity(5.f);
 	Sun->SetMobility(EComponentMobility::Movable);
 	Sun->SetAtmosphereSunLight(true);
 	Atmosphere=CreateDefaultSubobject<USkyAtmosphereComponent>(TEXT("SkyAtmosphere"));
@@ -35,7 +35,7 @@ AOpenWorldStreamingManager::AOpenWorldStreamingManager()
 	SkyLight=CreateDefaultSubobject<USkyLightComponent>(TEXT("SkyLight"));
 	SkyLight->SetupAttachment(SceneRoot);
 	SkyLight->SetMobility(EComponentMobility::Movable);
-	SkyLight->SetIntensity(1.f);
+	SkyLight->SetIntensity(.9f);
 	SkyLight->bRealTimeCapture=true;
 	HeightFog=CreateDefaultSubobject<UExponentialHeightFogComponent>(TEXT("HeightFog"));
 	HeightFog->SetupAttachment(SceneRoot);
@@ -89,7 +89,7 @@ void AOpenWorldStreamingManager::ApplyTimeOfDay()
 	const float SunHeight=FMath::Sin(SolarRadians);
 	const float DayFactor=FMath::Clamp(SunHeight/.18f,0.f,1.f);
 	Sun->SetWorldRotation(FRotator(-(CurrentTimeHours-6.f)*15.f,-35.f,0.f));
-	Sun->SetIntensity(FMath::Lerp(.025f,6.f,DayFactor));
+	Sun->SetIntensity(FMath::Lerp(.025f,5.f,DayFactor));
 	FLinearColor SunColor=FLinearColor(.48f,.58f,1.f);
 	if(DayFactor>.01f)
 	{
@@ -97,7 +97,7 @@ void AOpenWorldStreamingManager::ApplyTimeOfDay()
 		SunColor=FLinearColor::LerpUsingHSV(FLinearColor(1.f,.38f,.14f),FLinearColor(1.f,.96f,.86f),1.f-HorizonWarmth);
 	}
 	Sun->SetLightColor(SunColor);
-	SkyLight->SetIntensity(FMath::Lerp(.09f,1.f,DayFactor));
+	SkyLight->SetIntensity(FMath::Lerp(.08f,.9f,DayFactor));
 	HeightFog->SetFogDensity(FMath::Lerp(.012f,.003f,DayFactor));
 	HeightFog->SetFogInscatteringColor(FLinearColor::LerpUsingHSV(FLinearColor(.025f,.045f,.11f),FLinearColor(.64f,.72f,.78f),DayFactor));
 }

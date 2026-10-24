@@ -27,6 +27,8 @@ public:
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly) USkeletalMeshComponent* FirstPersonMesh;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly) FWeaponStats Stats;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Weapon")FString WeaponName=TEXT("Weapon");
+	/** Only pickups with the same id can replenish this weapon. */
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Weapon|Ammo")FName AmmoType=TEXT("RifleAmmo");
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Weapon")bool bAutomatic=true;
 	// Optional character socket used only while this weapon is equipped.
 	// NAME_None keeps the character's normal sktGun socket.

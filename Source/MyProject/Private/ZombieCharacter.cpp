@@ -6,6 +6,8 @@
 #include "HeadGibActor.h"
 #include "LimbGibActor.h"
 #include "LootBagPickup.h"
+#include "HealthPickup.h"
+#include "AmmoPickup.h"
 #include "BuildableStructure.h"
 #include "ShooterCharacter.h"
 #include "WeaponBase.h"
@@ -708,6 +710,13 @@ void AZombieCharacter::Die(bool bHeadshot,FName HitBone,const FVector& ShotDirec
 		Parameters.SpawnCollisionHandlingOverride=ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
 		const FVector DropLocation=GetActorLocation()+FVector(0.f,0.f,45.f);
 		GetWorld()->SpawnActor<ALootBagPickup>(ALootBagPickup::StaticClass(),DropLocation,FRotator::ZeroRotator,Parameters);
+	}
+	if(HasAuthority()&&GetWorld())
+	{
+		FActorSpawnParameters DropParameters;DropParameters.SpawnCollisionHandlingOverride=ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
+		const FVector DropLocation=GetActorLocation()+FVector(0.f,0.f,45.f);
+		if(FMath::FRand()<=.04f)if(AHealthPickup* Drop=GetWorld()->SpawnActor<AHealthPickup>(AHealthPickup::StaticClass(),DropLocation,FRotator::ZeroRotator,DropParameters))Drop->Tags.AddUnique(TEXT("ZombieDrop"));
+		if(FMath::FRand()<=.14f)if(AAmmoPickup* Drop=GetWorld()->SpawnActor<AAmmoPickup>(AAmmoPickup::StaticClass(),DropLocation+FVector(25.f,0.f,0.f),FRotator::ZeroRotator,DropParameters))Drop->Tags.AddUnique(TEXT("ZombieDrop"));
 	}
 	SetLifeSpan(20.f);
 }
