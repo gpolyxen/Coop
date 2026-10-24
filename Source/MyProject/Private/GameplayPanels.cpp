@@ -166,7 +166,9 @@ void UInventoryWidget::Refresh()
 	for(int32 SlotIndex=0;SlotIndex<DisplaySlotCount;++SlotIndex)
 	{
 		const FName Item=Inventory->Items.IsValidIndex(SlotIndex)?Inventory->Items[SlotIndex].ItemId:NAME_None;int32 Quantity=Inventory->Items.IsValidIndex(SlotIndex)?Inventory->Items[SlotIndex].Quantity:0;if(int32* Pending=Reserved.Find(Item)){const int32 Taken=FMath::Min(Quantity,*Pending);Quantity-=Taken;*Pending-=Taken;}
-		UInventoryItemSlotWidget* Cell=CreateWidget<UInventoryItemSlotWidget>(GetOwningPlayer(),UInventoryItemSlotWidget::StaticClass());Cell->Setup(Item,Quantity,SlotIndex);InventoryGrid->AddChildToUniformGrid(Cell,SlotIndex/8,SlotIndex%8);
+		UInventoryItemSlotWidget* Cell=CreateWidget<UInventoryItemSlotWidget>(GetOwningPlayer(),UInventoryItemSlotWidget::StaticClass());Cell->Setup(Item,Quantity,SlotIndex);
+		if(SlotIndex>=Inventory->MaxSlots){Cell->SetRenderOpacity(.24f);Cell->SetVisibility(ESlateVisibility::HitTestInvisible);}
+		InventoryGrid->AddChildToUniformGrid(Cell,SlotIndex/8,SlotIndex%8);
 	}
 	int32 Medicine=0,Bandage=0,Wood=0;for(int32 Index=0;Index<CraftIngredients.Num();++Index){const int32 Q=CraftQuantities.IsValidIndex(Index)?CraftQuantities[Index]:0;if(CraftIngredients[Index]==TEXT("Medicine"))Medicine+=Q;else if(CraftIngredients[Index]==TEXT("Bandage"))Bandage+=Q;else if(CraftIngredients[Index]==TEXT("Wood"))Wood+=Q;}
 	const bool bMedkitRecipe=Medicine>=1&&Bandage>=2,bStickRecipe=Wood>=1;if(RecipeList){RecipeList->ClearChildren();FString Recipes;if(bMedkitRecipe)Recipes+=TEXT("АПТЕЧКА — 1 медикамент + 2 бинта");if(bStickRecipe){if(!Recipes.IsEmpty())Recipes+=TEXT("\n");Recipes+=FString::Printf(TEXT("%d дерева → %d палок  [ENTER]"),Wood,Wood*4);}RecipeList->AddChildToVerticalBox(MakeText(WidgetTree,FText::FromString(Recipes.IsEmpty()?TEXT("ДОСТУПНЫХ РЕЦЕПТОВ НЕТ"):FString(TEXT("ДОСТУПНО:\n"))+Recipes),15,Recipes.IsEmpty()?FLinearColor(.55f,.55f,.55f):FLinearColor(.35f,1.f,.45f)));}

@@ -763,7 +763,8 @@ void AShooterCharacter::Reload()
 	if(!EquippedWeapon)return;
 	const bool bCanStartReload=!EquippedWeapon->bIsReloading
 		&&EquippedWeapon->AmmoInMagazine<EquippedWeapon->Stats.MagazineSize
-		&&EquippedWeapon->ReserveAmmo>0;
+		&&(EquippedWeapon->ReserveAmmo>0
+			||Inventory&&Inventory->GetQuantity(EquippedWeapon->AmmoType)>0);
 	EquippedWeapon->Reload();
 	if(bCanStartReload)PlayDedicatedFirstPersonRigAction(EquippedWeapon->FirstPersonRigReloadAnimation);
 }

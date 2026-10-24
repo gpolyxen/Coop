@@ -15,6 +15,7 @@
 #include "Animation/Skeleton.h"
 #include "BuildableStructure.h"
 #include "ShooterCharacter.h"
+#include "InventoryComponent.h"
 #include "ZombieCharacter.h"
 #include "Camera/CameraComponent.h"
 #include "ZombieAIController.h"
@@ -22,7 +23,20 @@
 #include "UObject/ConstructorHelpers.h"
 
 AWeaponBase::AWeaponBase(){PrimaryActorTick.bCanEverTick=true;bReplicates=true;SetReplicateMovement(true);Mesh=CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("WorldWeaponMesh"));RootComponent=Mesh;Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);Mesh->SetOwnerNoSee(false);FirstPersonMesh=CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("FirstPersonWeaponMesh"));FirstPersonMesh->SetupAttachment(RootComponent);FirstPersonMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);FirstPersonMesh->SetVisibility(false,true);FirstPersonMesh->SetHiddenInGame(true);FirstPersonMesh->CastShadow=false;ProjectileClass=ABallisticProjectile::StaticClass();static ConstructorHelpers::FObjectFinder<UAnimMontage>HipFire(TEXT("/Game/ThirdPersonBP/Player_0/Anim/Montages/Fire_Rifle_Hip_Montage.Fire_Rifle_Hip_Montage"));if(HipFire.Succeeded())CharacterFireMontage=HipFire.Object;static ConstructorHelpers::FObjectFinder<UAnimMontage>AimFire(TEXT("/Game/ThirdPersonBP/Player_0/Anim/Montages/Fire_Rifle_ironsights_Montage.Fire_Rifle_ironsights_Montage"));if(AimFire.Succeeded())CharacterAimFireMontage=AimFire.Object;AmmoInMagazine=Stats.MagazineSize;ReserveAmmo=90;}
-void AWeaponBase::Tick(float D){Super::Tick(D);}
+void AWeaponBase::Tick(float D)
+{
+	Super::Tick(D);
+	if(!HasAuthority()||bMeleeWeapon||AmmoType.IsNone()||ReserveAmmo>=MaxReserveAmmo)return;
+	AShooterCharacter* Shooter=Cast<AShooterCharacter>(GetOwner());
+	if(!Shooter||Shooter->EquippedWeapon!=this||!Shooter->Inventory)return;
+	const int32 Available=Shooter->Inventory->GetQuantity(AmmoType);
+	const int32 Transfer=FMath::Min(Available,FMath::Max(0,MaxReserveAmmo-ReserveAmmo));
+	if(Transfer>0&&Shooter->Inventory->RemoveItem(AmmoType,Transfer))
+	{
+		ReserveAmmo+=Transfer;
+		ForceNetUpdate();
+	}
+}
 FVector AWeaponBase::GetMuzzleLocation()const{static const FName MuzzleBone(TEXT("b_gun_muzzleflash"));return Mesh->DoesSocketExist(MuzzleBone)?Mesh->GetSocketLocation(MuzzleBone):Mesh->GetComponentLocation()+GetActorForwardVector()*100.f;}
 bool AWeaponBase::CanFire()const
 {
@@ -235,7 +249,7 @@ void AWeaponBase::MulticastMeleeEffects_Implementation(int32 AttackIndex)
 	}
 	else UE_LOG(LogTemp,Error,TEXT("Melee animation rejected: %s has no AnimInstance"),*GetNameSafe(Character));
 }
-void AWeaponBase::Reload(){if(HasAuthority())ServerReload_Implementation();else ServerReload();}bool AWeaponBase::ServerReload_Validate(){return true;}void AWeaponBase::ServerReload_Implementation(){if(bIsReloading||AmmoInMagazine>=Stats.MagazineSize||ReserveAmmo<=0)return;bIsReloading=true;const AShooterCharacter* Shooter=Cast<AShooterCharacter>(GetOwner());const float ReloadMultiplier=Shooter?Shooter->GetReloadTimeMultiplier():1.f;GetWorldTimerManager().SetTimer(ReloadTimer,this,&AWeaponBase::FinishReload,FMath::Max(.1f,Stats.ReloadSeconds*ReloadMultiplier),false);}
+void AWeaponBase::Reload(){if(HasAuthority())ServerReload_Implementation();else ServerReload();}bool AWeaponBase::ServerReload_Validate(){return true;}void AWeaponBase::ServerReload_Implementation(){if(bIsReloading||AmmoInMagazine>=Stats.MagazineSize)return;AShooterCharacter* Shooter=Cast<AShooterCharacter>(GetOwner());const int32 NeededRounds=FMath::Max(0,Stats.MagazineSize-AmmoInMagazine);if(Shooter&&Shooter->Inventory&&!AmmoType.IsNone()){const int32 MissingFromReserve=FMath::Max(0,NeededRounds-ReserveAmmo);const int32 AvailableInInventory=Shooter->Inventory->GetQuantity(AmmoType);const int32 Transfer=FMath::Min3(MissingFromReserve,AvailableInInventory,FMath::Max(0,MaxReserveAmmo-ReserveAmmo));if(Transfer>0&&Shooter->Inventory->RemoveItem(AmmoType,Transfer))ReserveAmmo+=Transfer;}if(ReserveAmmo<=0)return;bIsReloading=true;const float ReloadMultiplier=Shooter?Shooter->GetReloadTimeMultiplier():1.f;GetWorldTimerManager().SetTimer(ReloadTimer,this,&AWeaponBase::FinishReload,FMath::Max(.1f,Stats.ReloadSeconds*ReloadMultiplier),false);}
 void AWeaponBase::FinishReload(){if(!HasAuthority())return;const int32 Need=Stats.MagazineSize-AmmoInMagazine,Take=FMath::Min(Need,ReserveAmmo);AmmoInMagazine+=Take;ReserveAmmo-=Take;bIsReloading=false;}
 int32 AWeaponBase::AddReserveAmmo(int32 Amount){if(!HasAuthority()||Amount<=0)return 0;const int32 Accepted=FMath::Min(Amount,FMath::Max(0,MaxReserveAmmo-ReserveAmmo));ReserveAmmo+=Accepted;return Accepted;}
 void AWeaponBase::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps)const{Super::GetLifetimeReplicatedProps(OutLifetimeProps);DOREPLIFETIME(AWeaponBase,AmmoInMagazine);DOREPLIFETIME(AWeaponBase,ReserveAmmo);DOREPLIFETIME(AWeaponBase,bIsReloading);}

@@ -7,7 +7,7 @@
 
 AStarterRifle::AStarterRifle()
 {
-	WeaponName=TEXT("AR4");
+	WeaponName=TEXT("M4A1");
 	AmmoType=TEXT("M4A1Ammo");
 	AimCameraOffset=FVector(0.f,-8.f,0.f);WeaponAimFOV=72.f;
 	FirstPersonCameraRotation=FRotator::ZeroRotator;
@@ -20,5 +20,5 @@ AStarterRifle::AStarterRifle()
 	static ConstructorHelpers::FObjectFinder<USoundBase>Shot(TEXT("/Game/FirstPerson/Audio/FirstPersonTemplateWeaponFire02.FirstPersonTemplateWeaponFire02"));if(Shot.Succeeded())FireSound=Shot.Object;
 	static ConstructorHelpers::FObjectFinder<UAnimMontage>FireMontage(TEXT("/Game/ThirdPersonBP/Player_0/Anim/Montages/Fire_Rifle_Hip_Montage.Fire_Rifle_Hip_Montage"));if(FireMontage.Succeeded())CharacterFireMontage=FireMontage.Object;
 	Stats.Damage=34.f;Stats.HeadshotDamageMultiplier=3.f;Stats.LimbDamageMultiplier=.55f;Stats.MagazineSize=30;Stats.RoundsPerMinute=650.f;Stats.ReloadSeconds=2.25f;Stats.MuzzleVelocity=85000.f;Stats.SpreadDegrees=.35f;Stats.DragCoefficient=.2f;Stats.WindInfluence=.9f;Stats.GravityScale=1.f;Stats.ProjectileLifeSeconds=14.f;
-	AmmoInMagazine=Stats.MagazineSize;ReserveAmmo=90;MaxReserveAmmo=120;
+	AmmoInMagazine=Stats.MagazineSize;ReserveAmmo=90;MaxReserveAmmo=90;
 }

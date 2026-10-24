@@ -57,7 +57,7 @@ bool UInventoryComponent::RemoveItem(FName Id,int32 Quantity){if(!GetOwner()->Ha
 bool UInventoryComponent::UpgradeCapacity(int32 NewMaxSlots)
 {
 	if(!GetOwner()->HasAuthority()||NewMaxSlots<=MaxSlots)return false;
-	MaxSlots=FMath::Clamp(NewMaxSlots,6,20);
+	MaxSlots=FMath::Clamp(NewMaxSlots,6,64);
 	MaxWeight=FMath::Max(MaxWeight,MaxSlots*100.f);
 	OnInventoryChanged.Broadcast();
 	return true;

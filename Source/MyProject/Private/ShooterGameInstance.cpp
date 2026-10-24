@@ -299,7 +299,8 @@ bool UShooterGameInstance::ApplyPendingSave(AShooterCharacter* Character)
 	if(Character->Health)Character->Health->Health=FMath::Clamp(PendingSave->Health,1.f,Character->Health->MaxHealth);
 	if(Character->Inventory)
 	{
-		Character->Inventory->MaxSlots=FMath::Clamp(PendingSave->InventoryMaxSlots,6,20);
+		const int32 SavedSlots=PendingSave->InventoryMaxSlots;
+		Character->Inventory->MaxSlots=SavedSlots<=6?6:(SavedSlots<=20?20:(SavedSlots<=38?38:64));
 		Character->Inventory->MaxWeight=FMath::Max3(600.f,Character->Inventory->MaxSlots*100.f,PendingSave->InventoryMaxWeight);
 		Character->Inventory->OverrideMaxStack=100;
 		Character->Inventory->bAllowMultipleStacks=true;

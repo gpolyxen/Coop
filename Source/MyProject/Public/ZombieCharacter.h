@@ -58,6 +58,7 @@ public:
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation") UAnimSequence* IdleAnimation;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation") UAnimSequence* WalkAnimation;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation") UAnimSequence* AttackAnimation;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation") UAnimSequence* AttackAnimation2;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation") UAnimSequence* CrawlAnimation;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation") UAnimSequence* RunAnimation;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation") UAnimSequence* WakeAnimation;
@@ -66,6 +67,10 @@ public:
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation") UAnimSequence* TurnAnimation;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation") UAnimSequence* BiteAnimation;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation") UAnimSequence* KickAnimation;
+	/** One-shot transition played before crawl locomotion after the first leg is severed. */
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation|Dismemberment") UAnimSequence* LegBreakFallAnimation;
+	/** Reaction played when the victim successfully pushes the zombie away from a bite. */
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation|Bite") UAnimSequence* BiteEscapeReactionAnimation;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation") float WalkAnimationPlayRate=1.35f;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation") float StartWalkingSpeed=28.f;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation") float StopWalkingSpeed=8.f;
@@ -101,6 +106,7 @@ public:
 	UPROPERTY(Replicated,VisibleAnywhere,BlueprintReadOnly,Category="Damage") int32 LimbHits=0;
 	UPROPERTY(Replicated,VisibleAnywhere,BlueprintReadOnly,Category="Damage") float LethalProgress=0.f;
 	UPROPERTY(ReplicatedUsing=OnRep_SeveredLimbs,VisibleAnywhere,BlueprintReadOnly,Category="Damage|Dismemberment") uint8 SeveredLimbs=0;
+	UPROPERTY(ReplicatedUsing=OnRep_LegBreakFalling,VisibleAnywhere,BlueprintReadOnly,Category="Damage|Dismemberment") bool bLegBreakFalling=false;
 	UFUNCTION(BlueprintPure,Category="Damage|Dismemberment") bool IsCrawling()const{return (SeveredLimbs&12)!=0;}
 
 protected:
@@ -111,6 +117,7 @@ private:
 	double LastAttackTime=-1000.;
 	UPROPERTY(Replicated) bool bIsDead=false;
 	UPROPERTY(ReplicatedUsing=OnRep_AttackMode) EZombieAttackMode AttackMode=EZombieAttackMode::None;
+	UPROPERTY(Replicated) uint8 AttackVariantIndex=0;
 	UPROPERTY(ReplicatedUsing=OnRep_Dormant) bool bDormant=false;
 	UPROPERTY(Transient) UAnimationAsset* CurrentAnimation=nullptr;
 	UPROPERTY() UMaterialInterface* VisualVariantBodyMaterial=nullptr;
@@ -129,6 +136,7 @@ private:
 	FTimerHandle BiteDamageTimer;
 	FTimerHandle HitReactionTimer;
 	FTimerHandle WakeTimer;
+	FTimerHandle LegBreakFallTimer;
 	TWeakObjectPtr<AActor> BiteVictim;
 	double BiteStartTime=-1000.;
 	int32 BiteEscapePresses=0;
@@ -143,6 +151,8 @@ private:
 	FName ResolveLimbRootBone(int32 LimbIndex)const;
 	void SeverLimb(int32 LimbIndex,FName HitBone,const FVector& ShotDirection,const FVector& HitLocation);
 	void ApplySeveredLimbState();
+	void BeginLegBreakFall();
+	void FinishLegBreakFall();
 	FName ResolveHeadBone(FName PreferredBone)const;
 	void UpdateLocomotionAnimation();
 	void ApplyVisualVariant();
@@ -155,6 +165,7 @@ private:
 	void ApplyBiteDamage();
 	void BeginBite(AActor* Victim);
 	void EndBite();
+	void FinishBiteEscape();
 	void BeginHitReaction();
 	void FinishHitReaction();
 	void FinishWakeUp();
@@ -163,8 +174,10 @@ private:
 	UFUNCTION() void OnRep_AttackMode();
 	UFUNCTION() void OnRep_Dormant();
 	UFUNCTION() void OnRep_SeveredLimbs();
+	UFUNCTION() void OnRep_LegBreakFalling();
 	UFUNCTION(NetMulticast,Unreliable) void MulticastBloodImpact(FVector_NetQuantize HitLocation,FVector_NetQuantizeNormal ShotDirection,bool bFountain);
 	UFUNCTION(NetMulticast,Unreliable) void MulticastHitReaction(uint8 ReactionIndex);
+	UFUNCTION(NetMulticast,Reliable) void MulticastBiteEscapeReaction();
 	UFUNCTION(NetMulticast,Reliable) void MulticastSeverLimb(uint8 LimbBit,FName RootBone,FVector Impulse,FVector HitLocation);
 	UFUNCTION(NetMulticast,Reliable) void MulticastDie(bool bHeadshot,FName HitBone,FVector Impulse,FVector HitLocation);
 	int32 LimbZoneHits[4]={0,0,0,0};

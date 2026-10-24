@@ -190,16 +190,17 @@ void AShooterGameMode::BeginPlay()
 	for(TActorIterator<ABackpackPickup> It(GetWorld());It;++It){bHasBackpack=true;break;}
 	if(!bHasBackpack)
 	{
-		for(int32 Index=0;Index<2;++Index)
+		const int32 BackpackCapacities[3]={20,38,64};
+		for(int32 Index=0;Index<3;++Index)
 		{
-			FVector BackpackLocation=Start->GetActorLocation()+Start->GetActorForwardVector()*520.f+Start->GetActorRightVector()*(Index==0?-260.f:260.f);
+			FVector BackpackLocation=Start->GetActorLocation()+Start->GetActorForwardVector()*520.f+Start->GetActorRightVector()*(Index-1)*260.f;
 			FHitResult GroundHit;
 			if(GetWorld()->LineTraceSingleByChannel(GroundHit,BackpackLocation+FVector(0.f,0.f,1500.f),BackpackLocation-FVector(0.f,0.f,2500.f),ECC_WorldStatic))
 				BackpackLocation.Z=GroundHit.ImpactPoint.Z+60.f;
 			FActorSpawnParameters Parameters;Parameters.SpawnCollisionHandlingOverride=ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
 			if(ABackpackPickup* Backpack=GetWorld()->SpawnActor<ABackpackPickup>(ABackpackPickup::StaticClass(),BackpackLocation,Start->GetActorRotation(),Parameters))
 			{
-				Backpack->ConfigureCapacity(Index==0?12:20);
+				Backpack->ConfigureCapacity(BackpackCapacities[Index]);
 				UE_LOG(LogTemp,Display,TEXT("Spawned test backpack with %d slots at %s"),Backpack->Capacity,*BackpackLocation.ToCompactString());
 			}
 		}

@@ -107,12 +107,9 @@ bool ALootBagPickup::TryPickup(APawn* Pawn)
 	const int32 AddedMedicine=Take(TEXT("Medicine"),RemainingMedicine),AddedBandages=Take(TEXT("Bandage"),RemainingBandages);
 	const int32 AddedLeather=Take(TEXT("Leather"),RemainingLeather),AddedCloth=Take(TEXT("Cloth"),RemainingCloth),AddedGasoline=Take(TEXT("Gasoline"),RemainingGasoline);
 	const int32 AddedMedkits=Take(TEXT("Medkit"),RemainingMedkits);
-	int32 AddedAKAmmo=0;
-	if(AShooterCharacter* Shooter=Cast<AShooterCharacter>(Pawn))
-	{
-		AddedAKAmmo=Shooter->AddAmmunition(TEXT("AK74Ammo"),RemainingAKAmmo);
-		RemainingAKAmmo-=AddedAKAmmo;
-	}
+	// Keep dropped rounds as inventory loot. The equipped matching weapon pulls
+	// them into its reserve only when that reserve actually has free capacity.
+	const int32 AddedAKAmmo=Take(TEXT("AK74Ammo"),RemainingAKAmmo);
 	const int32 TotalAdded=AddedWood+AddedRope+AddedMedicine+AddedBandages+AddedLeather+AddedCloth+AddedGasoline+AddedMedkits+AddedAKAmmo;
 	if(AShooterCharacter* Shooter=Cast<AShooterCharacter>(Pawn))
 	{

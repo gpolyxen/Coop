@@ -3,9 +3,11 @@
 #include "InventoryComponent.h"
 #include "ShooterCharacter.h"
 #include "Components/PointLightComponent.h"
+#include "Components/BoxComponent.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/TextRenderComponent.h"
+#include "Engine/StaticMesh.h"
 #include "Materials/MaterialInterface.h"
 #include "Net/UnrealNetwork.h"
 #include "UObject/ConstructorHelpers.h"
@@ -13,10 +15,24 @@
 ABackpackPickup::ABackpackPickup()
 {
 	ItemId=TEXT("Backpack");
+	PhysicsBox=CreateDefaultSubobject<UBoxComponent>(TEXT("BackpackPhysicsBox"));
+	PhysicsBox->SetBoxExtent(FVector(28.f,18.f,37.5f));
+	PhysicsBox->SetCollisionProfileName(TEXT("PhysicsActor"));
+	PhysicsBox->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+	PhysicsBox->SetSimulatePhysics(true);
+	PhysicsBox->SetEnableGravity(true);
+	PhysicsBox->SetLinearDamping(2.f);
+	PhysicsBox->SetAngularDamping(4.f);
+	RootComponent=PhysicsBox;
+	Mesh->SetupAttachment(PhysicsBox);
+	Mesh->SetSimulatePhysics(false);
+	Mesh->SetEnableGravity(false);
+	Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	InteractionRange->SetSphereRadius(230.f);
 	Mesh->SetLinearDamping(2.f);
 	Mesh->SetAngularDamping(4.f);
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> Cube(TEXT("/Game/StarterContent/Shapes/Shape_Cube.Shape_Cube"));
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> SmallBag(TEXT("/Game/ThirdPersonBP/Items/Small_Bag/small_bag.small_bag"));
 	static ConstructorHelpers::FObjectFinder<UMaterialInterface> BodyMaterial(TEXT("/Game/StarterContent/Materials/M_Wood_Walnut.M_Wood_Walnut"));
 	static ConstructorHelpers::FObjectFinder<UMaterialInterface> StrapMaterial(TEXT("/Game/StarterContent/Materials/M_Metal_Burnished_Steel.M_Metal_Burnished_Steel"));
 	if(Cube.Succeeded())Mesh->SetStaticMesh(Cube.Object);
@@ -37,6 +53,14 @@ ABackpackPickup::ABackpackPickup()
 	TopPocket=CreatePart(TEXT("TopPocket"),FVector(0.f,-48.f,28.f),FVector(.78f,.3f,.22f));
 	LeftStrap=CreatePart(TEXT("LeftStrap"),FVector(0.f,72.f,0.f),FVector(.18f,.08f,.9f));
 	RightStrap=CreatePart(TEXT("RightStrap"),FVector(0.f,-72.f,0.f),FVector(.18f,.08f,.9f));
+	if(SmallBag.Succeeded())
+	{
+		Mesh->SetStaticMesh(SmallBag.Object);
+		// The authored mesh already contains its pockets and straps.
+		TopPocket->SetVisibility(false,true);
+		LeftStrap->SetVisibility(false,true);
+		RightStrap->SetVisibility(false,true);
+	}
 
 	MarkerLight=CreateDefaultSubobject<UPointLightComponent>(TEXT("BackpackMarkerLight"));
 	MarkerLight->SetupAttachment(RootComponent);
@@ -52,14 +76,40 @@ ABackpackPickup::ABackpackPickup()
 	RefreshAppearance();
 }
 
-void ABackpackPickup::ConfigureCapacity(int32 InCapacity){Capacity=InCapacity>=20?20:12;RefreshAppearance();}
+void ABackpackPickup::ConfigureCapacity(int32 InCapacity)
+{
+	Capacity=InCapacity<=20?20:(InCapacity<=38?38:64);
+	RefreshAppearance();
+}
 void ABackpackPickup::OnRep_Capacity(){RefreshAppearance();}
 void ABackpackPickup::RefreshAppearance()
 {
-	const bool bExpedition=Capacity>=20;
-	if(MarkerLight){MarkerLight->SetLightColor(bExpedition?FLinearColor(.1f,.5f,1.f):FLinearColor(.15f,1.f,.35f));MarkerLight->SetIntensity(3200.f);}
-	if(MarkerText){MarkerText->SetText(FText::FromString(bExpedition?TEXT("EXPEDITION PACK 20"):TEXT("BACKPACK 12")));MarkerText->SetTextRenderColor(bExpedition?FColor(50,160,255):FColor(60,255,100));}
-	if(Mesh)Mesh->SetRelativeScale3D(bExpedition?FVector(.4f,.18f,.5f):FVector(.32f,.14f,.42f));
+	const bool bLarge=Capacity>=64;
+	const bool bMedium=Capacity>=38&&!bLarge;
+	const FLinearColor Color=bLarge?FLinearColor(.65f,.2f,1.f):(bMedium?FLinearColor(.1f,.5f,1.f):FLinearColor(.15f,1.f,.35f));
+	if(MarkerLight){MarkerLight->SetLightColor(Color);MarkerLight->SetIntensity(3200.f);}
+	if(MarkerText)
+	{
+		const FString Name=bLarge?TEXT("БОЛЬШОЙ РЮКЗАК — 64"):(bMedium?TEXT("СРЕДНИЙ РЮКЗАК — 38"):TEXT("МАЛЫЙ РЮКЗАК — 20"));
+		MarkerText->SetText(FText::FromString(Name));MarkerText->SetTextRenderColor(Color.ToFColor(true));
+	}
+	if(Mesh)
+	{
+		UStaticMesh* StaticMesh=Mesh->GetStaticMesh();
+		if(StaticMesh&&StaticMesh->GetName()==TEXT("small_bag"))
+		{
+			const float SourceHeight=FMath::Max(1.f,StaticMesh->GetBoundingBox().GetSize().Z);
+			const float DesiredHeight=bLarge?105.f:(bMedium?90.f:75.f);
+			const float UniformScale=FMath::Clamp(DesiredHeight/SourceHeight,.001f,10.f);
+			Mesh->SetRelativeScale3D(FVector(UniformScale));
+			const FBox Bounds=StaticMesh->GetBoundingBox();
+			const FVector ScaledSize=Bounds.GetSize()*UniformScale;
+			const FVector HalfExtent(FMath::Clamp(ScaledSize.X*.5f,12.f,45.f),FMath::Clamp(ScaledSize.Y*.5f,12.f,45.f),DesiredHeight*.5f);
+			if(PhysicsBox)PhysicsBox->SetBoxExtent(HalfExtent);
+			Mesh->SetRelativeLocation(FVector(0.f,0.f,-HalfExtent.Z-Bounds.Min.Z*UniformScale));
+		}
+		else Mesh->SetRelativeScale3D(bLarge?FVector(.48f,.22f,.58f):(bMedium?FVector(.4f,.18f,.5f):FVector(.32f,.14f,.42f)));
+	}
 }
 
 bool ABackpackPickup::TryPickup(APawn* Pawn)
