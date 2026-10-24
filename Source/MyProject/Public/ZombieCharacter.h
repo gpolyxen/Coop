@@ -15,6 +15,7 @@ enum class EZombieAttackMode : uint8
 {
 	None,
 	HandStrike,
+	Kick,
 	Bite
 };
 
@@ -48,6 +49,10 @@ public:
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Attack") float AttackCooldown=2.25f;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Attack") float AttackHitDelay=.75f;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Attack") float AttackPlayRate=1.25f;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Attack|Kick") float KickChance=.35f;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Attack|Kick") float KickHitDelay=1.05f;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Attack|Kick") float KickPlayRate=1.15f;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Attack|Kick") float KickPushStrength=300.f;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Attack") float AttackFacingThreshold=.2f;
 
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation") UAnimSequence* IdleAnimation;
@@ -57,8 +62,10 @@ public:
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation") UAnimSequence* RunAnimation;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation") UAnimSequence* WakeAnimation;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation") UAnimSequence* HitReactionAnimation;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation") UAnimSequence* HitReactionAnimation2;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation") UAnimSequence* TurnAnimation;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation") UAnimSequence* BiteAnimation;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation") UAnimSequence* KickAnimation;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation") float WalkAnimationPlayRate=1.35f;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation") float StartWalkingSpeed=28.f;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation") float StopWalkingSpeed=8.f;
@@ -142,6 +149,8 @@ private:
 	void UpdateNightEmpowerment();
 	void ApplyNightEmpowerment(bool bEnable);
 	void PlayZombieAnimation(UAnimationAsset* Animation,bool bLooping,float PlayRate);
+	UAnimSequence* GetSelectedAttackAnimation()const;
+	float GetSelectedAttackPlayRate()const;
 	void FinishAttack();
 	void ApplyBiteDamage();
 	void BeginBite(AActor* Victim);
@@ -155,7 +164,7 @@ private:
 	UFUNCTION() void OnRep_Dormant();
 	UFUNCTION() void OnRep_SeveredLimbs();
 	UFUNCTION(NetMulticast,Unreliable) void MulticastBloodImpact(FVector_NetQuantize HitLocation,FVector_NetQuantizeNormal ShotDirection,bool bFountain);
-	UFUNCTION(NetMulticast,Unreliable) void MulticastHitReaction();
+	UFUNCTION(NetMulticast,Unreliable) void MulticastHitReaction(uint8 ReactionIndex);
 	UFUNCTION(NetMulticast,Reliable) void MulticastSeverLimb(uint8 LimbBit,FName RootBone,FVector Impulse,FVector HitLocation);
 	UFUNCTION(NetMulticast,Reliable) void MulticastDie(bool bHeadshot,FName HitBone,FVector Impulse,FVector HitLocation);
 	int32 LimbZoneHits[4]={0,0,0,0};

@@ -16,6 +16,10 @@ DerivedDataCache/
 Binaries/
 Build/
 
+# This is game content, not an Unreal build-output directory.
+!Content/ThirdPersonBP/Build/
+!Content/ThirdPersonBP/Build/**
+
 # Ignore built data
 *.xcodeproj
 *.xcworkspace

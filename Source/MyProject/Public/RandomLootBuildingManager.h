@@ -22,6 +22,6 @@ public:
 private:
 	void Generate();
 	bool FindGround(const FVector& Candidate,FVector& OutGround)const;
-	void SpawnBuilding(const FVector& GroundLocation,float Yaw,int32 BuildingIndex,int32 FloorCount,int32 WidthModules);
+	void SpawnBuilding(const FVector& GroundLocation,float Yaw,int32 BuildingIndex,int32 FloorCount,int32 WidthModules,int32 DepthModules);
 	FTimerHandle GenerationTimer;
 };

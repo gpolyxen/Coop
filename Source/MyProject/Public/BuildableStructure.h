@@ -7,6 +7,8 @@
 class USceneComponent;
 class UInstancedStaticMeshComponent;
 class UStaticMeshComponent;
+class USkeletalMeshComponent;
+class UBoxComponent;
 class UPointLightComponent;
 class UNavLinkComponent;
 
@@ -45,7 +47,8 @@ class MYPROJECT_API AWoodWall : public ABuildableStructure
 {
 	GENERATED_BODY()
 public:AWoodWall();
-	UPROPERTY(VisibleAnywhere)UInstancedStaticMeshComponent* Pieces;
+	UPROPERTY(VisibleAnywhere)UStaticMeshComponent* Visual;
+	UPROPERTY(VisibleAnywhere)UBoxComponent* Collision;
 };
 
 UCLASS()
@@ -53,7 +56,8 @@ class MYPROJECT_API AWoodWindowWall : public ABuildableStructure
 {
 	GENERATED_BODY()
 public:AWoodWindowWall();
-	UPROPERTY(VisibleAnywhere)UInstancedStaticMeshComponent* Pieces;
+	UPROPERTY(VisibleAnywhere)UStaticMeshComponent* Visual;
+	UPROPERTY(VisibleAnywhere)TArray<UBoxComponent*> CollisionPieces;
 };
 
 UCLASS()
@@ -70,6 +74,8 @@ public:AWoodGate();
 	UFUNCTION(BlueprintCallable)bool TryToggle(AActor* User);
 	void SetOpenForLoad(bool bNewOpen);
 	UPROPERTY(ReplicatedUsing=OnRep_Open,VisibleAnywhere,BlueprintReadOnly)bool bOpen=false;
+protected:
+	virtual void ApplyOpenState();
 private:UFUNCTION()void OnRep_Open();
 };
 
@@ -80,6 +86,10 @@ class MYPROJECT_API AWoodDoor : public AWoodGate
 {
 	GENERATED_BODY()
 public:AWoodDoor();
+	virtual void GetSnapPoints(TArray<FVector>& OutPoints)const override;
+	UPROPERTY(VisibleAnywhere)UStaticMeshComponent* DoorVisual;
+	UPROPERTY(VisibleAnywhere)UBoxComponent* DoorCollision;
+protected:virtual void ApplyOpenState()override;
 };
 
 UCLASS()
@@ -87,7 +97,8 @@ class MYPROJECT_API AWoodFloor : public ABuildableStructure
 {
 	GENERATED_BODY()
 public:AWoodFloor();virtual void GetSnapPoints(TArray<FVector>& OutPoints)const override;
-	UPROPERTY(VisibleAnywhere)UInstancedStaticMeshComponent* Pieces;
+	UPROPERTY(VisibleAnywhere)UStaticMeshComponent* Visual;
+	UPROPERTY(VisibleAnywhere)UBoxComponent* Collision;
 protected:virtual bool HasStructuralSupport()const override;
 };
 
@@ -96,11 +107,12 @@ class MYPROJECT_API AWoodStairs : public ABuildableStructure
 {
 	GENERATED_BODY()
 public:AWoodStairs();virtual void GetSnapPoints(TArray<FVector>& OutPoints)const override;
+	UPROPERTY(VisibleAnywhere)UStaticMeshComponent* Visual;
 protected:virtual bool HasStructuralSupport()const override;
 	UPROPERTY(VisibleAnywhere)UInstancedStaticMeshComponent* Pieces;
+	UPROPERTY(VisibleAnywhere)UBoxComponent* WalkableRamp;
 	UPROPERTY(VisibleAnywhere)UNavLinkComponent* NavigationLink;
 };
-
 UCLASS()
 class MYPROJECT_API AWoodPillar : public ABuildableStructure
 {

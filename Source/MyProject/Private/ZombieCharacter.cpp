@@ -462,12 +462,13 @@ void AZombieCharacter::MulticastBloodImpact_Implementation(FVector_NetQuantize H
 		Blood->ActivateBurst(ShotDirection,bFountain);
 }
 
-void AZombieCharacter::MulticastHitReaction_Implementation()
+void AZombieCharacter::MulticastHitReaction_Implementation(uint8 ReactionIndex)
 {
-	if(!HitReactionAnimation||bIsDead||IsAttacking())return;
-	TemporaryAnimationUntil=GetWorld()->GetTimeSeconds()+HitReactionAnimation->GetPlayLength()/1.25f;
+	UAnimSequence* Reaction=ReactionIndex==1&&HitReactionAnimation2?HitReactionAnimation2:HitReactionAnimation;
+	if(!Reaction||bIsDead||IsAttacking())return;
+	TemporaryAnimationUntil=GetWorld()->GetTimeSeconds()+Reaction->GetPlayLength()/1.25f;
 	CurrentAnimation=nullptr;
-	PlayZombieAnimation(HitReactionAnimation,false,1.25f);
+	PlayZombieAnimation(Reaction,false,1.25f);
 }
 
 void AZombieCharacter::BeginHitReaction()
@@ -480,8 +481,10 @@ void AZombieCharacter::BeginHitReaction()
 		Movement->StopMovementImmediately();
 		Movement->DisableMovement();
 	}
-	MulticastHitReaction();
-	const float Duration=HitReactionAnimation->GetPlayLength()/1.25f;
+	const uint8 ReactionIndex=HitReactionAnimation2&&FMath::RandBool()?1:0;
+	UAnimSequence* Reaction=ReactionIndex==1?HitReactionAnimation2:HitReactionAnimation;
+	MulticastHitReaction(ReactionIndex);
+	const float Duration=Reaction->GetPlayLength()/1.25f;
 	GetWorldTimerManager().SetTimer(HitReactionTimer,this,&AZombieCharacter::FinishHitReaction,FMath::Max(.1f,Duration),false);
 }
 
@@ -517,18 +520,19 @@ bool AZombieCharacter::TryAttack(AActor* Target)
 	const bool bCanBite=CharacterTarget&&!Cast<ABuildableStructure>(Target)&&(SeveredLimbs&3)==0;
 	const bool bStationaryPointBlank=bCanBite&&TargetDistance2D<=ImmediateBiteRange
 		&&CharacterTarget->GetVelocity().Size2D()<=StationaryBiteSpeed;
-	AttackMode=bCanBite&&(bStationaryPointBlank||FMath::FRand()<BiteChance)
-		?EZombieAttackMode::Bite:EZombieAttackMode::HandStrike;
+	if(bCanBite&&(bStationaryPointBlank||FMath::FRand()<BiteChance))AttackMode=EZombieAttackMode::Bite;
+	else if(CharacterTarget&&KickAnimation&&FMath::FRand()<KickChance)AttackMode=EZombieAttackMode::Kick;
+	else AttackMode=EZombieAttackMode::HandStrike;
 	GetCharacterMovement()->StopMovementImmediately();
 	OnRep_AttackMode();
 	ForceNetUpdate();
-	const float SelectedHitDelay=AttackMode==EZombieAttackMode::Bite?BiteHitDelay:AttackHitDelay;
+	const float SelectedHitDelay=AttackMode==EZombieAttackMode::Bite?BiteHitDelay:(AttackMode==EZombieAttackMode::Kick?KickHitDelay:AttackHitDelay);
 	GetWorldTimerManager().SetTimer(AttackHitTimer,this,&AZombieCharacter::PerformAttackHit,SelectedHitDelay,false);
 	// A dedicated bite sequence can be assigned on a Blueprint child.  Until one
 	// is available, keep the grapple functional and use the existing close attack
 	// as a visual fallback instead of silently disabling bites.
-	UAnimSequence* SelectedAttack=AttackMode==EZombieAttackMode::Bite&&BiteAnimation?BiteAnimation:AttackAnimation;
-	const float SelectedPlayRate=AttackMode==EZombieAttackMode::Bite?BitePlayRate:AttackPlayRate;
+	UAnimSequence* SelectedAttack=GetSelectedAttackAnimation();
+	const float SelectedPlayRate=GetSelectedAttackPlayRate();
 	const float AnimationDuration=SelectedAttack?SelectedAttack->GetPlayLength()/FMath::Max(.1f,SelectedPlayRate):1.8f;
 	GetWorldTimerManager().SetTimer(AttackFinishTimer,this,&AZombieCharacter::FinishAttack,FMath::Max(SelectedHitDelay+.2f,AnimationDuration),false);
 	return true;
@@ -539,10 +543,21 @@ void AZombieCharacter::OnRep_AttackMode()
 	CurrentAnimation=nullptr;
 	if(AttackMode!=EZombieAttackMode::None)
 	{
-		UAnimSequence* SelectedAttack=AttackMode==EZombieAttackMode::Bite&&BiteAnimation?BiteAnimation:AttackAnimation;
-		PlayZombieAnimation(SelectedAttack,false,AttackMode==EZombieAttackMode::Bite?BitePlayRate:AttackPlayRate);
+		PlayZombieAnimation(GetSelectedAttackAnimation(),false,GetSelectedAttackPlayRate());
 	}
 	else UpdateLocomotionAnimation();
+}
+
+UAnimSequence* AZombieCharacter::GetSelectedAttackAnimation()const
+{
+	if(AttackMode==EZombieAttackMode::Bite&&BiteAnimation)return BiteAnimation;
+	if(AttackMode==EZombieAttackMode::Kick&&KickAnimation)return KickAnimation;
+	return AttackAnimation;
+}
+
+float AZombieCharacter::GetSelectedAttackPlayRate()const
+{
+	return AttackMode==EZombieAttackMode::Bite?BitePlayRate:(AttackMode==EZombieAttackMode::Kick?KickPlayRate:AttackPlayRate);
 }
 
 void AZombieCharacter::PerformAttackHit()
@@ -582,7 +597,11 @@ void AZombieCharacter::PerformAttackHit()
 		const float ArmMultiplier=(SeveredLimbs&3)!=0?.55f:1.f;
 		const float AppliedDamage=TargetHealth->ApplyDamage(AttackDamage*ArmMultiplier,GetController(),this);
 		if(AppliedDamage>0.f)UE_LOG(LogTemp,Display,TEXT("Zombie %s melee hit %s: %.0f damage, %.0f health remaining"),*GetName(),*GetNameSafe(Target),AppliedDamage,TargetHealth->Health);
-		if(ACharacter* HitCharacter=Cast<ACharacter>(Target))HitCharacter->LaunchCharacter(AttackDirection*90.f+FVector(0.f,0.f,35.f),false,false);
+		if(ACharacter* HitCharacter=Cast<ACharacter>(Target))
+		{
+			const bool bKick=AttackMode==EZombieAttackMode::Kick;
+			HitCharacter->LaunchCharacter(AttackDirection*(bKick?KickPushStrength:90.f)+FVector(0.f,0.f,bKick?85.f:35.f),bKick,bKick);
+		}
 	}
 	else if(ABuildableStructure* Structure=Cast<ABuildableStructure>(Target))
 	{

@@ -3,6 +3,7 @@
 #include "BuildableStructure.h"
 #include "LootSuitcasePickup.h"
 #include "ZombieCharacter.h"
+#include "WalkerZombieCharacter.h"
 #include "ZombieAIController.h"
 #include "Engine/World.h"
 #include "NavigationSystem.h"
@@ -24,7 +25,11 @@ bool ARandomLootBuildingManager::FindGround(const FVector& Candidate,FVector& Ou
 	// margin includes a four-module building footprint, not just its centre.
 	const float RiverCenterY=2800.f+FMath::Sin(Candidate.X/5200.f)*520.f;
 	if(FMath::Abs(Candidate.Y-RiverCenterY)<2200.f)return false;
-	FCollisionQueryParams Query(SCENE_QUERY_STAT(RandomBuildingGround),false,this);float MinimumZ=MAX_flt,MaximumZ=-MAX_flt,SumZ=0.f;const FVector2D Samples[]={{0,0},{-600,-600},{-600,600},{600,-600},{600,600}};
+	FCollisionQueryParams Query(SCENE_QUERY_STAT(RandomBuildingGround),false,this);float MinimumZ=MAX_flt,MaximumZ=-MAX_flt,SumZ=0.f;
+	// Sample the corners of the new 7-8 by 6-7 module footprint. The former
+	// 600 cm samples only validated the centre of a large house and allowed its
+	// outer rooms to hang over a slope.
+	const FVector2D Samples[]={{0,0},{-1200,-1050},{-1200,1050},{1200,-1050},{1200,1050}};
 	for(const FVector2D& Offset:Samples){FHitResult Hit;const FVector Point=Candidate+FVector(Offset.X,Offset.Y,0.f);if(!GetWorld()->LineTraceSingleByChannel(Hit,Point+FVector(0,0,3500.f),Point-FVector(0,0,5000.f),ECC_WorldStatic,Query)||Hit.ImpactNormal.Z<.9f)return false;MinimumZ=FMath::Min(MinimumZ,Hit.ImpactPoint.Z);MaximumZ=FMath::Max(MaximumZ,Hit.ImpactPoint.Z);SumZ+=Hit.ImpactPoint.Z;}
 	if(MaximumZ-MinimumZ>55.f)return false;OutGround=FVector(Candidate.X,Candidate.Y,SumZ/UE_ARRAY_COUNT(Samples)+3.f);return true;
 }
@@ -38,21 +43,25 @@ void ARandomLootBuildingManager::Generate()
 	{
 		const float Angle=Random.FRandRange(0.f,2.f*PI),Distance=Random.FRandRange(MinimumGenerationRadius,MaximumGenerationRadius);
 		FVector Ground;if(!FindGround(GenerationCenter+FVector(FMath::Cos(Angle),FMath::Sin(Angle),0.f)*Distance,Ground))continue;
-		bool bTooClose=false;for(const FVector& Center:Centers)if(FVector::DistSquared2D(Center,Ground)<FMath::Square(MinimumBuildingSpacing)){bTooClose=true;break;}
+		// The enlarged houses need room for their full footprint as well as a path
+		// between neighbouring buildings.
+		bool bTooClose=false;const float RequiredSpacing=FMath::Max(MinimumBuildingSpacing,3000.f);
+		for(const FVector& Center:Centers)if(FVector::DistSquared2D(Center,Ground)<FMath::Square(RequiredSpacing)){bTooClose=true;break;}
 		if(bTooClose)continue;
 		const int32 Floors=Random.RandRange(1,FMath::Max(1,MaximumFloors));
 		// Generated houses need enough horizontal space for an actual stairwell and
 		// rooms.  The old two-module footprint made every upper floor one narrow
 		// corridor and left no valid place for another flight of stairs.
-		const int32 Width=Random.FRand()<.6f?4:3;
+		const int32 Width=Random.RandRange(7,8);
+		const int32 Depth=Random.RandRange(6,7);
 		Centers.Add(Ground);
-		SpawnBuilding(Ground,FMath::RoundToFloat(Random.FRandRange(0.f,3.f))*90.f,Spawned++,Floors,Width);
+		SpawnBuilding(Ground,FMath::RoundToFloat(Random.FRandRange(0.f,3.f))*90.f,Spawned++,Floors,Width,Depth);
 	}
 	if(UNavigationSystemV1* Navigation=UNavigationSystemV1::GetCurrent(GetWorld()))Navigation->Build();
 	UE_LOG(LogTemp,Display,TEXT("Generated %d random destructible loot buildings"),Spawned);
 }
 
-void ARandomLootBuildingManager::SpawnBuilding(const FVector& GroundLocation,float Yaw,int32 BuildingIndex,int32 FloorCount,int32 WidthModules)
+void ARandomLootBuildingManager::SpawnBuilding(const FVector& GroundLocation,float Yaw,int32 BuildingIndex,int32 FloorCount,int32 WidthModules,int32 DepthModules)
 {
 	const FRotator BuildingRotation(0.f,Yaw,0.f);const FTransform Basis(BuildingRotation,GroundLocation);
 	FActorSpawnParameters Parameters;Parameters.SpawnCollisionHandlingOverride=ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
@@ -61,36 +70,71 @@ void ARandomLootBuildingManager::SpawnBuilding(const FVector& GroundLocation,flo
 	{
 		return GetWorld()->SpawnActor<ABuildableStructure>(Class,WorldPoint(X,Y,Z),FRotator(0.f,Yaw+LocalYaw,0.f),Parameters);
 	};
-	FloorCount=FMath::Max(1,FloorCount);WidthModules=FMath::Clamp(WidthModules,3,4);
+	auto SpawnDoorPair=[&](float X,float Y,float Z,float LocalYaw)
+	{
+		const FRotator DoorRotation(0.f,Yaw+LocalYaw,0.f);
+		const FVector Along=DoorRotation.RotateVector(FVector::RightVector).GetSafeNormal2D();
+		const FVector Centre=WorldPoint(X,Y,Z);
+		GetWorld()->SpawnActor<ABuildableStructure>(AWoodDoor::StaticClass(),Centre-Along*75.f,DoorRotation,Parameters);
+		FRotator Mirrored=DoorRotation;Mirrored.Yaw+=180.f;
+		GetWorld()->SpawnActor<ABuildableStructure>(AWoodDoor::StaticClass(),Centre+Along*75.f,Mirrored,Parameters);
+	};
+	FloorCount=FMath::Max(1,FloorCount);WidthModules=FMath::Clamp(WidthModules,7,8);DepthModules=FMath::Clamp(DepthModules,6,7);
 	TArray<float> XPositions;for(int32 XIndex=0;XIndex<WidthModules;++XIndex)XPositions.Add((XIndex-(WidthModules-1)*.5f)*300.f);
-	const float EdgeX=WidthModules*150.f;
+	TArray<float> YPositions;for(int32 YIndex=0;YIndex<DepthModules;++YIndex)YPositions.Add((YIndex-(DepthModules-1)*.5f)*300.f);
+	const float EdgeX=WidthModules*150.f,EdgeY=DepthModules*150.f;
 	const bool bRoofAccess=FloorCount>1&&(BuildingIndex%2==0);
-	// Put every flight alongside the front exterior wall. Its side touches the
-	// wall, while the run stays parallel to it, leaving a full floor module before
-	// the first step and keeping the ground-floor entrance completely clear.
-	TArray<FVector2D> StairCells;TArray<float> StairYaws;
-	TArray<float> InnerX;for(float X:XPositions)if(FMath::Abs(X)<=EdgeX-300.f)InnerX.Add(X);if(InnerX.Num()==0)InnerX.Add(0.f);
+	// Each transition chooses its own interior floor cell. A 3x3 clearance zone
+	// around it is later kept free of doors and partitions. Consecutive flights
+	// must also use different, non-overlapping zones, so they cannot form the
+	// unnatural vertical stack seen in the old two-row houses.
+	TArray<FIntPoint> StairCells;TArray<float> StairYaws;
 	FRandomStream StairRandom(7919+BuildingIndex*101+FloorCount*17+WidthModules);
 	for(int32 Level=0;Level<FloorCount;++Level)
 	{
-		const float X=InnerX[StairRandom.RandRange(0,InnerX.Num()-1)];
-		StairCells.Add(FVector2D(X,150.f));StairYaws.Add(StairRandom.FRand()<.5f?-90.f:90.f);
+		TArray<FIntPoint> Candidates;
+		for(int32 XIndex=1;XIndex<WidthModules-1;++XIndex)for(int32 YIndex=2;YIndex<DepthModules-1;++YIndex)
+		{
+			const FIntPoint Candidate(XIndex,YIndex);
+			bool bClear=true;
+			for(const FIntPoint& Existing:StairCells)
+				if(FMath::Abs(Candidate.X-Existing.X)<=2&&FMath::Abs(Candidate.Y-Existing.Y)<=2){bClear=false;break;}
+			if(bClear)Candidates.Add(Candidate);
+		}
+		// A very tall 7x6 building may exhaust fully separated cells. Reuse the
+		// candidate farthest from the previous opening, never the same cell.
+		if(Candidates.Num()==0)
+		{
+			int32 BestDistance=-1;FIntPoint Best(1,2);const FIntPoint Previous=StairCells.Num()?StairCells.Last():FIntPoint(-10,-10);
+			for(int32 XIndex=1;XIndex<WidthModules-1;++XIndex)for(int32 YIndex=2;YIndex<DepthModules-1;++YIndex)
+			{
+				const int32 Distance=FMath::Abs(XIndex-Previous.X)+FMath::Abs(YIndex-Previous.Y);
+				if(Distance>BestDistance){BestDistance=Distance;Best=FIntPoint(XIndex,YIndex);}
+			}
+			Candidates.Add(Best);
+		}
+		StairCells.Add(Candidates[StairRandom.RandRange(0,Candidates.Num()-1)]);
+		StairYaws.Add(StairRandom.RandRange(0,3)*90.f);
 	}
+	auto IsNearStair=[&](int32 Level,int32 XIndex,int32 YIndex,int32 Radius)
+	{
+		for(int32 StairLevel=FMath::Max(0,Level-1);StairLevel<=FMath::Min(Level,StairCells.Num()-1);++StairLevel)
+			if(FMath::Abs(XIndex-StairCells[StairLevel].X)<=Radius&&FMath::Abs(YIndex-StairCells[StairLevel].Y)<=Radius)return true;
+		return false;
+	};
 	// Each level is made from ordinary saved/destructible build pieces. Upper
 	// levels leave a deliberate stairwell tile so both players and AI have a route.
 	for(int32 Level=0;Level<FloorCount;++Level)
 	{
 		const float Z=Level*300.f;
-		for(float X:XPositions)for(float Y:{-150.f,150.f})
+		for(int32 XIndex=0;XIndex<XPositions.Num();++XIndex)for(int32 YIndex=0;YIndex<YPositions.Num();++YIndex)
 		{
-			// A flight occupies both halves of its 3x6 m stairwell.  Keeping the
-			// lower-half ceiling was the invisible obstruction that stopped both
-			// players and AI halfway up the stairs.
-			const FVector2D Incoming=StairCells[FMath::Max(0,Level-1)];
-			const bool bAboveStairwell=Level>0&&FMath::Abs(X-Incoming.X)<=20.f&&FMath::Abs(Y-Incoming.Y)<=20.f;
-			if(!bAboveStairwell)SpawnStructure(AWoodFloor::StaticClass(),X,Y,Z+2.f,0.f);
+			// The outgoing staircase keeps its floor tile underneath it. Only the
+			// matching tile on the storey above becomes the stair opening.
+			const bool bAboveStairwell=Level>0&&XIndex==StairCells[Level-1].X&&YIndex==StairCells[Level-1].Y;
+			if(!bAboveStairwell)SpawnStructure(AWoodFloor::StaticClass(),XPositions[XIndex],YPositions[YIndex],Z+2.f,0.f);
 		}
-		for(float Y:{-150.f,150.f})
+		for(float Y:YPositions)
 		{
 			SpawnStructure((Level+BuildingIndex)%3==0?AWoodWindowWall::StaticClass():AWoodWall::StaticClass(),-EdgeX,Y,Z,0.f);
 			SpawnStructure((Level+BuildingIndex)%2==0?AWoodWindowWall::StaticClass():AWoodWall::StaticClass(),EdgeX,Y,Z,0.f);
@@ -98,35 +142,45 @@ void ARandomLootBuildingManager::SpawnBuilding(const FVector& GroundLocation,flo
 		for(int32 XIndex=0;XIndex<XPositions.Num();++XIndex)
 		{
 			const float X=XPositions[XIndex];
-			SpawnStructure((XIndex+Level)%2?AWoodWindowWall::StaticClass():AWoodWall::StaticClass(),X,300.f,Z,90.f);
+			SpawnStructure((XIndex+Level)%2?AWoodWindowWall::StaticClass():AWoodWall::StaticClass(),X,EdgeY,Z,90.f);
 			// One ordinary human-sized entrance. Doors inherit the gate interaction
 			// contract, so generated and player-built doors save, replicate and can be
 			// opened by the same E interaction without looking like double gates.
-			if(Level>0||XIndex!=WidthModules/2)SpawnStructure((XIndex+Level+1)%3==0?AWoodWindowWall::StaticClass():AWoodWall::StaticClass(),X,-300.f,Z,90.f);
-			else SpawnStructure(AWoodDoor::StaticClass(),X,-300.f,Z,90.f);
+			if(Level>0||XIndex!=WidthModules/2)SpawnStructure((XIndex+Level+1)%3==0?AWoodWindowWall::StaticClass():AWoodWall::StaticClass(),X,-EdgeY,Z,90.f);
+			else SpawnDoorPair(X,-EdgeY,Z,90.f);
 		}
 
 		// Divide every floor into two rooms. The doorway swaps sides on alternating
 		// levels so residents can wait behind a real door without blocking the stair
 		// landing. This also makes the layouts less like empty boxes.
-		const float PartitionX=(XPositions[XPositions.Num()-2]+XPositions.Last())*.5f;
-		const float DoorY=(Level&1)?150.f:-150.f;
-		SpawnStructure(AWoodDoor::StaticClass(),PartitionX,DoorY,Z,0.f);
-		SpawnStructure((Level+BuildingIndex)%2?AWoodWall::StaticClass():AWoodWindowWall::StaticClass(),PartitionX,-DoorY,Z,0.f);
+		const int32 PartitionAfter=WidthModules/2-1;
+		const float PartitionX=(XPositions[PartitionAfter]+XPositions[PartitionAfter+1])*.5f;
+		int32 DoorRow=INDEX_NONE;
+		for(int32 Offset=0;Offset<DepthModules&&DoorRow==INDEX_NONE;++Offset)
+		{
+			const int32 Candidate=(Level&1)?DepthModules-1-Offset:Offset;
+			if(Candidate>0&&Candidate<DepthModules-1&&!IsNearStair(Level,PartitionAfter,Candidate,1)&&!IsNearStair(Level,PartitionAfter+1,Candidate,1))DoorRow=Candidate;
+		}
+		for(int32 YIndex=0;YIndex<DepthModules;++YIndex)
+		{
+			const float Y=YPositions[YIndex];
+			if(YIndex==DoorRow)SpawnDoorPair(PartitionX,Y,Z,0.f);
+			else if(!IsNearStair(Level,PartitionAfter,YIndex,1)&&!IsNearStair(Level,PartitionAfter+1,YIndex,1))
+				SpawnStructure((YIndex+Level+BuildingIndex)%3?AWoodWall::StaticClass():AWoodWindowWall::StaticClass(),PartitionX,Y,Z,0.f);
+		}
 
 		// A flight exists on every transition, including an optional final flight to
 		// the roof. Alternating its direction keeps both landings inside the shared
 		// open shaft and prevents the second flight from terminating in a wall.
 		if(Level<FloorCount-1||(Level==FloorCount-1&&bRoofAccess))
 		{
-			SpawnStructure(AWoodStairs::StaticClass(),StairCells[Level].X,StairCells[Level].Y,Z,StairYaws[Level]);
+			SpawnStructure(AWoodStairs::StaticClass(),XPositions[StairCells[Level].X],YPositions[StairCells[Level].Y],Z,StairYaws[Level]);
 		}
 	}
-	for(float X:XPositions)for(float Y:{-150.f,150.f})
+	for(int32 XIndex=0;XIndex<XPositions.Num();++XIndex)for(int32 YIndex=0;YIndex<YPositions.Num();++YIndex)
 	{
-		const FVector2D RoofIncoming=StairCells[FloorCount-1];
-		const bool bRoofStairwell=bRoofAccess&&FMath::Abs(X-RoofIncoming.X)<=20.f&&FMath::Abs(Y-RoofIncoming.Y)<=20.f;
-		if(!bRoofStairwell)SpawnStructure(AWoodFloor::StaticClass(),X,Y,FloorCount*300.f+2.f,0.f);
+		const bool bRoofStairwell=bRoofAccess&&XIndex==StairCells[FloorCount-1].X&&YIndex==StairCells[FloorCount-1].Y;
+		if(!bRoofStairwell)SpawnStructure(AWoodFloor::StaticClass(),XPositions[XIndex],YPositions[YIndex],FloorCount*300.f+2.f,0.f);
 	}
 	if(ALootSuitcasePickup* Suitcase=GetWorld()->SpawnActor<ALootSuitcasePickup>(ALootSuitcasePickup::StaticClass(),WorldPoint(60.f,30.f,55.f),BuildingRotation,Parameters))
 	{
@@ -145,8 +199,8 @@ void ARandomLootBuildingManager::SpawnBuilding(const FVector& GroundLocation,flo
 		const bool bRightRoom=((Index/FloorCount)&1)!=0;
 		const int32 XSlot=bRightRoom?XPositions.Num()-1:FMath::Min(1,XPositions.Num()-1);
 		const float X=XPositions[XSlot];
-		const float Y=(Index&1)?110.f:-110.f;
-		if(AZombieCharacter* Resident=GetWorld()->SpawnActor<AZombieCharacter>(AZombieCharacter::StaticClass(),WorldPoint(X,Y,Level*300.f+100.f),BuildingRotation,Parameters))
+		const float Y=YPositions[(Index*2+Level)%YPositions.Num()];
+		if(AZombieCharacter* Resident=GetWorld()->SpawnActor<AZombieCharacter>(AWalkerZombieCharacter::StaticClass(),WorldPoint(X,Y,Level*300.f+100.f),BuildingRotation,Parameters))
 		{
 			Resident->SetDormant((Index+BuildingIndex)%3==0);
 			if(!Resident->GetController())Resident->SpawnDefaultController();

@@ -3,6 +3,7 @@
 #include "Components/SceneComponent.h"
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/BoxComponent.h"
 #include "Components/PointLightComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
@@ -15,6 +16,31 @@
 #include "WoodAxeWeapon.h"
 #include "ShooterCharacter.h"
 #include "InventoryComponent.h"
+
+namespace
+{
+	void ConfigureBuildVisual(UStaticMeshComponent* Component,UStaticMesh* Asset,const FVector& TargetSize,const FVector& TargetCenter)
+	{
+		if(!Component||!Asset)return;
+		Component->SetStaticMesh(Asset);
+		const FBoxSphereBounds Bounds=Asset->GetBounds();
+		const FVector SourceSize=Bounds.BoxExtent*2.f;
+		const FVector Scale(
+			TargetSize.X/FMath::Max(SourceSize.X,KINDA_SMALL_NUMBER),
+			TargetSize.Y/FMath::Max(SourceSize.Y,KINDA_SMALL_NUMBER),
+			TargetSize.Z/FMath::Max(SourceSize.Z,KINDA_SMALL_NUMBER));
+		Component->SetRelativeScale3D(Scale);
+		Component->SetRelativeLocation(TargetCenter-Bounds.Origin*Scale);
+		Component->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	}
+
+	UBoxComponent* CreateBuildCollision(AActor* Owner,USceneComponent* Parent,const FName Name,const FVector& Center,const FVector& Extent)
+	{
+		UBoxComponent* Box=Owner->CreateDefaultSubobject<UBoxComponent>(Name);
+		Box->SetupAttachment(Parent);Box->SetRelativeLocation(Center);Box->SetBoxExtent(Extent);
+		Box->SetCollisionProfileName(TEXT("BlockAll"));return Box;
+	}
+}
 
 ABuildableStructure::ABuildableStructure()
 {
@@ -101,32 +127,31 @@ void ABuildableStructure::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& 
 AWoodWall::AWoodWall()
 {
 	MaxStructureHealth=350.f;StructureHealth=350.f;bNeedsFoundationSupport=true;
-	static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeAsset(TEXT("/Game/StarterContent/Shapes/Shape_Cube.Shape_Cube"));
-	static ConstructorHelpers::FObjectFinder<UMaterialInterface> WoodAsset(TEXT("/Game/StarterContent/Materials/M_Wood_Walnut.M_Wood_Walnut"));
-	Pieces=CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("WallPieces"));Pieces->SetupAttachment(SceneRoot);
-	if(CubeAsset.Succeeded())Pieces->SetStaticMesh(CubeAsset.Object);if(WoodAsset.Succeeded())Pieces->SetMaterial(0,WoodAsset.Object);Pieces->SetCollisionProfileName(TEXT("BlockAll"));
-	// Exact 0..300 cm module: no part protrudes through the floor above or hangs
-	// into the room below.
-	for(int32 Row=0;Row<10;++Row)Pieces->AddInstance(FTransform(FRotator::ZeroRotator,FVector(0,0,15.f+Row*30.f),FVector(.22f,3.04f,.30f)));
-	Pieces->AddInstance(FTransform(FRotator::ZeroRotator,FVector(0,-145,150),FVector(.3f,.26f,3.f)));
-	Pieces->AddInstance(FTransform(FRotator::ZeroRotator,FVector(0,145,150),FVector(.3f,.26f,3.f)));
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> WallAsset(TEXT("/Game/ThirdPersonBP/Build/Meshes/Wood_wall/wood_wall.wood_wall"));
+	Visual=CreateDefaultSubobject<UStaticMeshComponent>(TEXT("WallVisual"));Visual->SetupAttachment(SceneRoot);
+	if(WallAsset.Succeeded())ConfigureBuildVisual(Visual,WallAsset.Object,FVector(24.f,300.f,300.f),FVector(0.f,0.f,150.f));
+	Collision=CreateBuildCollision(this,SceneRoot,TEXT("WallCollision"),FVector(0.f,0.f,150.f),FVector(12.f,150.f,150.f));
 }
 
 AWoodWindowWall::AWoodWindowWall()
 {
 	MaxStructureHealth=325.f;StructureHealth=325.f;bNeedsFoundationSupport=true;
-	static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeAsset(TEXT("/Game/StarterContent/Shapes/Shape_Cube.Shape_Cube"));
-	static ConstructorHelpers::FObjectFinder<UMaterialInterface> WoodAsset(TEXT("/Game/StarterContent/Materials/M_Wood_Walnut.M_Wood_Walnut"));
-	Pieces=CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("WindowWallPieces"));Pieces->SetupAttachment(SceneRoot);
-	if(CubeAsset.Succeeded())Pieces->SetStaticMesh(CubeAsset.Object);if(WoodAsset.Succeeded())Pieces->SetMaterial(0,WoodAsset.Object);Pieces->SetCollisionProfileName(TEXT("BlockAll"));
-	// Solid lower and upper bands plus side jambs leave one deliberate opening
-	// (180 x 80 cm) while the rest of the module remains opaque and blocking.
-	Pieces->AddInstance(FTransform(FRotator::ZeroRotator,FVector(0,0,50.f),FVector(.22f,3.04f,1.f)));
-	Pieces->AddInstance(FTransform(FRotator::ZeroRotator,FVector(0,0,250.f),FVector(.22f,3.04f,1.f)));
-	Pieces->AddInstance(FTransform(FRotator::ZeroRotator,FVector(0,-120.f,150.f),FVector(.22f,.60f,1.f)));
-	Pieces->AddInstance(FTransform(FRotator::ZeroRotator,FVector(0,120.f,150.f),FVector(.22f,.60f,1.f)));
-	Pieces->AddInstance(FTransform(FRotator::ZeroRotator,FVector(0,-145.f,150.f),FVector(.30f,.26f,3.f)));
-	Pieces->AddInstance(FTransform(FRotator::ZeroRotator,FVector(0,145.f,150.f),FVector(.30f,.26f,3.f)));
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> WindowAsset(TEXT("/Game/ThirdPersonBP/Build/Meshes/Wall_with_window_01/wall_with_window_00.wall_with_window_00"));
+	Visual=CreateDefaultSubobject<UStaticMeshComponent>(TEXT("WindowWallVisual"));Visual->SetupAttachment(SceneRoot);
+	if(WindowAsset.Succeeded())
+	{
+		// The new mesh was authored lengthwise on X and is thin on Y. Scale it in
+		// its source axes first, then rotate it into the build system's convention:
+		// wall thickness on X, module width on Y.
+		ConfigureBuildVisual(Visual,WindowAsset.Object,FVector(300.f,24.f,300.f),FVector(0.f,0.f,150.f));
+		Visual->SetRelativeRotation(FRotator(0.f,90.f,0.f));
+	}
+	// Four boxes follow the solid bands and jambs. The only non-blocking area is
+	// the authored 180 x 100 cm window opening.
+	CollisionPieces.Add(CreateBuildCollision(this,SceneRoot,TEXT("WindowLowerCollision"),FVector(0.f,0.f,50.f),FVector(12.f,150.f,50.f)));
+	CollisionPieces.Add(CreateBuildCollision(this,SceneRoot,TEXT("WindowUpperCollision"),FVector(0.f,0.f,250.f),FVector(12.f,150.f,50.f)));
+	CollisionPieces.Add(CreateBuildCollision(this,SceneRoot,TEXT("WindowLeftCollision"),FVector(0.f,-120.f,150.f),FVector(12.f,30.f,50.f)));
+	CollisionPieces.Add(CreateBuildCollision(this,SceneRoot,TEXT("WindowRightCollision"),FVector(0.f,120.f,150.f),FVector(12.f,30.f,50.f)));
 }
 
 AWoodGate::AWoodGate()
@@ -162,6 +187,10 @@ bool AWoodGate::TryToggle(AActor* User){if(!HasAuthority()||!User||FVector::Dist
 void AWoodGate::SetOpenForLoad(bool bNewOpen){if(!HasAuthority())return;bOpen=bNewOpen;OnRep_Open();}
 void AWoodGate::OnRep_Open()
 {
+	ApplyOpenState();
+}
+void AWoodGate::ApplyOpenState()
+{
 	if(LeftHinge)LeftHinge->SetRelativeRotation(bOpen?FRotator(0,90,0):FRotator::ZeroRotator);
 	if(RightHinge)RightHinge->SetRelativeRotation(bOpen?FRotator(0,-90,0):FRotator::ZeroRotator);
 	for(UInstancedStaticMeshComponent* Door:{DoorPieces,RightDoorPieces})if(Door)
@@ -174,33 +203,35 @@ void AWoodGate::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetim
 
 AWoodDoor::AWoodDoor()
 {
-	MaxStructureHealth=360.f;StructureHealth=360.f;
-	// Re-author the inherited gate components as a conventional single door.
-	// Keeping AWoodGate as the base means interaction, replication, saving and AI
-	// traversal all work identically without a second incompatible door protocol.
+	MaxStructureHealth=360.f;StructureHealth=360.f;HalfModuleLength=75.f;
+	// Disable the legacy cube-built gate. The imported door is one half-module
+	// (150 cm); two independent actors therefore close one ordinary 300 cm bay.
 	Pieces->ClearInstances();DoorPieces->ClearInstances();RightDoorPieces->ClearInstances();
-	Pieces->SetRelativeLocation(FVector::ZeroVector);
-	LeftHinge->SetRelativeLocation(FVector(0.f,-112.f,0.f));
-	RightHinge->SetRelativeLocation(FVector::ZeroVector);
-	Pieces->AddInstance(FTransform(FRotator::ZeroRotator,FVector(0.f,-140.f,150.f),FVector(.28f,.32f,3.f)));
-	Pieces->AddInstance(FTransform(FRotator::ZeroRotator,FVector(0.f,140.f,150.f),FVector(.28f,.32f,3.f)));
-	Pieces->AddInstance(FTransform(FRotator::ZeroRotator,FVector(0.f,0.f,270.f),FVector(.28f,3.04f,.60f)));
-	// The leaf pivots at its left jamb and closes the 224 cm clear opening. Its
-	// bottom is at the module foundation so there is no crawl-sized gap.
-	DoorPieces->AddInstance(FTransform(FRotator::ZeroRotator,FVector(0.f,112.f,120.f),FVector(.20f,2.24f,2.4f)));
-	DoorPieces->AddInstance(FTransform(FRotator::ZeroRotator,FVector(-4.f,112.f,102.f),FVector(.10f,2.f,.08f)));
-	RightDoorPieces->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	RightDoorPieces->SetVisibility(false,true);
+	for(UInstancedStaticMeshComponent* Legacy:{Pieces,DoorPieces,RightDoorPieces}){Legacy->SetCollisionEnabled(ECollisionEnabled::NoCollision);Legacy->SetVisibility(false,true);}
+	LeftHinge->SetRelativeLocation(FVector(0.f,-75.f,0.f));RightHinge->SetRelativeLocation(FVector::ZeroVector);
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> DoorAsset(TEXT("/Game/ThirdPersonBP/Build/Meshes/Door/wood_door.wood_door"));
+	DoorVisual=CreateDefaultSubobject<UStaticMeshComponent>(TEXT("DoorVisual"));DoorVisual->SetupAttachment(LeftHinge);
+	if(DoorAsset.Succeeded())ConfigureBuildVisual(DoorVisual,DoorAsset.Object,FVector(18.f,150.f,270.f),FVector(0.f,75.f,135.f));
+	DoorCollision=CreateBuildCollision(this,LeftHinge,TEXT("DoorCollision"),FVector(0.f,75.f,135.f),FVector(9.f,75.f,135.f));
+}
+void AWoodDoor::GetSnapPoints(TArray<FVector>& OutPoints)const
+{
+	const FVector Along=GetActorRotation().RotateVector(FVector::RightVector);
+	OutPoints.Add(GetActorLocation()+Along*75.f);OutPoints.Add(GetActorLocation()-Along*75.f);
+}
+void AWoodDoor::ApplyOpenState()
+{
+	AWoodGate::ApplyOpenState();
+	if(DoorCollision){DoorCollision->SetCollisionEnabled(bOpen?ECollisionEnabled::NoCollision:ECollisionEnabled::QueryAndPhysics);UNavigationSystemV1::UpdateComponentInNavOctree(*DoorCollision);}
 }
 
 AWoodFloor::AWoodFloor()
 {
 	MaxStructureHealth=300.f;StructureHealth=300.f;HalfModuleLength=150.f;
-	static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeAsset(TEXT("/Game/StarterContent/Shapes/Shape_Cube.Shape_Cube"));
-	static ConstructorHelpers::FObjectFinder<UMaterialInterface> WoodAsset(TEXT("/Game/StarterContent/Materials/M_Wood_Walnut.M_Wood_Walnut"));
-	Pieces=CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("FloorPieces"));Pieces->SetupAttachment(SceneRoot);
-	if(CubeAsset.Succeeded())Pieces->SetStaticMesh(CubeAsset.Object);if(WoodAsset.Succeeded())Pieces->SetMaterial(0,WoodAsset.Object);Pieces->SetCollisionProfileName(TEXT("BlockAll"));
-	Pieces->AddInstance(FTransform(FRotator::ZeroRotator,FVector(0.f,0.f,6.f),FVector(3.f,3.f,.12f)));
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> FloorAsset(TEXT("/Game/ThirdPersonBP/Build/Meshes/Wood_floor/wood_floor.wood_floor"));
+	Visual=CreateDefaultSubobject<UStaticMeshComponent>(TEXT("FloorVisual"));Visual->SetupAttachment(SceneRoot);
+	if(FloorAsset.Succeeded())ConfigureBuildVisual(Visual,FloorAsset.Object,FVector(300.f,300.f,12.f),FVector(0.f,0.f,6.f));
+	Collision=CreateBuildCollision(this,SceneRoot,TEXT("FloorCollision"),FVector(0.f,0.f,6.f),FVector(150.f,150.f,6.f));
 }
 void AWoodFloor::GetSnapPoints(TArray<FVector>& OutPoints)const
 {
@@ -253,14 +284,32 @@ bool AWoodFloor::HasStructuralSupport()const
 AWoodStairs::AWoodStairs()
 {
 	MaxStructureHealth=400.f;StructureHealth=400.f;HalfModuleLength=150.f;bNeedsFoundationSupport=true;
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> StairAsset(TEXT("/Game/ThirdPersonBP/Build/Meshes/Wood_stairs/wood_stairs-2.wood_stairs-2"));
+	Visual=CreateDefaultSubobject<UStaticMeshComponent>(TEXT("StairVisual"));Visual->SetupAttachment(SceneRoot);
+	// Slightly overlap both landings. Imported handrails extend farther than the
+	// treads, so fitting the complete bounds to exactly 300 cm left the final
+	// tread visibly short of the upper floor.
+	if(StairAsset.Succeeded())ConfigureBuildVisual(Visual,StairAsset.Object,FVector(300.f,318.f,320.f),FVector(0.f,0.f,160.f));
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeAsset(TEXT("/Game/StarterContent/Shapes/Shape_Cube.Shape_Cube"));
 	static ConstructorHelpers::FObjectFinder<UMaterialInterface> WoodAsset(TEXT("/Game/StarterContent/Materials/M_Wood_Walnut.M_Wood_Walnut"));
 	Pieces=CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("StairPieces"));Pieces->SetupAttachment(SceneRoot);
 	if(CubeAsset.Succeeded())Pieces->SetStaticMesh(CubeAsset.Object);if(WoodAsset.Succeeded())Pieces->SetMaterial(0,WoodAsset.Object);Pieces->SetCollisionProfileName(TEXT("BlockAll"));
+	Pieces->SetVisibility(false,true);
+	// These boxes used to be the visible and physical steps. Once the continuous
+	// ramp was added they protruded through it and the capsule still hit every
+	// vertical riser. Keep the instances only as an editor reference, never as
+	// collision.
+	Pieces->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	// Use most of the three-metre module width. The former 180 cm staircase was
 	// technically walkable, but too narrow for several character capsules to
 	// enter reliably from different approach angles.
 	for(int32 Step=0;Step<12;++Step)Pieces->AddInstance(FTransform(FRotator::ZeroRotator,FVector(0.f,-137.5f+Step*25.f,12.5f+Step*25.f),FVector(3.f,.255f,.25f)));
+	// CharacterMovement walks on one continuous surface instead of colliding with
+	// twelve sharp imported risers. A 44-degree incline remains below the default
+	// walkable-floor limit and overlaps both landings by roughly six centimetres.
+	WalkableRamp=CreateBuildCollision(this,SceneRoot,TEXT("StairWalkableRamp"),FVector(0.f,0.f,150.f),FVector(138.f,216.f,8.f));
+	WalkableRamp->SetRelativeRotation(FRotator(0.f,0.f,44.f));
+	WalkableRamp->SetHiddenInGame(true);
 	// A physical hidden ramp blocks the player's capsule.  A navigation link gives
 	// Recast the same bottom-to-top connection without adding collision to stairs.
 	NavigationLink=CreateDefaultSubobject<UNavLinkComponent>(TEXT("StairNavigationLink"));NavigationLink->SetupAttachment(SceneRoot);

@@ -7,6 +7,7 @@
 #include "SpitterZombieCharacter.h"
 #include "ShooterCharacter.h"
 #include "ZombieCharacter.h"
+#include "WalkerZombieCharacter.h"
 #include "BuildableStructure.h"
 #include "BanditCharacter.h"
 #include "NavigationInvokerComponent.h"
@@ -127,7 +128,7 @@ void AZombieSpawnManager::MaintainZombiePopulation()
 		const bool bSpawnBrute=LivingBrutes<MinimumBrutes||FMath::FRand()<BruteChance;
 		const bool bSpawnSpitter=!bSpawnBrute&&(LivingSpitters<MinimumSpitters||FMath::FRand()<SpitterChance);
 		const bool bSpawnRunner=!bSpawnBrute&&!bSpawnSpitter&&(LivingRunners<MinimumRunners||FMath::FRand()<RunnerChance);
-		TSubclassOf<AZombieCharacter> ZombieClass=bSpawnBrute?ABruteZombieCharacter::StaticClass():(bSpawnSpitter?ASpitterZombieCharacter::StaticClass():(bSpawnRunner?ARunnerZombieCharacter::StaticClass():AZombieCharacter::StaticClass()));
+		TSubclassOf<AZombieCharacter> ZombieClass=bSpawnBrute?ABruteZombieCharacter::StaticClass():(bSpawnSpitter?ASpitterZombieCharacter::StaticClass():(bSpawnRunner?ARunnerZombieCharacter::StaticClass():AWalkerZombieCharacter::StaticClass()));
 		// An unalerted spawn must not be aimed at the player.  Random facing lets
 		// sight and hearing decide whether this zombie chases or starts patrolling.
 		const FRotator SpawnRotation(0.f,FMath::FRandRange(-180.f,180.f),0.f);

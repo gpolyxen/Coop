@@ -180,19 +180,37 @@ namespace
 		}
 		if(Piece==EBuildPieceType::WoodWall||Piece==EBuildPieceType::WoodWindowWall||Piece==EBuildPieceType::WoodDoor||Piece==EBuildPieceType::WoodGate)
 		{
+			const float NewHalfLength=Piece==EBuildPieceType::WoodDoor?75.f:150.f;
 			if(Target->IsA<AWoodFloor>())
 			{
-				Out.Add({T+Forward*150.f,Target->GetActorRotation(),Target});Out.Add({T-Forward*150.f,Target->GetActorRotation(),Target});
 				FRotator Across=Target->GetActorRotation();Across.Yaw+=90.f;
-				Out.Add({T+Right*150.f,Across,Target});Out.Add({T-Right*150.f,Across,Target});return;
+				if(Piece==EBuildPieceType::WoodDoor)
+				{
+					// A 300 cm floor edge has two independent 150 cm door slots.
+					for(float Slot:{-75.f,75.f})
+					{
+						Out.Add({T+Forward*150.f+Right*Slot,Target->GetActorRotation(),Target});
+						Out.Add({T-Forward*150.f+Right*Slot,Target->GetActorRotation(),Target});
+						Out.Add({T+Right*150.f+Forward*Slot,Across,Target});
+						Out.Add({T-Right*150.f+Forward*Slot,Across,Target});
+					}
+				}
+				else
+				{
+					Out.Add({T+Forward*150.f,Target->GetActorRotation(),Target});Out.Add({T-Forward*150.f,Target->GetActorRotation(),Target});
+					Out.Add({T+Right*150.f,Across,Target});Out.Add({T-Right*150.f,Across,Target});
+				}
+				return;
 			}
 			if(Target->IsA<AWoodWall>()||Target->IsA<AWoodWindowWall>()||Target->IsA<AWoodGate>())
 			{
 				FRotator R=Target->GetActorRotation();R.Yaw+=QuarterTurns*90.f;const FVector Along=R.RotateVector(FVector::RightVector).GetSafeNormal2D();
-				for(const FVector& End:{T+Right*150.f,T-Right*150.f})for(float Side:{-1.f,1.f})
+				const float TargetHalfLength=Target->HalfModuleLength;
+				if(FMath::Abs(FVector::DotProduct(Right,Along))>.99f)
 				{
-					const FVector Candidate=End+Along*(150.f*Side);if(FVector::Dist2D(Candidate,T)>200.f)Out.Add({Candidate,R,Target});
+					for(float Direction:{-1.f,1.f})Out.Add({T+Right*(Direction*(TargetHalfLength+NewHalfLength)),R,Target});
 				}
+				else for(const FVector& End:{T+Right*TargetHalfLength,T-Right*TargetHalfLength})for(float Side:{-1.f,1.f})Out.Add({End+Along*(NewHalfLength*Side),R,Target});
 			}
 		}
 	}
@@ -878,14 +896,23 @@ void AShooterCharacter::Interact()
 		if(DistanceSq<NearestDownedDistanceSq){NearestDownedDistanceSq=DistanceSq;NearestDowned=*It;}
 	}
 	if(NearestDowned){ServerRevivePlayer(NearestDowned);return;}
-	// An opened leaf no longer occupies the centre of the gate, so a camera trace
-	// can legitimately miss it.  Allow interaction with the nearest gate from
-	// either side to make closing it as easy as opening it.
-	AWoodGate* NearestGate=nullptr;float NearestGateDistanceSq=FMath::Square(InteractionDistance+200.f);
+	// An opened leaf no longer occupies its closed position, so the direct trace
+	// can miss it. Select the door closest to the camera ray rather than the one
+	// closest to the player's capsule. This keeps two neighbouring half-doors
+	// independent: E closes the leaf under the crosshair, not an arbitrary twin.
+	AWoodGate* NearestGate=nullptr;float BestGateAimScore=MAX_flt;
+	const FVector ViewOrigin=Camera->GetComponentLocation();
+	const FVector ViewForward=Camera->GetForwardVector().GetSafeNormal();
 	for(TActorIterator<AWoodGate> It(GetWorld());It;++It)
 	{
-		const float DistanceSq=FVector::DistSquared(GetActorLocation(),It->GetActorLocation());
-		if(DistanceSq<NearestGateDistanceSq){NearestGateDistanceSq=DistanceSq;NearestGate=*It;}
+		const FVector ToGate=It->GetActorLocation()-ViewOrigin;const float Along=FVector::DotProduct(ToGate,ViewForward);
+		if(Along<0.f||Along>InteractionDistance+200.f)continue;
+		const float PerpendicularSq=(ToGate-ViewForward*Along).SizeSquared();
+		if(PerpendicularSq>FMath::Square(115.f))continue;
+		// Perpendicular aim dominates; distance only breaks a tie between doors
+		// that are almost exactly behind one another.
+		const float Score=PerpendicularSq+Along*0.01f;
+		if(Score<BestGateAimScore){BestGateAimScore=Score;NearestGate=*It;}
 	}
 	if(NearestGate){ServerToggleGate(NearestGate);return;}
 	APickupActor* NearestPickup=nullptr;float NearestDistanceSq=FMath::Square(InteractionDistance+75.f);
