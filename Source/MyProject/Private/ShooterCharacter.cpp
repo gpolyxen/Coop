@@ -433,6 +433,19 @@ void AShooterCharacter::Tick(float D)
 			if(Stamina<=0.f&&!HasSkill(EShooterSkill::Marathon))bWantsToSprint=false;
 		}
 		GetCharacterMovement()->MaxWalkSpeed=bWantsToSprint&&(HasSkill(EShooterSkill::Marathon)||Stamina>0.f)?SprintSpeed*(HasSkill(EShooterSkill::Marathon)?1.15f:1.f):WalkSpeed;
+		const float MovementSpeed=GetVelocity().Size2D();
+		if(GetCharacterMovement()->IsMovingOnGround()&&MovementSpeed>90.f)
+		{
+			const bool bLoudSprint=bWantsToSprint&&MovementSpeed>WalkSpeed*.8f;
+			const float NoiseInterval=bLoudSprint?SprintNoiseInterval:WalkingNoiseInterval;
+			if(TrailNow-LastMovementNoiseTime>=NoiseInterval)
+			{
+				const float NoiseRange=bIsCrouched?350.f:(bLoudSprint?SprintNoiseRange:WalkingNoiseRange);
+				const float Loudness=bIsCrouched?.12f:(bLoudSprint?1.f:.45f);
+				UAISense_Hearing::ReportNoiseEvent(GetWorld(),GetActorLocation(),Loudness,this,NoiseRange,bLoudSprint?TEXT("Sprint"):TEXT("Footstep"));
+				LastMovementNoiseTime=TrailNow;
+			}
+		}
 	}
 	else if(!HasAuthority()&&Stamina<=0.f)GetCharacterMovement()->MaxWalkSpeed=WalkSpeed;
 	const bool bWeaponAim=bIsAiming&&EquippedWeapon;

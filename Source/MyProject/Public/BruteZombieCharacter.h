@@ -10,4 +10,7 @@ class MYPROJECT_API ABruteZombieCharacter : public AZombieCharacter
 	GENERATED_BODY()
 public:
 	ABruteZombieCharacter();
+protected:
+	virtual float GetMeleeDamage(const UHealthArmorComponent* TargetHealth)const override;
+	virtual FVector GetMeleeLaunchVelocity(const FVector& AttackDirection,bool bKick)const override;
 };

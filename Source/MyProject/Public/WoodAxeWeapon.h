@@ -3,7 +3,7 @@
 #include "WeaponBase.h"
 #include "WoodAxeWeapon.generated.h"
 
-class UStaticMeshComponent;
+class USkeletalMeshComponent;
 
 UCLASS()
 class MYPROJECT_API AWoodAxeWeapon : public AWeaponBase
@@ -11,5 +11,5 @@ class MYPROJECT_API AWoodAxeWeapon : public AWeaponBase
 	GENERATED_BODY()
 public:
 	AWoodAxeWeapon();
-	UPROPERTY(VisibleAnywhere,BlueprintReadOnly)UStaticMeshComponent* AxeMesh;
+	UPROPERTY(VisibleAnywhere,BlueprintReadOnly)USkeletalMeshComponent* AxeMesh;
 };

@@ -48,7 +48,7 @@ public:
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Open World",meta=(ClampMin="0"))int32 RockCount=10;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Open World",meta=(ClampMin="0"))int32 BushCount=28;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Open World",meta=(ClampMin="0"))int32 GrassCount=180;
-	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Open World",meta=(ClampMin="0"))int32 TreeCount=18;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Open World",meta=(ClampMin="0"))int32 TreeCount=42;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Open World",meta=(ClampMin="250.0"))float GroundVisualCellSize=1000.f;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Open World",meta=(ClampMin="0.0",ClampMax="1.0"))float LakeChance=.22f;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Open World",meta=(ClampMin="0"))int32 HillCount=10;

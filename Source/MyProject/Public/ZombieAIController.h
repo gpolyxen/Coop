@@ -18,6 +18,7 @@ protected:virtual void OnPossess(APawn* InPawn)override;
 	UFUNCTION()void OnTargetPerception(AActor* Actor,FAIStimulus Stimulus);
 	void TryStartPatrol();
 	void TryAcquireVisibleTarget();
+	void AcquireNearestLivingPlayer();
 	void SteerToward(const FVector& Destination);
 	bool TryJumpObstacle(const FVector& Destination);
 	bool TryStartDetour(const FVector& Destination);
@@ -37,15 +38,15 @@ protected:virtual void OnPossess(APawn* InPawn)override;
 	// Once a wave has found a living player it must keep hunting while the player
 	// is hiding on an upper floor.  A short perception timeout made the horde drop
 	// aggro half way through a multi-storey route and start wandering downstairs.
-	UPROPERTY(EditDefaultsOnly,Category="AI")float ForgetAfter=8.f;
+	UPROPERTY(EditDefaultsOnly,Category="AI")float ForgetAfter=25.f;
 	// At arm's length a player is noticed even when he approaches from behind.
 	// An obstacle must still be absent, so this does not provide vision through walls.
-	UPROPERTY(EditDefaultsOnly,Category="AI",meta=(ClampMin="100"))float ProximityAwarenessRadius=350.f;
+	UPROPERTY(EditDefaultsOnly,Category="AI",meta=(ClampMin="100"))float ProximityAwarenessRadius=650.f;
 	UPROPERTY(EditDefaultsOnly,Category="AI")float PatrolRadius=1500.f;
 	UPROPERTY(EditDefaultsOnly,Category="AI")float PatrolAcceptanceRadius=80.f;
 	UPROPERTY(EditDefaultsOnly,Category="AI")float PatrolWaitMin=1.f;
 	UPROPERTY(EditDefaultsOnly,Category="AI")float PatrolWaitMax=4.f;
-	UPROPERTY(EditDefaultsOnly,Category="AI",meta=(ClampMin="500"))float HordeAlertRadius=20000.f;
+	UPROPERTY(EditDefaultsOnly,Category="AI",meta=(ClampMin="500"))float HordeAlertRadius=6500.f;
 	UPROPERTY(EditDefaultsOnly,Category="AI|Navigation",meta=(ClampMin="0.1"))float PathRefreshInterval=.65f;
 	UPROPERTY(EditDefaultsOnly,Category="AI|Navigation",meta=(ClampMin="0.5"))float StuckRecoveryDelay=1.25f;
 	UPROPERTY(EditDefaultsOnly,Category="AI|Navigation",meta=(ClampMin="100"))float DetourSearchRadius=450.f;
@@ -58,6 +59,7 @@ protected:virtual void OnPossess(APawn* InPawn)override;
 	UPROPERTY(EditDefaultsOnly,Category="AI|Jump",meta=(ClampMin="0"))float JumpClearance=12.f;
 	UPROPERTY(EditDefaultsOnly,Category="AI|Jump",meta=(ClampMin="0"))float MaximumLandingDrop=90.f;
 	double LastStimulus=-1000.;
+	double NextForcedPlayerScanTime=0.;
 	double NextPatrolTime=0.;
 	FVector PatrolCenter=FVector::ZeroVector;
 	float PatrolAreaRadius=0.f;
@@ -83,6 +85,7 @@ protected:virtual void OnPossess(APawn* InPawn)override;
 	bool bTraversingStairs=false;
 	double NextStairMoveRefresh=0.;
 	double StairApproachExpireTime=0.;
+	double StairTraversalExpireTime=0.;
 	bool bStairEntryHasNavPath=false;
 	FVector StairLastProgressLocation=FVector::ZeroVector;
 	double StairLastProgressTime=0.;

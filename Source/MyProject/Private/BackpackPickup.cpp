@@ -86,6 +86,10 @@ void ABackpackPickup::RefreshAppearance()
 {
 	const bool bLarge=Capacity>=64;
 	const bool bMedium=Capacity>=38&&!bLarge;
+	static UStaticMesh* SmallMesh=LoadObject<UStaticMesh>(nullptr,TEXT("/Game/ThirdPersonBP/Items/Small_Bag/small_bag.small_bag"));
+	static UStaticMesh* MediumMesh=LoadObject<UStaticMesh>(nullptr,TEXT("/Game/ThirdPersonBP/Items/Middle_Bag/medium_bag.medium_bag"));
+	static UStaticMesh* LargeMesh=LoadObject<UStaticMesh>(nullptr,TEXT("/Game/ThirdPersonBP/Items/Big_Bag/Large_bag.Large_bag"));
+	UStaticMesh* SelectedMesh=bLarge?LargeMesh:(bMedium?MediumMesh:SmallMesh);
 	const FLinearColor Color=bLarge?FLinearColor(.65f,.2f,1.f):(bMedium?FLinearColor(.1f,.5f,1.f):FLinearColor(.15f,1.f,.35f));
 	if(MarkerLight){MarkerLight->SetLightColor(Color);MarkerLight->SetIntensity(3200.f);}
 	if(MarkerText)
@@ -93,22 +97,19 @@ void ABackpackPickup::RefreshAppearance()
 		const FString Name=bLarge?TEXT("БОЛЬШОЙ РЮКЗАК — 64"):(bMedium?TEXT("СРЕДНИЙ РЮКЗАК — 38"):TEXT("МАЛЫЙ РЮКЗАК — 20"));
 		MarkerText->SetText(FText::FromString(Name));MarkerText->SetTextRenderColor(Color.ToFColor(true));
 	}
-	if(Mesh)
+	if(Mesh&&SelectedMesh)
 	{
-		UStaticMesh* StaticMesh=Mesh->GetStaticMesh();
-		if(StaticMesh&&StaticMesh->GetName()==TEXT("small_bag"))
-		{
-			const float SourceHeight=FMath::Max(1.f,StaticMesh->GetBoundingBox().GetSize().Z);
-			const float DesiredHeight=bLarge?105.f:(bMedium?90.f:75.f);
-			const float UniformScale=FMath::Clamp(DesiredHeight/SourceHeight,.001f,10.f);
-			Mesh->SetRelativeScale3D(FVector(UniformScale));
-			const FBox Bounds=StaticMesh->GetBoundingBox();
-			const FVector ScaledSize=Bounds.GetSize()*UniformScale;
-			const FVector HalfExtent(FMath::Clamp(ScaledSize.X*.5f,12.f,45.f),FMath::Clamp(ScaledSize.Y*.5f,12.f,45.f),DesiredHeight*.5f);
-			if(PhysicsBox)PhysicsBox->SetBoxExtent(HalfExtent);
-			Mesh->SetRelativeLocation(FVector(0.f,0.f,-HalfExtent.Z-Bounds.Min.Z*UniformScale));
-		}
-		else Mesh->SetRelativeScale3D(bLarge?FVector(.48f,.22f,.58f):(bMedium?FVector(.4f,.18f,.5f):FVector(.32f,.14f,.42f)));
+		Mesh->SetStaticMesh(SelectedMesh);
+		TopPocket->SetVisibility(false,true);LeftStrap->SetVisibility(false,true);RightStrap->SetVisibility(false,true);
+		const FBox Bounds=SelectedMesh->GetBoundingBox();
+		const float DesiredHeight=bLarge?105.f:(bMedium?90.f:75.f);
+		const float UniformScale=FMath::Clamp(DesiredHeight/FMath::Max(1.f,Bounds.GetSize().Z),.001f,10.f);
+		const FVector ScaledSize=Bounds.GetSize()*UniformScale;
+		const FVector HalfExtent(FMath::Clamp(ScaledSize.X*.5f,12.f,55.f),FMath::Clamp(ScaledSize.Y*.5f,12.f,55.f),DesiredHeight*.5f);
+		Mesh->SetRelativeScale3D(FVector(UniformScale));
+		Mesh->SetRelativeRotation(FRotator::ZeroRotator);
+		Mesh->SetRelativeLocation(FVector(-Bounds.GetCenter().X*UniformScale,-Bounds.GetCenter().Y*UniformScale,-Bounds.Min.Z*UniformScale));
+		if(PhysicsBox)PhysicsBox->SetBoxExtent(HalfExtent);
 	}
 }
 

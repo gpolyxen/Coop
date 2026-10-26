@@ -12,10 +12,11 @@
 #include "Kismet/GameplayStatics.h"
 #include "GameFramework/Pawn.h"
 #include "UObject/ConstructorHelpers.h"
+#include "EngineUtils.h"
 
 AOpenWorldTile::AOpenWorldTile()
 {
-	PrimaryActorTick.bCanEverTick=true;PrimaryActorTick.TickInterval=.05f;
+	PrimaryActorTick.bCanEverTick=true;PrimaryActorTick.TickInterval=.15f;
 	bReplicates=false;
 	SceneRoot=CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
 	RootComponent=SceneRoot;
@@ -78,7 +79,7 @@ AOpenWorldTile::AOpenWorldTile()
 
 void AOpenWorldTile::Tick(float DeltaSeconds)
 {
-	Super::Tick(DeltaSeconds);if(!GetWorld()||!GrassA||!GrassB)return;const float Time=GetWorld()->GetTimeSeconds();APawn* Pawn=UGameplayStatics::GetPlayerPawn(this,0);const FVector PlayerLocal=Pawn?GetActorTransform().InverseTransformPosition(Pawn->GetActorLocation()):FVector(1000000.f);
+	Super::Tick(DeltaSeconds);if(!GetWorld()||!GrassA||!GrassB)return;APawn* Pawn=UGameplayStatics::GetPlayerPawn(this,0);if(!Pawn||FVector::DistSquared2D(Pawn->GetActorLocation(),GetActorLocation())>FMath::Square(TileSize*.8f))return;const float Time=GetWorld()->GetTimeSeconds();const FVector PlayerLocal=GetActorTransform().InverseTransformPosition(Pawn->GetActorLocation());
 	auto Animate=[&](UHierarchicalInstancedStaticMeshComponent* Group,float Phase)
 	{
 		const int32 Count=Group->GetInstanceCount();for(int32 Index=0;Index<Count;++Index){FTransform Transform;if(!Group->GetInstanceTransform(Index,Transform,false))continue;const float Distance=FVector::Dist2D(Transform.GetLocation(),PlayerLocal);const float Interaction=Pawn?FMath::Clamp(1.f-Distance/180.f,0.f,1.f)*FMath::Clamp(Pawn->GetVelocity().Size2D()/350.f,0.f,1.f)*14.f:0.f;const float WindPitch=FMath::Sin(Time*1.65f+Phase+Index*.37f)*2.4f;const float WindRoll=FMath::Sin(Time*1.08f+Phase+Index*.21f)*1.6f;const float Yaw=Transform.Rotator().Yaw;Transform.SetRotation(FRotator(WindPitch+Interaction,Yaw,WindRoll).Quaternion());Group->UpdateInstanceTransform(Index,Transform,false,Index==Count-1,true);}
@@ -174,12 +175,18 @@ void AOpenWorldTile::SpawnHarvestableTrees()
 	if(!GetWorld()||TreeCount<=0)return;
 	for(AHarvestableTree* Tree:SpawnedTrees)if(IsValid(Tree))Tree->Destroy();SpawnedTrees.Reset();
 	const FIntPoint Sector(FMath::RoundToInt(GetActorLocation().X/TileSize),FMath::RoundToInt(GetActorLocation().Y/TileSize));FRandomStream Random(HashCombine(GetTypeHash(Sector.X),GetTypeHash(Sector.Y))^0x7EED);
-	for(int32 Index=0;Index<TreeCount;++Index)
+	constexpr float MinimumTreeSpacing=750.f;
+	int32 SpawnedCount=0;
+	for(int32 Attempt=0;Attempt<TreeCount*14&&SpawnedCount<TreeCount;++Attempt)
 	{
 		FVector Local(Random.FRandRange(-TileSize*.46f,TileSize*.46f),Random.FRandRange(-TileSize*.46f,TileSize*.46f),0.f);if(Local.SizeSquared2D()<FMath::Square(1500.f))Local.X+=FMath::Sign(Local.X==0.f?1.f:Local.X)*1700.f;Local.Z=GetTerrainHeight(GetActorLocation().X+Local.X,GetActorLocation().Y+Local.Y);
-		const float WX=GetActorLocation().X+Local.X,WY=GetActorLocation().Y+Local.Y,RiverY=2800.f+FMath::Sin(WX/5200.f)*520.f;if(FMath::Abs(WY-RiverY)<1750.f)continue;
-		FActorSpawnParameters Params;Params.Owner=this;Params.SpawnCollisionHandlingOverride=ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
-		if(AHarvestableTree* Tree=GetWorld()->SpawnActor<AHarvestableTree>(AHarvestableTree::StaticClass(),GetActorTransform().TransformPosition(Local),FRotator(0.f,Random.FRandRange(0.f,360.f),0.f),Params)){Tree->SetActorScale3D(FVector(Random.FRandRange(.8f,1.25f)));SpawnedTrees.Add(Tree);}
+		const FVector WorldLocation=GetActorTransform().TransformPosition(Local);
+		const float WX=WorldLocation.X,WY=WorldLocation.Y,RiverY=2800.f+FMath::Sin(WX/5200.f)*520.f;if(FMath::Abs(WY-RiverY)<1750.f)continue;
+		bool bTooClose=false;
+		for(TActorIterator<AHarvestableTree> It(GetWorld());It;++It)if(IsValid(*It)&&FVector::DistSquared2D(It->GetActorLocation(),WorldLocation)<FMath::Square(MinimumTreeSpacing)){bTooClose=true;break;}
+		if(bTooClose)continue;
+		FActorSpawnParameters Params;Params.Owner=this;Params.SpawnCollisionHandlingOverride=ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		if(AHarvestableTree* Tree=GetWorld()->SpawnActor<AHarvestableTree>(AHarvestableTree::StaticClass(),WorldLocation,FRotator(0.f,Random.FRandRange(0.f,360.f),0.f),Params)){Tree->SetActorScale3D(FVector(Random.FRandRange(.8f,1.25f)));SpawnedTrees.Add(Tree);++SpawnedCount;}
 	}
 }
 

@@ -11,6 +11,7 @@
 #include "AK74UWeapon.h"
 #include "SMG11Weapon.h"
 #include "StarterRifle.h"
+#include "PickaxeWeapon.h"
 AStorageChest::AStorageChest()
 {
 	MaxStructureHealth=450.f;StructureHealth=450.f;bNeedsFoundationSupport=true;
@@ -23,7 +24,7 @@ AStorageChest::AStorageChest()
 }
 FName AStorageChest::GetStoredWeaponId(const AWeaponBase* Weapon)const
 {
-	if(!Weapon)return NAME_None;if(Weapon->IsA<AKA47Rifle>())return TEXT("Weapon_KA47");if(Weapon->IsA<AP9Weapon>())return TEXT("Weapon_P9");if(Weapon->IsA<AAK74UWeapon>())return TEXT("Weapon_AK74U");if(Weapon->IsA<ASMG11Weapon>())return TEXT("Weapon_SMG11");if(Weapon->IsA<AStarterRifle>())return TEXT("Weapon_AR4");return FName(*FString::Printf(TEXT("Weapon_%s"),*Weapon->GetClass()->GetName()));
+	if(!Weapon)return NAME_None;if(Weapon->IsA<APickaxeWeapon>())return TEXT("Weapon_Pickaxe");if(Weapon->IsA<AKA47Rifle>())return TEXT("Weapon_KA47");if(Weapon->IsA<AP9Weapon>())return TEXT("Weapon_P9");if(Weapon->IsA<AAK74UWeapon>())return TEXT("Weapon_AK74U");if(Weapon->IsA<ASMG11Weapon>())return TEXT("Weapon_SMG11");if(Weapon->IsA<AStarterRifle>())return TEXT("Weapon_AR4");return FName(*FString::Printf(TEXT("Weapon_%s"),*Weapon->GetClass()->GetName()));
 }
 AWeaponBase* AStorageChest::FindStoredWeapon(FName ItemId)const{for(AWeaponBase* Weapon:StoredWeapons)if(Weapon&&GetStoredWeaponId(Weapon)==ItemId)return Weapon;return nullptr;}
 void AStorageChest::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps)const{Super::GetLifetimeReplicatedProps(OutLifetimeProps);DOREPLIFETIME(AStorageChest,StoredWeapons);}

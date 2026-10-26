@@ -20,8 +20,20 @@ public:
 	UPROPERTY(EditAnywhere,Category="Generated Buildings",meta=(ClampMin="600"))float MinimumBuildingSpacing=1250.f;
 	UPROPERTY(EditAnywhere,Category="Generated Buildings",meta=(ClampMin="1",ClampMax="6"))int32 MaximumFloors=4;
 private:
+	struct FPendingBuilding
+	{
+		FVector Ground=FVector::ZeroVector;
+		float Yaw=0.f;
+		int32 BuildingIndex=0;
+		int32 Floors=1;
+		int32 Width=7;
+		int32 Depth=6;
+	};
 	void Generate();
+	void SpawnNextBuilding();
 	bool FindGround(const FVector& Candidate,FVector& OutGround)const;
 	void SpawnBuilding(const FVector& GroundLocation,float Yaw,int32 BuildingIndex,int32 FloorCount,int32 WidthModules,int32 DepthModules);
 	FTimerHandle GenerationTimer;
+	TArray<FPendingBuilding> PendingBuildings;
+	int32 NextBuildingToSpawn=0;
 };

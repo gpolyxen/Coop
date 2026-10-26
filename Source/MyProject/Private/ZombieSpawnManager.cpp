@@ -15,6 +15,7 @@
 #include "EngineUtils.h"
 #include "Engine/World.h"
 #include "GameFramework/GameStateBase.h"
+#include "Camera/CameraComponent.h"
 #include "Net/UnrealNetwork.h"
 #include "TimerManager.h"
 
@@ -81,6 +82,30 @@ bool AZombieSpawnManager::FindGroundedLocation(const FVector& Around,float MinDi
 	return false;
 }
 
+bool AZombieSpawnManager::FindHiddenZombieSpawnLocation(const AShooterCharacter* Player,FVector& OutLocation)const
+{
+	if(!Player||!GetWorld())return false;
+	const FVector ViewForward=(Player->Camera?Player->Camera->GetForwardVector():Player->GetActorForwardVector()).GetSafeNormal2D();
+	const FVector Behind=-ViewForward;
+	for(int32 Attempt=0;Attempt<48;++Attempt)
+	{
+		const FVector Direction=Behind.RotateAngleAxis(FMath::FRandRange(-70.f,70.f),FVector::UpVector);
+		const float Distance=FMath::FRandRange(MinimumSpawnDistance,MaximumSpawnDistance);
+		FVector Candidate=Player->GetActorLocation()+Direction*Distance;
+		if(IsNearPlayerConstruction(Candidate))continue;
+		if(FVector::DotProduct(ViewForward,(Candidate-Player->GetActorLocation()).GetSafeNormal2D())>-.1f)continue;
+		FHitResult GroundHit;FCollisionQueryParams Query(SCENE_QUERY_STAT(HiddenZombieSpawnGround),false,this);Query.AddIgnoredActor(Player);
+		if(!GetWorld()->LineTraceSingleByChannel(GroundHit,Candidate+FVector(0.f,0.f,2500.f),Candidate-FVector(0.f,0.f,3500.f),ECC_WorldStatic,Query))continue;
+		if(UNavigationSystemV1* Navigation=UNavigationSystemV1::GetCurrent(GetWorld()))
+		{
+			FNavLocation Projected;if(!Navigation->ProjectPointToNavigation(GroundHit.ImpactPoint,Projected,FVector(350.f,350.f,500.f)))continue;OutLocation=Projected.Location;
+		}
+		else OutLocation=GroundHit.ImpactPoint;
+		return true;
+	}
+	return false;
+}
+
 bool AZombieSpawnManager::IsNearPlayerConstruction(const FVector& Location)const
 {
 	if(!GetWorld())return false;
@@ -120,7 +145,7 @@ void AZombieSpawnManager::MaintainZombiePopulation()
 	for(int32 Index=0;Index<ToSpawn;++Index)
 	{
 		FVector SpawnLocation;
-		if(!FindGroundedLocation(Player->GetActorLocation(),MinimumSpawnDistance,MaximumSpawnDistance,SpawnLocation))continue;
+		if(!FindHiddenZombieSpawnLocation(Player,SpawnLocation))continue;
 		SpawnLocation.Z+=95.f;
 		FActorSpawnParameters Parameters;
 		Parameters.SpawnCollisionHandlingOverride=ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
@@ -136,7 +161,7 @@ void AZombieSpawnManager::MaintainZombiePopulation()
 		{
 			// Most zombies patrol immediately; a small random subset waits in the
 			// authored lying pose and stands up only after being alerted.
-			Zombie->SetDormant(FMath::FRand()<DormantSpawnChance);
+			Zombie->SetDormant(false);
 			if(bSpawnBrute)++LivingBrutes;
 			else if(bSpawnSpitter)++LivingSpitters;
 			else if(bSpawnRunner)++LivingRunners;

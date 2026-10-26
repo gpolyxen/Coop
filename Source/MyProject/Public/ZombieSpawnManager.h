@@ -25,10 +25,10 @@ public:
 	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="Zombie Spawning",meta=(ClampMin="8"))int32 AbsoluteMaxAliveZombies=40;
 	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="Zombie Spawning",meta=(ClampMin="1"))int32 SpawnBatchSize=2;
 	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="Zombie Spawning",meta=(ClampMin="0.5"))float SpawnInterval=4.f;
-	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="Zombie Spawning",meta=(ClampMin="300"))float MinimumSpawnDistance=1300.f;
-	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="Zombie Spawning",meta=(ClampMin="500"))float MaximumSpawnDistance=3000.f;
+	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="Zombie Spawning",meta=(ClampMin="300"))float MinimumSpawnDistance=1800.f;
+	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="Zombie Spawning",meta=(ClampMin="500"))float MaximumSpawnDistance=3600.f;
 	/** Only this random fraction of roaming spawns begins lying down. */
-	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="Zombie Spawning",meta=(ClampMin="0.0",ClampMax="1.0"))float DormantSpawnChance=.18f;
+	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="Zombie Spawning",meta=(ClampMin="0.0",ClampMax="1.0"))float DormantSpawnChance=0.f;
 	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="Supplies",meta=(ClampMin="100"))float MinimumSupplyDistance=350.f;
 	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="Supplies",meta=(ClampMin="300"))float MaximumSupplyDistance=1200.f;
 	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="Spawning",meta=(ClampMin="100"))float ConstructionExclusionRadius=550.f;
@@ -53,6 +53,7 @@ private:
 	bool SpawnAmmunition();
 	bool SpawnHealth();
 	bool FindGroundedLocation(const FVector& Around,float MinDistance,float MaxDistance,FVector& OutLocation)const;
+	bool FindHiddenZombieSpawnLocation(const AShooterCharacter* Player,FVector& OutLocation)const;
 	bool IsNearPlayerConstruction(const FVector& Location)const;
 	AShooterCharacter* FindPlayer()const;
 	int32 GetHighestPlayerLevel()const;

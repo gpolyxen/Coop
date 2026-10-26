@@ -6,6 +6,7 @@
 
 class USceneComponent;
 class UStaticMeshComponent;
+class UCapsuleComponent;
 
 UCLASS()
 class MYPROJECT_API AHarvestableTree : public AActor
@@ -20,6 +21,7 @@ public:
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps)const override;
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly)USceneComponent* SceneRoot;
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly)UStaticMeshComponent* Trunk;
+	UPROPERTY(VisibleAnywhere,BlueprintReadOnly)UCapsuleComponent* TrunkCollision;
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly)UStaticMeshComponent* Crown;
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly)UStaticMeshComponent* CrownLeft;
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly)UStaticMeshComponent* CrownRight;
@@ -27,7 +29,7 @@ public:
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Harvest",meta=(ClampMin="1"))int32 WoodReward=6;
 	UPROPERTY(Replicated,VisibleAnywhere,BlueprintReadOnly,Category="Harvest")int32 AxeHits=0;
 	UPROPERTY(Replicated,VisibleAnywhere,BlueprintReadOnly,Category="Harvest")bool bFalling=false;
-private:void ApplyMaterials();
+private:void ApplyMaterials();void ApplyTreeVariant();
 	float FallElapsed=0.f;
 	float FallRollSign=1.f;
 };

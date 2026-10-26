@@ -643,12 +643,12 @@ void AZombieCharacter::PerformAttackHit()
 	if(UHealthArmorComponent* TargetHealth=Target->FindComponentByClass<UHealthArmorComponent>())
 	{
 		const float ArmMultiplier=(SeveredLimbs&3)!=0?.55f:1.f;
-		const float AppliedDamage=TargetHealth->ApplyDamage(AttackDamage*ArmMultiplier,GetController(),this);
+		const float AppliedDamage=TargetHealth->ApplyDamage(GetMeleeDamage(TargetHealth)*ArmMultiplier,GetController(),this);
 		if(AppliedDamage>0.f)UE_LOG(LogTemp,Display,TEXT("Zombie %s melee hit %s: %.0f damage, %.0f health remaining"),*GetName(),*GetNameSafe(Target),AppliedDamage,TargetHealth->Health);
 		if(ACharacter* HitCharacter=Cast<ACharacter>(Target))
 		{
 			const bool bKick=AttackMode==EZombieAttackMode::Kick;
-			HitCharacter->LaunchCharacter(AttackDirection*(bKick?KickPushStrength:90.f)+FVector(0.f,0.f,bKick?85.f:35.f),bKick,bKick);
+			HitCharacter->LaunchCharacter(GetMeleeLaunchVelocity(AttackDirection,bKick),true,true);
 		}
 	}
 	else if(ABuildableStructure* Structure=Cast<ABuildableStructure>(Target))
@@ -661,6 +661,16 @@ void AZombieCharacter::PerformAttackHit()
 		// UHealthArmorComponent, so route melee through the standard damage API.
 		Target->TakeDamage(AttackDamage,FDamageEvent(),GetController(),this);
 	}
+}
+
+float AZombieCharacter::GetMeleeDamage(const UHealthArmorComponent*)const
+{
+	return AttackDamage;
+}
+
+FVector AZombieCharacter::GetMeleeLaunchVelocity(const FVector& AttackDirection,bool bKick)const
+{
+	return AttackDirection*(bKick?KickPushStrength:90.f)+FVector(0.f,0.f,bKick?85.f:35.f);
 }
 
 void AZombieCharacter::FinishAttack()

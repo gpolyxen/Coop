@@ -111,6 +111,8 @@ public:
 
 protected:
 	virtual void PerformAttackHit();
+	virtual float GetMeleeDamage(const UHealthArmorComponent* TargetHealth)const;
+	virtual FVector GetMeleeLaunchVelocity(const FVector& AttackDirection,bool bKick)const;
 	TWeakObjectPtr<AActor> PendingAttackTarget;
 
 private:

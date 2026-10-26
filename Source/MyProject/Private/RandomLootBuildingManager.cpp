@@ -6,8 +6,11 @@
 #include "AmmoPickup.h"
 #include "ZombieCharacter.h"
 #include "WalkerZombieCharacter.h"
+#include "RunnerZombieCharacter.h"
+#include "BruteZombieCharacter.h"
 #include "ZombieAIController.h"
 #include "OpenWorldTile.h"
+#include "HarvestableTree.h"
 #include "Components/HierarchicalInstancedStaticMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/TextRenderComponent.h"
@@ -45,8 +48,8 @@ void ARandomLootBuildingManager::Generate()
 {
 	if(!HasAuthority())return;
 	FRandomStream Random(FDateTime::Now().GetMillisecond()+FMath::Rand());
-	int32 Spawned=0;TArray<FVector> Centers;
-	for(int32 Attempt=0;Attempt<BuildingCount*24&&Spawned<BuildingCount;++Attempt)
+	PendingBuildings.Reset();NextBuildingToSpawn=0;TArray<FVector> Centers;
+	for(int32 Attempt=0;Attempt<BuildingCount*24&&PendingBuildings.Num()<BuildingCount;++Attempt)
 	{
 		const float Angle=Random.FRandRange(0.f,2.f*PI),Distance=Random.FRandRange(MinimumGenerationRadius,MaximumGenerationRadius);
 		FVector Ground;if(!FindGround(GenerationCenter+FVector(FMath::Cos(Angle),FMath::Sin(Angle),0.f)*Distance,Ground))continue;
@@ -62,10 +65,25 @@ void ARandomLootBuildingManager::Generate()
 		const int32 Width=Random.RandRange(7,8);
 		const int32 Depth=Random.RandRange(6,7);
 		Centers.Add(Ground);
-		SpawnBuilding(Ground,FMath::RoundToFloat(Random.FRandRange(0.f,3.f))*90.f,Spawned++,Floors,Width,Depth);
+		FPendingBuilding Plan;Plan.Ground=Ground;Plan.Yaw=FMath::RoundToFloat(Random.FRandRange(0.f,3.f))*90.f;Plan.BuildingIndex=PendingBuildings.Num();Plan.Floors=Floors;Plan.Width=Width;Plan.Depth=Depth;PendingBuildings.Add(Plan);
 	}
-	if(UNavigationSystemV1* Navigation=UNavigationSystemV1::GetCurrent(GetWorld()))Navigation->Build();
-	UE_LOG(LogTemp,Display,TEXT("Generated %d random destructible loot buildings"),Spawned);
+	SpawnNextBuilding();
+}
+
+void ARandomLootBuildingManager::SpawnNextBuilding()
+{
+	if(!HasAuthority()||!PendingBuildings.IsValidIndex(NextBuildingToSpawn))
+	{
+		UE_LOG(LogTemp,Display,TEXT("Generated %d random destructible loot buildings"),NextBuildingToSpawn);
+		PendingBuildings.Reset();
+		return;
+	}
+	const FPendingBuilding& Plan=PendingBuildings[NextBuildingToSpawn++];
+	SpawnBuilding(Plan.Ground,Plan.Yaw,Plan.BuildingIndex,Plan.Floors,Plan.Width,Plan.Depth);
+	// Hundreds of destructible modules are intentionally retained, but creating
+	// all houses plus their collision and replication state in one frame caused
+	// the visible freezes. One house per interval amortizes that work.
+	GetWorldTimerManager().SetTimer(GenerationTimer,this,&ARandomLootBuildingManager::SpawnNextBuilding,.35f,false);
 }
 
 void ARandomLootBuildingManager::SpawnBuilding(const FVector& GroundLocation,float Yaw,int32 BuildingIndex,int32 FloorCount,int32 WidthModules,int32 DepthModules)
@@ -75,16 +93,16 @@ void ARandomLootBuildingManager::SpawnBuilding(const FVector& GroundLocation,flo
 	auto WorldPoint=[&](float X,float Y,float Z){return Basis.TransformPosition(FVector(X,Y,Z));};
 	auto SpawnStructure=[&](UClass* Class,float X,float Y,float Z,float LocalYaw)
 	{
-		ABuildableStructure* Structure=GetWorld()->SpawnActor<ABuildableStructure>(Class,WorldPoint(X,Y,Z),FRotator(0.f,Yaw+LocalYaw,0.f),Parameters);if(Structure)Structure->Tags.AddUnique(TEXT("GeneratedBuilding"));return Structure;
+		ABuildableStructure* Structure=GetWorld()->SpawnActor<ABuildableStructure>(Class,WorldPoint(X,Y,Z),FRotator(0.f,Yaw+LocalYaw,0.f),Parameters);if(Structure){Structure->Tags.AddUnique(TEXT("GeneratedBuilding"));Structure->SetActorTickEnabled(false);}return Structure;
 	};
 	auto SpawnDoorPair=[&](float X,float Y,float Z,float LocalYaw)
 	{
 		const FRotator DoorRotation(0.f,Yaw+LocalYaw,0.f);
 		const FVector Along=DoorRotation.RotateVector(FVector::RightVector).GetSafeNormal2D();
 		const FVector Centre=WorldPoint(X,Y,Z);
-		if(AWoodDoor* Door=GetWorld()->SpawnActor<AWoodDoor>(AWoodDoor::StaticClass(),Centre-Along*75.f,DoorRotation,Parameters)){Door->SetOpenDirection(90.f);Door->Tags.AddUnique(TEXT("GeneratedBuilding"));}
+		if(AWoodDoor* Door=GetWorld()->SpawnActor<AWoodDoor>(AWoodDoor::StaticClass(),Centre-Along*75.f,DoorRotation,Parameters)){Door->SetOpenDirection(90.f);Door->Tags.AddUnique(TEXT("GeneratedBuilding"));Door->SetActorTickEnabled(false);}
 		FRotator Mirrored=DoorRotation;Mirrored.Yaw+=180.f;
-		if(AWoodDoor* Door=GetWorld()->SpawnActor<AWoodDoor>(AWoodDoor::StaticClass(),Centre+Along*75.f,Mirrored,Parameters)){Door->SetOpenDirection(-90.f);Door->Tags.AddUnique(TEXT("GeneratedBuilding"));}
+		if(AWoodDoor* Door=GetWorld()->SpawnActor<AWoodDoor>(AWoodDoor::StaticClass(),Centre+Along*75.f,Mirrored,Parameters)){Door->SetOpenDirection(-90.f);Door->Tags.AddUnique(TEXT("GeneratedBuilding"));Door->SetActorTickEnabled(false);}
 	};
 	FloorCount=FMath::Max(1,FloorCount);WidthModules=FMath::Clamp(WidthModules,7,8);DepthModules=FMath::Clamp(DepthModules,6,7);
 	TArray<float> XPositions;for(int32 XIndex=0;XIndex<WidthModules;++XIndex)XPositions.Add((XIndex-(WidthModules-1)*.5f)*300.f);
@@ -99,6 +117,12 @@ void ARandomLootBuildingManager::SpawnBuilding(const FVector& GroundLocation,flo
 	for(TActorIterator<AOpenWorldTile> It(GetWorld());It;++It)for(UHierarchicalInstancedStaticMeshComponent* Group:{It->Rocks,It->RockCollision})if(Group)
 	{
 		TArray<int32> Instances=Group->GetInstancesOverlappingBox(HouseBox,true);Instances.Sort(TGreater<int32>());for(int32 Instance:Instances)Group->RemoveInstance(Instance);
+	}
+	const FBox TreeExclusionBox=HouseBox.ExpandBy(350.f);
+	for(TActorIterator<AHarvestableTree> It(GetWorld());It;++It)
+	{
+		AHarvestableTree* Tree=*It;
+		if(IsValid(Tree)&&TreeExclusionBox.IsInsideOrOn(Tree->GetActorLocation()))Tree->Destroy();
 	}
 	const bool bRoofAccess=FloorCount>1&&(BuildingIndex%2==0);
 	// Each transition chooses its own interior floor cell. A 3x3 clearance zone
@@ -242,9 +266,11 @@ void ARandomLootBuildingManager::SpawnBuilding(const FVector& GroundLocation,flo
 		Suitcase->SetActorLabel(FString::Printf(TEXT("GeneratedLootSuitcase_%d"),BuildingIndex));
 #endif
 	}
-	// Every generated floor receives at least one resident.  Some start dormant
-	// and only play their wake sequence after sight, hearing or damage alerts them.
-	const int32 ResidentCount=FMath::Max(ZombiesPerBuilding,FloorCount*2);
+	// Keep the former resident population and add exactly one walking brute to
+	// every building. Runners retain their existing 3-4 slots.
+	const int32 BaseResidentCount=FMath::Max(ZombiesPerBuilding,FloorCount*2);
+	const int32 ResidentCount=BaseResidentCount+1;
+	const int32 RunnerCount=FMath::Min(BaseResidentCount,3+(BuildingIndex+FloorCount)%2);
 	for(int32 Index=0;Index<ResidentCount;++Index)
 	{
 		const int32 Level=Index%FloorCount;
@@ -254,12 +280,15 @@ void ARandomLootBuildingManager::SpawnBuilding(const FVector& GroundLocation,flo
 		const int32 XSlot=bRightRoom?XPositions.Num()-1:FMath::Min(1,XPositions.Num()-1);
 		const float X=XPositions[XSlot];
 		const float Y=YPositions[(Index*2+Level)%YPositions.Num()];
-		if(AZombieCharacter* Resident=GetWorld()->SpawnActor<AZombieCharacter>(AWalkerZombieCharacter::StaticClass(),WorldPoint(X,Y,Level*300.f+100.f),BuildingRotation,Parameters))
+		const bool bBrute=Index==0;
+		const bool bRunner=!bBrute&&Index<=RunnerCount;
+		TSubclassOf<AZombieCharacter> ResidentClass=bBrute?ABruteZombieCharacter::StaticClass():(bRunner?ARunnerZombieCharacter::StaticClass():AWalkerZombieCharacter::StaticClass());
+		if(AZombieCharacter* Resident=GetWorld()->SpawnActor<AZombieCharacter>(ResidentClass,WorldPoint(X,Y,Level*300.f+100.f),BuildingRotation,Parameters))
 		{
-			Resident->SetDormant((Index+BuildingIndex)%3==0);
+			Resident->SetDormant(false);
 			if(!Resident->GetController())Resident->SpawnDefaultController();
 			if(AZombieAIController* ResidentAI=Cast<AZombieAIController>(Resident->GetController()))
-				ResidentAI->SetPatrolArea(WorldPoint(0.f,0.f,Level*300.f+100.f),260.f);
+				ResidentAI->SetPatrolArea(WorldPoint(0.f,0.f,Level*300.f+100.f),FMath::Max(900.f,FMath::Max(EdgeX,EdgeY)-100.f));
 		}
 	}
 }

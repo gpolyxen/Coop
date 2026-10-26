@@ -63,7 +63,7 @@ void ABuildableStructure::Tick(float DeltaSeconds)
 }
 void ABuildableStructure::BeginCollapse()
 {
-	if(bCollapsing)return;bCollapsing=true;SetCanBeDamaged(false);SetReplicateMovement(true);CollapseVelocityZ=-80.f;
+	if(bCollapsing)return;bCollapsing=true;SetActorTickEnabled(true);SetCanBeDamaged(false);SetReplicateMovement(true);CollapseVelocityZ=-80.f;
 }
 bool ABuildableStructure::HasStructuralSupport()const
 {

@@ -23,9 +23,9 @@ AZombieAIController::AZombieAIController()
 	Senses=CreateDefaultSubobject<UAIPerceptionComponent>(TEXT("Perception"));
 	SetPerceptionComponent(*Senses);
 	Sight=CreateDefaultSubobject<UAISenseConfig_Sight>(TEXT("Sight"));
-	Sight->SightRadius=2200.f;
-	Sight->LoseSightRadius=2800.f;
-	Sight->PeripheralVisionAngleDegrees=75.f;
+	Sight->SightRadius=4500.f;
+	Sight->LoseSightRadius=5600.f;
+	Sight->PeripheralVisionAngleDegrees=95.f;
 	Sight->SetMaxAge(ForgetAfter);
 	Sight->DetectionByAffiliation.bDetectEnemies=true;
 	Sight->DetectionByAffiliation.bDetectFriendlies=true;
@@ -94,6 +94,7 @@ void AZombieAIController::ClearStairTraversal()
 	bTraversingStairs=false;
 	NextStairMoveRefresh=0.;
 	StairApproachExpireTime=0.;
+	StairTraversalExpireTime=0.;
 	bStairEntryHasNavPath=false;
 	StairLastProgressLocation=FVector::ZeroVector;
 	StairLastProgressTime=0.;
@@ -287,7 +288,7 @@ bool AZombieAIController::UpdateStairTraversal(const FVector& Destination)
 		StopMovement();
 		// A horde must be allowed to queue through a narrow staircase without the
 		// rear characters giving up and attacking the wall beside it.
-		NextStairMoveRefresh=0.;StairApproachExpireTime=GetWorld()->GetTimeSeconds()+15.;bStairEntryHasNavPath=bBestEntryHasNavPath;StairLastProgressLocation=PawnLocation;StairLastProgressTime=GetWorld()->GetTimeSeconds();
+		NextStairMoveRefresh=0.;StairApproachExpireTime=GetWorld()->GetTimeSeconds()+15.;StairTraversalExpireTime=0.;bStairEntryHasNavPath=bBestEntryHasNavPath;StairLastProgressLocation=PawnLocation;StairLastProgressTime=GetWorld()->GetTimeSeconds();
 	}
 
 	const double Now=GetWorld()->GetTimeSeconds();
@@ -298,6 +299,7 @@ bool AZombieAIController::UpdateStairTraversal(const FVector& Destination)
 		{
 			StopMovement();
 			bTraversingStairs=true;
+			StairTraversalExpireTime=Now+12.;
 			// Runtime player-built stairs are not guaranteed to be represented by
 			// Recast.  During this short authored transition the controller follows
 			// the actual bottom/top endpoints in 3D.  Ignore only the stair steps;
@@ -343,6 +345,7 @@ bool AZombieAIController::UpdateStairTraversal(const FVector& Destination)
 	}
 
 	const bool bGoingUp=StairExit.Z>StairEntry.Z;
+	if(Now>=StairTraversalExpireTime){ClearStairTraversal();NextPathRefreshTime=0.;return false;}
 	const FVector TraversalTarget=StairExit+FVector(0.f,0.f,CapsuleHalfHeight);
 	const bool bReachedHeight=bGoingUp?FootZ>=StairExit.Z-35.f:FootZ<=StairExit.Z+35.f;
 	if(bReachedHeight&&FVector::DistSquared2D(PawnLocation,StairExit)<=FMath::Square(120.f))
@@ -359,21 +362,21 @@ bool AZombieAIController::UpdateStairTraversal(const FVector& Destination)
 		{
 			StairLastProgressLocation=PawnLocation;
 			StairLastProgressTime=Now;
+			StairTraversalExpireTime=Now+8.;
 		}
 		else if(Now-StairLastProgressTime>=StuckRecoveryDelay&&Now-LastStairRecoveryTime>=JumpCooldown)
 		{
-			// Runtime-built stair lips are not always represented in Recast. If the
-			// capsule has made no progress while already on the authored staircase,
-			// give it a small forward/up step instead of leaving it blocked forever.
+			// Remain in the authored stair state. LaunchCharacter changed movement to
+			// Falling and made zombies repeatedly tumble or rotate at a landing lip.
 			LastStairRecoveryTime=Now;
 			StairLastProgressTime=Now;
-			JumpTravelDirection=Along;
-			const float VerticalBoost=bGoingUp?170.f:80.f;
-			Zombie->LaunchCharacter(Along*260.f+FVector(0.f,0.f,VerticalBoost),false,true);
+			StairTraversalExpireTime=Now+6.;
+			Zombie->SetActorLocation(PawnLocation+Along*42.f,false,nullptr,ETeleportType::TeleportPhysics);
 			return true;
 		}
 		FVector Facing=StairExit-StairEntry;Facing.Z=0.f;
 		if(Facing.Normalize())Zombie->SetActorRotation(FMath::RInterpConstantTo(Zombie->GetActorRotation(),Facing.Rotation(),GetWorld()->GetDeltaSeconds(),360.f));
+		if(UCharacterMovementComponent* Movement=Zombie->GetCharacterMovement())Movement->Velocity=Along*FMath::Max(270.f,Movement->MaxFlySpeed);
 		Zombie->AddMovementInput(Along,1.f);
 	}
 	return true;
@@ -451,6 +454,7 @@ void AZombieAIController::OnTargetPerception(AActor* Actor,FAIStimulus Stimulus)
 			LastChaseProgressTime=GetWorld()->GetTimeSeconds();
 			ResetNavigationRecovery();
 			UE_LOG(LogTemp,Display,TEXT("Zombie perception acquired %s"),*GetNameSafe(Actor));
+			AlertNearbyHorde(Actor);
 		}
 	}
 }
@@ -628,18 +632,13 @@ bool AZombieAIController::TryAttackBlockingStructure(const FVector& Destination)
 {
 	AZombieCharacter* Zombie=Cast<AZombieCharacter>(GetPawn());
 	if(!Zombie||!GetWorld()||GetWorld()->GetTimeSeconds()-LastChaseProgressTime<StuckRecoveryDelay)return false;
-	if(UNavigationSystemV1* Navigation=UNavigationSystemV1::GetCurrent(GetWorld()))
-	{
-		FNavLocation ProjectedDestination;
-		if(Navigation->ProjectPointToNavigation(Destination,ProjectedDestination,FVector(220.f,220.f,350.f)))
-			if(UNavigationPath* Path=UNavigationSystemV1::FindPathToLocationSynchronously(GetWorld(),Zombie->GetActorLocation(),ProjectedDestination.Location,Zombie))
-				if(Path->IsValid()&&!Path->IsPartial())return false;
-	}
-	FVector Direction=Destination-Zombie->GetActorLocation();Direction.Z=0.f;if(!Direction.Normalize())return false;
-	const FVector Start=Zombie->GetActorLocation()+FVector(0.f,0.f,60.f),End=Start+Direction*FMath::Max(100.f,Zombie->AttackRange+25.f);
+	FVector Direction=GetImmediateMoveDestination()-Zombie->GetActorLocation();Direction.Z=0.f;
+	if(Direction.SizeSquared2D()<FMath::Square(20.f)){Direction=Destination-Zombie->GetActorLocation();Direction.Z=0.f;}
+	if(!Direction.Normalize())return false;
+	const FVector Start=Zombie->GetActorLocation()+FVector(0.f,0.f,60.f),End=Start+Direction*FMath::Max(180.f,Zombie->AttackRange+55.f);
 	FCollisionQueryParams Query(SCENE_QUERY_STAT(ZombieBlockingStructure),false,Zombie);if(Target.IsValid())Query.AddIgnoredActor(Target.Get());
 	TArray<FHitResult> Hits;
-	if(!GetWorld()->SweepMultiByChannel(Hits,Start,End,FQuat::Identity,ECC_WorldStatic,FCollisionShape::MakeSphere(38.f),Query))return false;
+	GetWorld()->SweepMultiByChannel(Hits,Start,End,FQuat::Identity,ECC_Visibility,FCollisionShape::MakeSphere(48.f),Query);
 	for(const FHitResult& Hit:Hits)
 	{
 		ABuildableStructure* Structure=Cast<ABuildableStructure>(Hit.GetActor());
@@ -648,6 +647,15 @@ bool AZombieAIController::TryAttackBlockingStructure(const FVector& Destination)
 		StopMovement();
 		return Zombie->TryAttack(Structure);
 	}
+	ABuildableStructure* Nearest=nullptr;float BestDistanceSquared=FMath::Square(Zombie->AttackRange+85.f);
+	for(TActorIterator<ABuildableStructure> It(GetWorld());It;++It)
+	{
+		ABuildableStructure* Structure=*It;if(!Structure||Structure->IsCollapsing()||Structure->IsA<AWoodStairs>()||Structure->IsA<AWoodFloor>()||Structure->IsA<AWallTorch>())continue;
+		if(const AWoodGate* Gate=Cast<AWoodGate>(Structure))if(Gate->bOpen)continue;
+		FVector ToStructure=Structure->GetActorLocation()-Zombie->GetActorLocation();ToStructure.Z=0.f;const float DistanceSquared=ToStructure.SizeSquared2D();
+		if(DistanceSquared<BestDistanceSquared&&FVector::DotProduct(Direction,ToStructure.GetSafeNormal2D())>.15f){BestDistanceSquared=DistanceSquared;Nearest=Structure;}
+	}
+	if(Nearest){StopMovement();return Zombie->TryAttack(Nearest);}
 	return false;
 }
 
@@ -729,7 +737,41 @@ void AZombieAIController::TryAcquireVisibleTarget()
 		LastChaseProgressLocation=Zombie->GetActorLocation();
 		LastChaseProgressTime=GetWorld()->GetTimeSeconds();
 		ResetNavigationRecovery();
+		AlertNearbyHorde(BestTarget);
 		UE_LOG(LogTemp,Display,TEXT("Zombie %s acquired %s by sight"),*GetNameSafe(Zombie),*GetNameSafe(BestTarget));
+	}
+}
+
+void AZombieAIController::AcquireNearestLivingPlayer()
+{
+	AZombieCharacter* Zombie=Cast<AZombieCharacter>(GetPawn());
+	if(!Zombie)return;
+	AShooterCharacter* NearestPlayer=nullptr;
+	float NearestDistanceSquared=MAX_flt;
+	for(TActorIterator<AShooterCharacter> It(GetWorld());It;++It)
+	{
+		AShooterCharacter* Player=*It;
+		if(!Player||Player->IsDead())continue;
+		const float DistanceSquared=FVector::DistSquared(Zombie->GetActorLocation(),Player->GetActorLocation());
+		if(DistanceSquared<NearestDistanceSquared)
+		{
+			NearestDistanceSquared=DistanceSquared;
+			NearestPlayer=Player;
+		}
+	}
+	if(!NearestPlayer)return;
+	const bool bChangedTarget=Target.Get()!=NearestPlayer;
+	if(Zombie->IsDormant())Zombie->WakeUp();
+	Target=NearestPlayer;
+	LastKnownLocation=NearestPlayer->GetActorLocation();
+	LastStimulus=GetWorld()->GetTimeSeconds();
+	if(bChangedTarget)
+	{
+		bPatrolMoveActive=false;
+		bSteeringPatrol=false;
+		LastChaseProgressLocation=Zombie->GetActorLocation();
+		LastChaseProgressTime=LastStimulus;
+		ResetNavigationRecovery();
 	}
 }
 
@@ -738,9 +780,17 @@ void AZombieAIController::Tick(float DeltaSeconds)
 	Super::Tick(DeltaSeconds);
 	AZombieCharacter* Zombie=Cast<AZombieCharacter>(GetPawn());
 	if(!Zombie||Zombie->IsDead()){StopMovement();return;}
+	const double Now=GetWorld()->GetTimeSeconds();
+	// Zombies are the permanent pressure in this game. Perception still drives
+	// reactions and horde alerts, but it must never be the single point of failure:
+	// every living zombie periodically locks onto the nearest living player.
+	if(Now>=NextForcedPlayerScanTime)
+	{
+		AcquireNearestLivingPlayer();
+		NextForcedPlayerScanTime=Now+.35;
+	}
 	if(Zombie->IsDormant()){StopMovement();bPatrolMoveActive=false;bSteeringPatrol=false;return;}
 	if(Zombie->IsAttacking()||Zombie->IsHitReacting()){StopMovement();return;}
-	const double Now=GetWorld()->GetTimeSeconds();
 	UCharacterMovementComponent* Movement=Zombie->GetCharacterMovement();
 	if(Movement&&Movement->IsFalling())
 	{
@@ -773,13 +823,18 @@ void AZombieAIController::Tick(float DeltaSeconds)
 	if(Target.IsValid())
 	{
 		const bool bCanSeeTarget=LineOfSightTo(Target.Get());
-		if(bCanSeeTarget)
+		// A living player remains the authoritative destination even through walls.
+		// The breadcrumb route below supplies the legal path through the same doors,
+		// corridors and stairs that the player actually used.
+		if(Cast<AShooterCharacter>(Target.Get())||bCanSeeTarget)
 		{
 			LastKnownLocation=Target->GetActorLocation();
 			LastStimulus=Now;
 		}
 		if(Now-LastStimulus>ForgetAfter)
 		{
+			PatrolCenter=LastKnownLocation;
+			PatrolAreaRadius=1100.f;
 			Target.Reset();
 			ResetNavigationRecovery();
 			StopMovement();
@@ -810,12 +865,11 @@ void AZombieAIController::Tick(float DeltaSeconds)
 
 				FVector RouteWaypoint=GetVerticalRouteWaypoint(Destination);
 				bool bFollowingPlayerTrail=false;
-				if(bNeedsVerticalRoute)
+				if(bNeedsVerticalRoute||!bCanSeeTarget)
 				{
-					// If no stair entry is currently reachable, follow the exact ordered
-					// route used by the player. This guides exterior zombies through the
-					// open gate and then to the same staircase instead of making them guess
-					// from the player's position several floors overhead.
+					// Follow the player's ordered route whenever walls hide him as well as
+					// between storeys. This guides zombies through the actual room doorway
+					// instead of steering into the wall nearest to the player.
 					FVector TrailWaypoint;
 					AShooterCharacter* PursuedPlayer=Cast<AShooterCharacter>(Target.Get());
 					if(PursuedPlayer&&PursuedPlayer->GetPursuitTrailWaypoint(Zombie->GetActorLocation(),PursuitTrailCursor,TrailWaypoint))

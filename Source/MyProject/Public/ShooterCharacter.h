@@ -160,6 +160,11 @@ protected:
 	UPROPERTY(EditDefaultsOnly,Category="Movement")float WalkSpeed=450.f;UPROPERTY(EditDefaultsOnly,Category="Movement")float SprintSpeed=700.f;UPROPERTY(EditDefaultsOnly,Category="Movement")float BaseTurnRate=45.f;UPROPERTY(EditDefaultsOnly,Category="Interaction")float InteractionDistance=300.f;UPROPERTY(EditDefaultsOnly,Category="Aim")float HipFOV=90.f;UPROPERTY(EditDefaultsOnly,Category="Aim")float AimFOV=75.f;UPROPERTY(Replicated)bool bIsAiming=false;FTimerHandle FireTimer;
 	UPROPERTY(Replicated)bool bWantsToSprint=false;
 	float LastStaminaUseTime=-1000.f;
+	double LastMovementNoiseTime=-1000.;
+	UPROPERTY(EditDefaultsOnly,Category="AI Noise",meta=(ClampMin="0.1"))float WalkingNoiseInterval=.7f;
+	UPROPERTY(EditDefaultsOnly,Category="AI Noise",meta=(ClampMin="0.1"))float SprintNoiseInterval=.32f;
+	UPROPERTY(EditDefaultsOnly,Category="AI Noise",meta=(ClampMin="100"))float WalkingNoiseRange=1400.f;
+	UPROPERTY(EditDefaultsOnly,Category="AI Noise",meta=(ClampMin="100"))float SprintNoiseRange=3400.f;
 	TArray<FVector> PursuitTrail;
 	FVector LastPursuitTrailLocation=FVector::ZeroVector;
 	double LastPursuitTrailTime=-1000.;
