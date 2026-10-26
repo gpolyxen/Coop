@@ -26,3 +26,4 @@ Build/
 
 # macOS
 .DS_Store
+.vs/

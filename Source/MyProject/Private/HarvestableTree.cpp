@@ -11,16 +11,17 @@
 
 AHarvestableTree::AHarvestableTree()
 {
-	PrimaryActorTick.bCanEverTick=true;PrimaryActorTick.bStartWithTickEnabled=false;bReplicates=true;SetReplicateMovement(false);SetCanBeDamaged(true);
-	SceneRoot=CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));RootComponent=SceneRoot;
-	static ConstructorHelpers::FObjectFinder<UStaticMesh> Cylinder(TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
-	static ConstructorHelpers::FObjectFinder<UStaticMesh> Sphere(TEXT("/Engine/BasicShapes/Sphere.Sphere"));
-	Trunk=CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Trunk"));Trunk->SetupAttachment(SceneRoot);
-	if(Cylinder.Succeeded())Trunk->SetStaticMesh(Cylinder.Object);Trunk->SetRelativeLocation(FVector(0.f,0.f,210.f));Trunk->SetRelativeScale3D(FVector(.55f,.55f,4.2f));Trunk->SetCollisionProfileName(TEXT("BlockAll"));Trunk->SetCanEverAffectNavigation(true);
+	PrimaryActorTick.bCanEverTick = true;PrimaryActorTick.bStartWithTickEnabled = false;bReplicates = true;SetReplicateMovement(false);SetCanBeDamaged(true);
+	SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));RootComponent = SceneRoot;
+	static ConstructorHelpers::FObjectFinder<UStaticMesh>TreeAsset(TEXT("/Game/ThirdPersonBP/Build/Meshes/Trees/pine_tree00"));
+	Trunk = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("TreeAsset"));Trunk->SetupAttachment(SceneRoot);
+	if (TreeAsset.Succeeded())
+	{
+		Trunk->SetStaticMesh(TreeAsset.Object);
+	}
 	Crown=CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Crown"));Crown->SetupAttachment(SceneRoot);
-	if(Sphere.Succeeded())Crown->SetStaticMesh(Sphere.Object);Crown->SetRelativeLocation(FVector(0.f,0.f,520.f));Crown->SetRelativeScale3D(FVector(1.75f,1.75f,2.25f));Crown->SetCollisionEnabled(ECollisionEnabled::NoCollision);Crown->SetCanEverAffectNavigation(false);
-	CrownLeft=CreateDefaultSubobject<UStaticMeshComponent>(TEXT("CrownLeft"));CrownLeft->SetupAttachment(SceneRoot);if(Sphere.Succeeded())CrownLeft->SetStaticMesh(Sphere.Object);CrownLeft->SetRelativeLocation(FVector(-105.f,15.f,455.f));CrownLeft->SetRelativeScale3D(FVector(1.35f,1.45f,1.65f));CrownLeft->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	CrownRight=CreateDefaultSubobject<UStaticMeshComponent>(TEXT("CrownRight"));CrownRight->SetupAttachment(SceneRoot);if(Sphere.Succeeded())CrownRight->SetStaticMesh(Sphere.Object);CrownRight->SetRelativeLocation(FVector(100.f,-25.f,470.f));CrownRight->SetRelativeScale3D(FVector(1.4f,1.3f,1.7f));CrownRight->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	CrownLeft=CreateDefaultSubobject<UStaticMeshComponent>(TEXT("CrownLeft"));CrownLeft->SetupAttachment(SceneRoot);
+	CrownRight=CreateDefaultSubobject<UStaticMeshComponent>(TEXT("CrownRight"));CrownRight->SetupAttachment(SceneRoot);
 	ApplyMaterials();
 }
 
