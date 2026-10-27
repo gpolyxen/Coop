@@ -18,12 +18,16 @@
 #include "Camera/CameraComponent.h"
 #include "Net/UnrealNetwork.h"
 #include "TimerManager.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
 
 AZombieSpawnManager::AZombieSpawnManager()
 {
-	PrimaryActorTick.bCanEverTick=false;
+	PrimaryActorTick.bCanEverTick=true;
+	PrimaryActorTick.TickInterval=1.f;
 	bReplicates=true;bAlwaysRelevant=true;SetReplicateMovement(false);
 	BanditClass = ABanditCharacter::StaticClass();
+	bDiagnosticLogging=FParse::Param(FCommandLine::Get(),TEXT("CodexAIDiagnostic"));
 }
 
 void AZombieSpawnManager::BeginPlay()
@@ -31,11 +35,25 @@ void AZombieSpawnManager::BeginPlay()
 	Super::BeginPlay();
 	if(!HasAuthority())return;
 	PreparationEndServerTime=GetWorld()->GetTimeSeconds()+PreparationDuration;
+	NextPopulationUpdateTime=PreparationEndServerTime;
 	NextBanditGroupTime=PreparationEndServerTime+15.f;
 	for(TActorIterator<AZombieCharacter> It(GetWorld());It;++It)It->Destroy();
-	GetWorldTimerManager().SetTimer(ZombieTimer,this,&AZombieSpawnManager::MaintainZombiePopulation,SpawnInterval,true,PreparationDuration);
+	UE_LOG(LogTemp,Display,TEXT("ZSPAWN wave armed: preparation=%.1fs firstUpdate=%.1f target=%d batch=%d"),PreparationDuration,NextPopulationUpdateTime,MaxAliveZombies,SpawnBatchSize);
 	// Supplies now come exclusively from generated buildings and zombie drops.
 	// The old world-wide timers produced unrelated cubes across the landscape.
+}
+
+void AZombieSpawnManager::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+	if(!HasAuthority()||!GetWorld())return;
+	const double Now=GetWorld()->GetTimeSeconds();
+	if(Now+KINDA_SMALL_NUMBER<NextPopulationUpdateTime)return;
+	// Drive the population from the manager tick instead of a one-shot delayed
+	// timer.  This survives hitches during procedural building/navmesh creation
+	// and cannot silently lose the repeating wave callback.
+	NextPopulationUpdateTime=Now+FMath::Max(.5f,SpawnInterval);
+	MaintainZombiePopulation();
 }
 
 float AZombieSpawnManager::GetPreparationRemaining()const
@@ -98,7 +116,15 @@ bool AZombieSpawnManager::FindHiddenZombieSpawnLocation(const AShooterCharacter*
 		if(!GetWorld()->LineTraceSingleByChannel(GroundHit,Candidate+FVector(0.f,0.f,2500.f),Candidate-FVector(0.f,0.f,3500.f),ECC_WorldStatic,Query))continue;
 		if(UNavigationSystemV1* Navigation=UNavigationSystemV1::GetCurrent(GetWorld()))
 		{
-			FNavLocation Projected;if(!Navigation->ProjectPointToNavigation(GroundHit.ImpactPoint,Projected,FVector(350.f,350.f,500.f)))continue;OutLocation=Projected.Location;
+			FNavLocation Projected;
+			if(Navigation->ProjectPointToNavigation(GroundHit.ImpactPoint,Projected,FVector(500.f,500.f,700.f)))OutLocation=Projected.Location;
+			else
+			{
+				// With navigation generated only around invokers, the hidden spawn
+				// point can be valid ground just outside the currently baked patch.
+				// Spawn there and let the zombie's own invoker build navigation.
+				OutLocation=GroundHit.ImpactPoint;
+			}
 		}
 		else OutLocation=GroundHit.ImpactPoint;
 		return true;
@@ -120,10 +146,24 @@ bool AZombieSpawnManager::IsNearPlayerConstruction(const FVector& Location)const
 void AZombieSpawnManager::MaintainZombiePopulation()
 {
 	AShooterCharacter* Player=FindPlayer();
-	if(!Player)return;
+	if(!Player)
+	{
+		if(bDiagnosticLogging)UE_LOG(LogTemp,Warning,TEXT("ZSPAWN_DIAG skipped=no_living_player"));
+		return;
+	}
 	int32 LivingZombies=0,LivingRunners=0,LivingBrutes=0,LivingSpitters=0;
+	int32 RecycledZombies=0;
 	for(TActorIterator<AZombieCharacter> It(GetWorld());It;++It)if(!It->IsDead())
 	{
+		AZombieCharacter* Zombie=*It;
+		const bool bFarAway=FVector::DistSquared(Zombie->GetActorLocation(),Player->GetActorLocation())>FMath::Square(RecycleDistance);
+		const bool bOldEnough=Zombie->GetGameTimeSinceCreation()>=MinimumRecycleAge;
+		if(bFarAway&&bOldEnough&&!Zombie->WasRecentlyRendered(RecentlyRenderedGrace))
+		{
+			Zombie->Destroy();
+			++RecycledZombies;
+			continue;
+		}
 		++LivingZombies;
 		if(It->IsA<ABruteZombieCharacter>())++LivingBrutes;
 		else if(It->IsA<ASpitterZombieCharacter>())++LivingSpitters;
@@ -133,6 +173,8 @@ void AZombieSpawnManager::MaintainZombiePopulation()
 	MaintainBanditPopulation(HighestPlayerLevel,Player);
 	const int32 TargetPopulation=FMath::Clamp(MaxAliveZombies+FMath::Max(0,HighestPlayerLevel-1)*ZombiesPerPlayerLevel,MaxAliveZombies,AbsoluteMaxAliveZombies);
 	const int32 ToSpawn=FMath::Min(SpawnBatchSize,FMath::Max(0,TargetPopulation-LivingZombies));
+	UE_LOG(LogTemp,Display,TEXT("ZSPAWN_DIAG alive=%d target=%d request=%d recycled=%d player=%s location=%s"),
+			LivingZombies,TargetPopulation,ToSpawn,RecycledZombies,*GetNameSafe(Player),*Player->GetActorLocation().ToCompactString());
 	const int32 FiveLevelMilestones=HighestPlayerLevel/5;
 	const float RunnerChance=FiveLevelMilestones>0?FMath::Clamp(.4f+(FiveLevelMilestones-1)*.05f,.4f,.75f):0.f;
 	const int32 TenLevelMilestones=HighestPlayerLevel/10;
@@ -145,7 +187,11 @@ void AZombieSpawnManager::MaintainZombiePopulation()
 	for(int32 Index=0;Index<ToSpawn;++Index)
 	{
 		FVector SpawnLocation;
-		if(!FindHiddenZombieSpawnLocation(Player,SpawnLocation))continue;
+		if(!FindHiddenZombieSpawnLocation(Player,SpawnLocation))
+		{
+			if(bDiagnosticLogging)UE_LOG(LogTemp,Warning,TEXT("ZSPAWN_DIAG skipped=no_hidden_navigable_location attempt=%d/%d"),Index+1,ToSpawn);
+			continue;
+		}
 		SpawnLocation.Z+=95.f;
 		FActorSpawnParameters Parameters;
 		Parameters.SpawnCollisionHandlingOverride=ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;

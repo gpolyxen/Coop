@@ -8,6 +8,7 @@
 #include "WalkerZombieCharacter.h"
 #include "RunnerZombieCharacter.h"
 #include "BruteZombieCharacter.h"
+#include "SpitterZombieCharacter.h"
 #include "ZombieAIController.h"
 #include "OpenWorldTile.h"
 #include "HarvestableTree.h"
@@ -103,6 +104,13 @@ void ARandomLootBuildingManager::SpawnBuilding(const FVector& GroundLocation,flo
 		if(AWoodDoor* Door=GetWorld()->SpawnActor<AWoodDoor>(AWoodDoor::StaticClass(),Centre-Along*75.f,DoorRotation,Parameters)){Door->SetOpenDirection(90.f);Door->Tags.AddUnique(TEXT("GeneratedBuilding"));Door->SetActorTickEnabled(false);}
 		FRotator Mirrored=DoorRotation;Mirrored.Yaw+=180.f;
 		if(AWoodDoor* Door=GetWorld()->SpawnActor<AWoodDoor>(AWoodDoor::StaticClass(),Centre+Along*75.f,Mirrored,Parameters)){Door->SetOpenDirection(-90.f);Door->Tags.AddUnique(TEXT("GeneratedBuilding"));Door->SetActorTickEnabled(false);}
+	};
+	auto SpawnIndoorTorch=[&](float X,float Y,float Z,float LocalYaw)
+	{
+		if(AWallTorch* Torch=GetWorld()->SpawnActor<AWallTorch>(AWallTorch::StaticClass(),WorldPoint(X,Y,Z),FRotator(0.f,Yaw+LocalYaw,0.f),Parameters))
+		{
+			Torch->Tags.AddUnique(TEXT("GeneratedBuilding"));Torch->Tags.AddUnique(TEXT("IndoorTorch"));
+		}
 	};
 	FloorCount=FMath::Max(1,FloorCount);WidthModules=FMath::Clamp(WidthModules,7,8);DepthModules=FMath::Clamp(DepthModules,6,7);
 	TArray<float> XPositions;for(int32 XIndex=0;XIndex<WidthModules;++XIndex)XPositions.Add((XIndex-(WidthModules-1)*.5f)*300.f);
@@ -215,6 +223,37 @@ void ARandomLootBuildingManager::SpawnBuilding(const FVector& GroundLocation,flo
 			if(XIndex==DoorColumnA||XIndex==DoorColumnB)SpawnDoorPair(XPositions[XIndex],PartitionY,Z,90.f);
 			else SpawnStructure(AWoodWall::StaticClass(),XPositions[XIndex],PartitionY,Z,90.f);
 		}
+		// Select an actual solid module of the central partition. Using the geometric
+		// centre of each half previously selected DoorRowA/DoorRowB exactly, so a
+		// torch could be attached across a doorway instead of to timber.
+		auto FindSolidTorchRow=[&](int32 FirstRow,int32 LastRow)
+		{
+			const float Desired=(FirstRow+LastRow)*.5f;int32 BestRow=INDEX_NONE;float BestDistance=MAX_flt;
+			for(int32 Row=FirstRow;Row<=LastRow;++Row)
+			{
+				if(Row==DoorRowA||Row==DoorRowB)continue;
+				const float Distance=FMath::Abs(Row-Desired);if(Distance<BestDistance){BestDistance=Distance;BestRow=Row;}
+			}
+			return BestRow;
+		};
+		const int32 TorchRows[2]={FindSolidTorchRow(0,CrossAfter),FindSolidTorchRow(CrossAfter+1,DepthModules-1)};
+		for(int32 TorchIndex=0;TorchIndex<2;++TorchIndex)
+		{
+			const int32 TorchRow=TorchRows[TorchIndex];
+			if(!YPositions.IsValidIndex(TorchRow))continue;
+			// Move toward the centre of the solid 300 cm wall module. This prevents
+			// the fixture from touching an exterior corner or the cross-wall seam.
+			const float TorchY=YPositions[TorchRow]+72.f;
+			// One light per half-floor is enough to illuminate neighbouring rooms.
+			// Alternate the wall side so lights do not occupy the same point back to
+			// back and the mounting plate always lies parallel to the timber module.
+			const bool bPositiveSide=((Level+TorchIndex)&1)!=0;
+			// A wall module is 24 cm thick (12 cm per side). Local +X is the torch's
+			// outward direction: positive side keeps the wall yaw, negative side is
+			// rotated 180 degrees. The previous mapping was reversed and aimed both
+			// fixtures back through the wall.
+			SpawnIndoorTorch(PartitionX+(bPositiveSide?13.f:-13.f),TorchY,Z+112.f,bPositiveSide?0.f:180.f);
+		}
 
 		// A flight exists on every transition, including an optional final flight to
 		// the roof. Alternating its direction keeps both landings inside the shared
@@ -266,10 +305,10 @@ void ARandomLootBuildingManager::SpawnBuilding(const FVector& GroundLocation,flo
 		Suitcase->SetActorLabel(FString::Printf(TEXT("GeneratedLootSuitcase_%d"),BuildingIndex));
 #endif
 	}
-	// Keep the former resident population and add exactly one walking brute to
-	// every building. Runners retain their existing 3-4 slots.
+	// Keep the former resident population and add one brute plus two spitters to
+	// every building. The original runner/walker population remains in addition.
 	const int32 BaseResidentCount=FMath::Max(ZombiesPerBuilding,FloorCount*2);
-	const int32 ResidentCount=BaseResidentCount+1;
+	const int32 ResidentCount=BaseResidentCount+3;
 	const int32 RunnerCount=FMath::Min(BaseResidentCount,3+(BuildingIndex+FloorCount)%2);
 	for(int32 Index=0;Index<ResidentCount;++Index)
 	{
@@ -281,9 +320,24 @@ void ARandomLootBuildingManager::SpawnBuilding(const FVector& GroundLocation,flo
 		const float X=XPositions[XSlot];
 		const float Y=YPositions[(Index*2+Level)%YPositions.Num()];
 		const bool bBrute=Index==0;
-		const bool bRunner=!bBrute&&Index<=RunnerCount;
-		TSubclassOf<AZombieCharacter> ResidentClass=bBrute?ABruteZombieCharacter::StaticClass():(bRunner?ARunnerZombieCharacter::StaticClass():AWalkerZombieCharacter::StaticClass());
-		if(AZombieCharacter* Resident=GetWorld()->SpawnActor<AZombieCharacter>(ResidentClass,WorldPoint(X,Y,Level*300.f+100.f),BuildingRotation,Parameters))
+		const bool bSpitter=Index==1||Index==2;
+		const int32 BaseIndex=Index-2;
+		const bool bRunner=!bBrute&&!bSpitter&&BaseIndex<=RunnerCount;
+		TSubclassOf<AZombieCharacter> ResidentClass=bBrute?ABruteZombieCharacter::StaticClass():(bSpitter?ASpitterZombieCharacter::StaticClass():(bRunner?ARunnerZombieCharacter::StaticClass():AWalkerZombieCharacter::StaticClass()));
+		FActorSpawnParameters ResidentParameters;
+		ResidentParameters.SpawnCollisionHandlingOverride=ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButDontSpawnIfColliding;
+		AZombieCharacter* Resident=nullptr;
+		// Try several interior cell centres. Never force-spawn a capsule intersecting
+		// a wall; those actors receive a target but cannot move in any direction.
+		for(int32 Attempt=0;Attempt<12&&!Resident;++Attempt)
+		{
+			const int32 CandidateX=Attempt==0?XSlot:1+(Index+Attempt*3)%FMath::Max(1,WidthModules-2);
+			const int32 CandidateY=Attempt==0?(Index*2+Level)%YPositions.Num():1+(Index*2+Attempt*5)%FMath::Max(1,DepthModules-2);
+			if(IsNearStair(Level,CandidateX,CandidateY,1))continue;
+			Resident=GetWorld()->SpawnActor<AZombieCharacter>(ResidentClass,
+				WorldPoint(XPositions[CandidateX],YPositions[CandidateY],Level*300.f+130.f),BuildingRotation,ResidentParameters);
+		}
+		if(Resident)
 		{
 			Resident->SetDormant(false);
 			if(!Resident->GetController())Resident->SpawnDefaultController();

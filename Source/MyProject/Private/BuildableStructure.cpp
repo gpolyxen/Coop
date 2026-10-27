@@ -5,6 +5,10 @@
 #include "Components/StaticMeshComponent.h"
 #include "Components/BoxComponent.h"
 #include "Components/PointLightComponent.h"
+#include "Particles/ParticleSystemComponent.h"
+#include "Particles/ParticleSystem.h"
+#include "Components/AudioComponent.h"
+#include "Sound/SoundCue.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
 #include "OpenWorldStreamingManager.h"
@@ -213,10 +217,28 @@ AWoodDoor::AWoodDoor()
 	Pieces->ClearInstances();DoorPieces->ClearInstances();RightDoorPieces->ClearInstances();
 	for(UInstancedStaticMeshComponent* Legacy:{Pieces,DoorPieces,RightDoorPieces}){Legacy->SetCollisionEnabled(ECollisionEnabled::NoCollision);Legacy->SetVisibility(false,true);}
 	LeftHinge->SetRelativeLocation(FVector(0.f,-75.f,0.f));RightHinge->SetRelativeLocation(FVector::ZeroVector);
-	static ConstructorHelpers::FObjectFinder<UStaticMesh> DoorAsset(TEXT("/Game/ThirdPersonBP/Build/Meshes/Door/wood_door.wood_door"));
-	static ConstructorHelpers::FObjectFinder<UStaticMesh> WallAsset(TEXT("/Game/ThirdPersonBP/Build/Meshes/Wood_wall/wood_wall.wood_wall"));
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> DoorAsset(TEXT("/Game/ThirdPersonBP/Build/Meshes/Door_01/door_01.door_01"));
 	DoorVisual=CreateDefaultSubobject<UStaticMeshComponent>(TEXT("DoorVisual"));DoorVisual->SetupAttachment(LeftHinge);
-	if(DoorAsset.Succeeded()){ConfigureBuildVisual(DoorVisual,DoorAsset.Object,FVector(18.f,150.f,300.f),FVector(0.f,75.f,150.f));if(WallAsset.Succeeded()&&WallAsset.Object->GetMaterial(0))DoorVisual->SetMaterial(0,WallAsset.Object->GetMaterial(0));}
+	// Preserve the material imported with door_01 instead of replacing it with
+	// the wall material. This mesh is authored in the X/Z plane (X is width,
+	// Y is thickness), while a built door occupies the Y/Z plane. Rotate it
+	// around Z first and fit each source axis to the matching doorway axis.
+	if(DoorAsset.Succeeded())
+	{
+		UStaticMesh* Mesh=DoorAsset.Object;
+		DoorVisual->SetStaticMesh(Mesh);
+		const FBoxSphereBounds Bounds=Mesh->GetBounds();
+		const FVector SourceSize=Bounds.BoxExtent*2.f;
+		const FVector DoorScale(
+			150.f/FMath::Max(SourceSize.X,KINDA_SMALL_NUMBER),
+			18.f/FMath::Max(SourceSize.Y,KINDA_SMALL_NUMBER),
+			300.f/FMath::Max(SourceSize.Z,KINDA_SMALL_NUMBER));
+		const FRotator DoorRotation(0.f,90.f,0.f);
+		DoorVisual->SetRelativeScale3D(DoorScale);
+		DoorVisual->SetRelativeRotation(DoorRotation);
+		DoorVisual->SetRelativeLocation(FVector(0.f,75.f,150.f)-DoorRotation.RotateVector(Bounds.Origin*DoorScale));
+		DoorVisual->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	}
 	DoorCollision=CreateBuildCollision(this,LeftHinge,TEXT("DoorCollision"),FVector(0.f,75.f,150.f),FVector(9.f,75.f,150.f));
 }
 void AWoodDoor::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps)const{Super::GetLifetimeReplicatedProps(OutLifetimeProps);DOREPLIFETIME(AWoodDoor,OpenAngle);}
@@ -358,28 +380,46 @@ AWoodPillar::AWoodPillar()
 AWallTorch::AWallTorch()
 {
 	MaxStructureHealth=80.f;StructureHealth=80.f;HalfModuleLength=0.f;bNeedsFoundationSupport=true;
-	static ConstructorHelpers::FObjectFinder<UStaticMesh> Cylinder(TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
-	static ConstructorHelpers::FObjectFinder<UStaticMesh> Cube(TEXT("/Engine/BasicShapes/Cube.Cube"));
-	static ConstructorHelpers::FObjectFinder<UStaticMesh> Sphere(TEXT("/Engine/BasicShapes/Sphere.Sphere"));
-	static ConstructorHelpers::FObjectFinder<UMaterialInterface> BasicMaterial(TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> TorchMesh(TEXT("/Game/ThirdPersonBP/Build/Meshes/Wall_mounted_torch/wall_mounted_torch.wall_mounted_torch"));
+	static ConstructorHelpers::FObjectFinder<UParticleSystem> FireParticle(TEXT("/Game/StarterContent/Particles/P_Fire.P_Fire"));
+	static ConstructorHelpers::FObjectFinder<USoundCue> FireSound(TEXT("/Game/StarterContent/Audio/Fire01_Cue.Fire01_Cue"));
 	Pole=CreateDefaultSubobject<UStaticMeshComponent>(TEXT("TorchPole"));Pole->SetupAttachment(SceneRoot);
-	if(Cylinder.Succeeded())Pole->SetStaticMesh(Cylinder.Object);if(BasicMaterial.Succeeded())Pole->SetMaterial(0,BasicMaterial.Object);
-	Pole->SetRelativeLocation(FVector(0.f,0.f,-24.f));Pole->SetRelativeScale3D(FVector(.055f,.055f,.72f));Pole->SetCollisionProfileName(TEXT("BlockAll"));
+	if(TorchMesh.Succeeded())
+	{
+		// Preserve the authored proportions. Independent XYZ fitting distorted the
+		// bracket and made the torch look as if it had been mounted sideways.
+		Pole->SetStaticMesh(TorchMesh.Object);const FBoxSphereBounds Bounds=TorchMesh.Object->GetBounds();
+		const float UniformScale=105.f/FMath::Max(Bounds.BoxExtent.Z*2.f,KINDA_SMALL_NUMBER);
+		// Put the rearmost point of the imported mounting plate exactly at local
+		// X=0. The actor origin can then sit on the timber surface while the whole
+		// torch extends outward along local +X instead of floating or clipping.
+		const float SourceBackX=Bounds.Origin.X-Bounds.BoxExtent.X;
+		Pole->SetRelativeScale3D(FVector(UniformScale));Pole->SetRelativeLocation(FVector(-SourceBackX*UniformScale,-Bounds.Origin.Y*UniformScale,-Bounds.Origin.Z*UniformScale));
+	}
+	// The imported wall plate is authored in the actor's Y/Z plane. Keep its
+	// local orientation fixed; only the actor yaw is used to select a wall side.
+	Pole->SetRelativeRotation(FRotator(0.f,-90.f,0.f));
+	Pole->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	Bracket=CreateDefaultSubobject<UStaticMeshComponent>(TEXT("WallBracket"));Bracket->SetupAttachment(SceneRoot);
-	if(Cube.Succeeded())Bracket->SetStaticMesh(Cube.Object);if(BasicMaterial.Succeeded())Bracket->SetMaterial(0,BasicMaterial.Object);
-	Bracket->SetRelativeLocation(FVector(-18.f,0.f,-45.f));Bracket->SetRelativeScale3D(FVector(.36f,.07f,.07f));Bracket->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	Bracket->SetVisibility(false);Bracket->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	Flame=CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Flame"));Flame->SetupAttachment(SceneRoot);
-	if(Sphere.Succeeded())Flame->SetStaticMesh(Sphere.Object);if(BasicMaterial.Succeeded())Flame->SetMaterial(0,BasicMaterial.Object);
-	Flame->SetRelativeLocation(FVector(0.f,0.f,52.f));Flame->SetRelativeScale3D(FVector(.12f,.12f,.2f));Flame->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	Flame->SetVisibility(false);Flame->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	FireEffect=CreateDefaultSubobject<UParticleSystemComponent>(TEXT("FireEffect"));FireEffect->SetupAttachment(SceneRoot);
+	FireEffect->SetRelativeLocation(FVector(11.f,0.f,42.f));FireEffect->SetRelativeScale3D(FVector(.16f));FireEffect->SetAutoActivate(true);FireEffect->SetCastShadow(false);
+	if(FireParticle.Succeeded())FireEffect->SetTemplate(FireParticle.Object);
+	FireAudio=CreateDefaultSubobject<UAudioComponent>(TEXT("FireAudio"));FireAudio->SetupAttachment(SceneRoot);FireAudio->SetRelativeLocation(FVector(8.f,0.f,45.f));FireAudio->bAutoActivate=true;FireAudio->SetVolumeMultiplier(.28f);FireAudio->SetPitchMultiplier(.92f);
+	if(FireSound.Succeeded())FireAudio->SetSound(FireSound.Object);
 	TorchLight=CreateDefaultSubobject<UPointLightComponent>(TEXT("TorchLight"));TorchLight->SetupAttachment(SceneRoot);
-	TorchLight->SetRelativeLocation(FVector(12.f,0.f,58.f));TorchLight->SetLightColor(FLinearColor(1.f,.32f,.055f));TorchLight->SetIntensity(5600.f);TorchLight->SetAttenuationRadius(1250.f);TorchLight->SetCastShadows(false);Flame->SetCastShadow(false);
+	TorchLight->SetRelativeLocation(FVector(18.f,0.f,44.f));TorchLight->SetLightColor(FLinearColor(1.f,.24f,.035f));TorchLight->SetIntensity(1250.f);TorchLight->SetAttenuationRadius(560.f);
+	// Generated interiors can contain dozens of torches. Shadowed movable point
+	// lights render six shadow views each and were the direct source of the red
+	// "too many overlapping shadowed lights" warning and severe frame drops.
+	TorchLight->SetCastShadows(false);
 }
 
 void AWallTorch::BeginPlay()
 {
 	Super::BeginPlay();
-	auto Tint=[](UStaticMeshComponent* Component,const FLinearColor& Color){if(UMaterialInstanceDynamic* Material=Component?Component->CreateAndSetMaterialInstanceDynamic(0):nullptr)Material->SetVectorParameterValue(TEXT("Color"),Color);};
-	Tint(Pole,FLinearColor(.12f,.035f,.008f));Tint(Bracket,FLinearColor(.08f,.025f,.006f));Tint(Flame,FLinearColor(1.f,.08f,.005f));
 	UpdateTorchLight();
 }
 
@@ -388,8 +428,18 @@ void AWallTorch::Tick(float DeltaSeconds){Super::Tick(DeltaSeconds);UpdateTorchL
 void AWallTorch::UpdateTorchLight()
 {
 	const bool bLit=!bConstructionPreview&&!bCollapsing;
-	if(TorchLight){TorchLight->SetVisibility(bLit,true);if(bLit&&GetWorld())TorchLight->SetIntensity(5300.f+FMath::Sin(GetWorld()->GetTimeSeconds()*8.7f)*300.f);}
-	if(Flame)Flame->SetVisibility(bLit,true);
+	if(TorchLight)
+	{
+		TorchLight->SetVisibility(bLit,true);
+		if(bLit&&GetWorld())
+		{
+			const float Now=GetWorld()->GetTimeSeconds();if(Now>=NextFlickerTime){NextFlickerTime=Now+FMath::FRandRange(.045f,.13f);FlickerTarget=FMath::FRandRange(.82f,1.13f);}
+			const float FineFlicker=1.f+FMath::Sin(Now*19.7f)*.035f+FMath::Sin(Now*31.1f)*.018f;
+			TorchLight->SetIntensity(1250.f*FlickerTarget*FineFlicker);
+		}
+	}
+	if(FireEffect){FireEffect->SetVisibility(bLit,true);if(bLit&&!FireEffect->IsActive())FireEffect->ActivateSystem();else if(!bLit&&FireEffect->IsActive())FireEffect->DeactivateSystem();}
+	if(FireAudio){FireAudio->SetVisibility(bLit,true);if(bLit&&!FireAudio->IsPlaying())FireAudio->Play();else if(!bLit&&FireAudio->IsPlaying())FireAudio->Stop();}
 }
 
 bool AWallTorch::HasStructuralSupport()const

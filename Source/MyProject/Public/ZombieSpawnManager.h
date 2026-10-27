@@ -14,19 +14,24 @@ class MYPROJECT_API AZombieSpawnManager : public AActor
 public:
 	AZombieSpawnManager();
 	virtual void BeginPlay()override;
+	virtual void Tick(float DeltaSeconds)override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps)const override;
 	UFUNCTION(BlueprintPure)float GetPreparationRemaining()const;
 	UFUNCTION(BlueprintPure)bool IsPreparing()const{return GetPreparationRemaining()>0.f;}
 	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="Zombie Spawning",meta=(ClampMin="0"))float PreparationDuration=60.f;
 	UPROPERTY(Replicated,VisibleAnywhere,BlueprintReadOnly,Category="Zombie Spawning")float PreparationEndServerTime=0.f;
 
-	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="Zombie Spawning",meta=(ClampMin="1"))int32 MaxAliveZombies=8;
+	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="Zombie Spawning",meta=(ClampMin="1"))int32 MaxAliveZombies=16;
 	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="Zombie Spawning",meta=(ClampMin="0"))int32 ZombiesPerPlayerLevel=1;
 	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="Zombie Spawning",meta=(ClampMin="8"))int32 AbsoluteMaxAliveZombies=40;
-	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="Zombie Spawning",meta=(ClampMin="1"))int32 SpawnBatchSize=2;
+	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="Zombie Spawning",meta=(ClampMin="1"))int32 SpawnBatchSize=4;
 	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="Zombie Spawning",meta=(ClampMin="0.5"))float SpawnInterval=4.f;
 	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="Zombie Spawning",meta=(ClampMin="300"))float MinimumSpawnDistance=1800.f;
 	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="Zombie Spawning",meta=(ClampMin="500"))float MaximumSpawnDistance=3600.f;
+	/** Unseen roaming zombies beyond this distance are recycled so a stuck NPC cannot occupy the population budget forever. */
+	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="Zombie Spawning",meta=(ClampMin="1000"))float RecycleDistance=5200.f;
+	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="Zombie Spawning",meta=(ClampMin="5"))float MinimumRecycleAge=35.f;
+	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="Zombie Spawning",meta=(ClampMin="0.1"))float RecentlyRenderedGrace=3.f;
 	/** Only this random fraction of roaming spawns begins lying down. */
 	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="Zombie Spawning",meta=(ClampMin="0.0",ClampMax="1.0"))float DormantSpawnChance=0.f;
 	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="Supplies",meta=(ClampMin="100"))float MinimumSupplyDistance=350.f;
@@ -63,4 +68,6 @@ private:
 	FTimerHandle HealthTimer;
 	FTimerHandle InitialSuppliesTimer;
 	double NextBanditGroupTime=0.;
+	double NextPopulationUpdateTime=0.;
+	bool bDiagnosticLogging=false;
 };

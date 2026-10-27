@@ -52,9 +52,11 @@ public:
 	UFUNCTION(BlueprintPure) bool CanCraftBed()const;
 	UFUNCTION(BlueprintPure) bool CanCraftMedkit()const;
 	UFUNCTION(BlueprintPure) bool CanCraftSticks()const;
+	UFUNCTION(BlueprintPure) bool CanCraftPlanks()const;
 	UFUNCTION(BlueprintCallable) void CraftMedkit();
 	UFUNCTION(BlueprintCallable) void CraftSticks();
 	UFUNCTION(BlueprintCallable) void CraftStickBatches(int32 BatchCount);
+	UFUNCTION(BlueprintCallable) void CraftPlankBatches(int32 BatchCount);
 	UFUNCTION(BlueprintCallable) void UseMedkit();
 	UFUNCTION(BlueprintCallable)void TransferItemToChest(AStorageChest* Chest,FName ItemId,int32 Quantity=1);
 	UFUNCTION(BlueprintCallable)void TransferItemFromChest(AStorageChest* Chest,FName ItemId,int32 Quantity=1);
@@ -141,6 +143,7 @@ protected:
 	UFUNCTION(Server,Reliable,WithValidation)void ServerCraftMedkit();
 	UFUNCTION(Server,Reliable,WithValidation)void ServerCraftSticks();
 	UFUNCTION(Server,Reliable,WithValidation)void ServerCraftStickBatches(int32 BatchCount);
+	UFUNCTION(Server,Reliable,WithValidation)void ServerCraftPlankBatches(int32 BatchCount);
 	UFUNCTION(Server,Reliable,WithValidation)void ServerUseMedkit();
 	UFUNCTION(Server,Reliable,WithValidation)void ServerTransferItemToChest(AStorageChest* Chest,FName ItemId,int32 Quantity);
 	UFUNCTION(Server,Reliable,WithValidation)void ServerTransferItemFromChest(AStorageChest* Chest,FName ItemId,int32 Quantity);

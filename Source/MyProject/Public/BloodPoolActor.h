@@ -4,7 +4,8 @@
 #include "GameFramework/Actor.h"
 #include "BloodPoolActor.generated.h"
 
-class UStaticMeshComponent;
+class USceneComponent;
+class UDecalComponent;
 class USkeletalMeshComponent;
 
 UCLASS(NotBlueprintable)
@@ -16,9 +17,10 @@ public:
 	virtual void Tick(float DeltaSeconds)override;
 	void ActivatePool(USkeletalMeshComponent* CorpseMesh,const FVector& CorpseLocation);
 private:
-	UPROPERTY()UStaticMeshComponent* PoolMesh=nullptr;
+	UPROPERTY()USceneComponent* SceneRoot=nullptr;
+	UPROPERTY()TArray<UDecalComponent*> PoolDecals;
+	TArray<FVector> TargetDecalSizes;
 	TWeakObjectPtr<USkeletalMeshComponent> TrackedCorpseMesh;
-	FVector TargetScale=FVector(1.5f,1.5f,.018f);
 	float Age=0.f;
 	void MoveBelowCorpse(const FVector& CorpseLocation);
 };

@@ -49,6 +49,10 @@ public:
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Attack") float AttackCooldown=2.25f;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Attack") float AttackHitDelay=.75f;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Attack") float AttackPlayRate=1.25f;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Attack") float AttackAnimationStartOffset=0.f;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Attack") float AttackAnimationEndTrim=0.f;
+	/** Negative uses the complete clip; heavy imported attacks can stop shortly after impact. */
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Attack") float AttackFinishSecondsAfterHit=-1.f;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Attack|Kick") float KickChance=.35f;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Attack|Kick") float KickHitDelay=1.05f;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Attack|Kick") float KickPlayRate=1.15f;
@@ -59,6 +63,7 @@ public:
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation") UAnimSequence* WalkAnimation;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation") UAnimSequence* AttackAnimation;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation") UAnimSequence* AttackAnimation2;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation") UAnimSequence* AttackAnimation3;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation") UAnimSequence* CrawlAnimation;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation") UAnimSequence* RunAnimation;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation") UAnimSequence* WakeAnimation;
@@ -67,6 +72,8 @@ public:
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation") UAnimSequence* TurnAnimation;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation") UAnimSequence* BiteAnimation;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation") UAnimSequence* KickAnimation;
+	/** Heavy variants can ignore hit reactions and keep advancing. */
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation") bool bPlayHitReactions=true;
 	/** One-shot transition played before crawl locomotion after the first leg is severed. */
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation|Dismemberment") UAnimSequence* LegBreakFallAnimation;
 	/** Reaction played when the victim successfully pushes the zombie away from a bite. */
@@ -75,6 +82,8 @@ public:
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation") float StartWalkingSpeed=28.f;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation") float StopWalkingSpeed=8.f;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Animation") float LocomotionSmoothingSpeed=7.f;
+	UPROPERTY() UMaterialInterface* BloodDecalMaterial=nullptr;
+	UPROPERTY() UMaterialInterface* WallBloodDecalMaterial=nullptr;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Visual Variant") bool bUseVisualVariant=false;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Visual Variant") FLinearColor VariantBodyColor=FLinearColor(.42f,.38f,.3f,1.f);
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Visual Variant") FLinearColor VariantPantsColor=FLinearColor(.08f,.06f,.04f,1.f);
@@ -88,6 +97,8 @@ public:
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Rewards",meta=(ClampMin="0")) int32 KillExperience=10;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Rewards",meta=(ClampMin="0")) int32 HeadshotBonusExperience=10;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Attack|Bite",meta=(ClampMin="0.0",ClampMax="1.0")) float BiteChance=.28f;
+	/** Some archetypes (for example the brute) only use hand attacks. */
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Attack|Bite") bool bCanUseBiteAttack=true;
 	/** A stationary character this close is bitten instead of receiving a random hand strike. */
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Attack|Bite",meta=(ClampMin="1.0")) float ImmediateBiteRange=125.f;
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Attack|Bite",meta=(ClampMin="0.0")) float StationaryBiteSpeed=15.f;
@@ -111,6 +122,7 @@ public:
 
 protected:
 	virtual void PerformAttackHit();
+	virtual uint8 SelectAttackVariant(AActor* Target,uint8 NextVariant,uint8 VariantCount)const;
 	virtual float GetMeleeDamage(const UHealthArmorComponent* TargetHealth)const;
 	virtual FVector GetMeleeLaunchVelocity(const FVector& AttackDirection,bool bKick)const;
 	TWeakObjectPtr<AActor> PendingAttackTarget;
@@ -177,7 +189,7 @@ private:
 	UFUNCTION() void OnRep_Dormant();
 	UFUNCTION() void OnRep_SeveredLimbs();
 	UFUNCTION() void OnRep_LegBreakFalling();
-	UFUNCTION(NetMulticast,Unreliable) void MulticastBloodImpact(FVector_NetQuantize HitLocation,FVector_NetQuantizeNormal ShotDirection,bool bFountain);
+	UFUNCTION(NetMulticast,Unreliable) void MulticastBloodImpact(FVector_NetQuantize HitLocation,FVector_NetQuantizeNormal ShotDirection,FName HitBone,bool bFountain);
 	UFUNCTION(NetMulticast,Unreliable) void MulticastHitReaction(uint8 ReactionIndex);
 	UFUNCTION(NetMulticast,Reliable) void MulticastBiteEscapeReaction();
 	UFUNCTION(NetMulticast,Reliable) void MulticastSeverLimb(uint8 LimbBit,FName RootBone,FVector Impulse,FVector HitLocation);

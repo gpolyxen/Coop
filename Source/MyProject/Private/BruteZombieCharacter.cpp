@@ -15,12 +15,17 @@ ABruteZombieCharacter::ABruteZombieCharacter()
 	static ConstructorHelpers::FObjectFinder<UAnimSequence> BruteWalk(TEXT("/Game/ThirdPersonBP/Bot/Brute/Anim/brute_walking_Anim.brute_walking_Anim"));
 	static ConstructorHelpers::FObjectFinder<UAnimSequence> BruteAttack00(TEXT("/Game/ThirdPersonBP/Bot/Brute/Anim/brute_attack_00_Anim.brute_attack_00_Anim"));
 	static ConstructorHelpers::FObjectFinder<UAnimSequence> BruteAttack01(TEXT("/Game/ThirdPersonBP/Bot/Brute/Anim/brut_attac_01_Anim.brut_attac_01_Anim"));
+	static ConstructorHelpers::FObjectFinder<UAnimSequence> BruteLeftHook(TEXT("/Game/ThirdPersonBP/Bot/Brute/Anim/attack_left_huk_Anim.attack_left_huk_Anim"));
 	if(BruteMesh.Succeeded())GetMesh()->SetSkeletalMesh(BruteMesh.Object);
 	if(BruteIdle.Succeeded()){IdleAnimation=BruteIdle.Object;WakeAnimation=BruteIdle.Object;}
 	if(BruteWalk.Succeeded())WalkAnimation=BruteWalk.Object;
 	if(BruteAttack00.Succeeded())AttackAnimation=BruteAttack00.Object;
 	if(BruteAttack01.Succeeded())AttackAnimation2=BruteAttack01.Object;
-	GetCapsuleComponent()->SetCapsuleSize(58.f,125.f);
+	if(BruteLeftHook.Succeeded())AttackAnimation3=BruteLeftHook.Object;
+	// The shared Recast mesh is authored for the normal zombie agent. A 58 cm
+	// capsule followed valid paths too close to indoor corners and became wedged
+	// although the path-following component still reported a valid route.
+	GetCapsuleComponent()->SetCapsuleSize(46.f,125.f);
 	GetMesh()->SetRelativeLocation(FVector(0.f,0.f,-125.f));
 	GetMesh()->SetRelativeScale3D(FVector(1.25f));
 	bUseVisualVariant=false;
@@ -30,15 +35,22 @@ ABruteZombieCharacter::ABruteZombieCharacter()
 	GetCharacterMovement()->MaxWalkSpeed=225.f;
 	GetCharacterMovement()->RotationRate=FRotator(0.f,180.f,0.f);
 	WalkAnimationPlayRate=1.05f;
-	MaxCombatHealth=480.f;
+	MaxCombatHealth=3000.f;
 	AttackDamage=25.f;
 	AttackRange=235.f;
 	AttackCooldown=2.5f;
 	AttackPlayRate=1.05f;
+	AttackAnimationStartOffset=.08f;
+	AttackAnimationEndTrim=.12f;
+	AttackFinishSecondsAfterHit=.18f;
 	BiteChance=0.f;
+	bCanUseBiteAttack=false;
 	KickChance=0.f;
 	BiteAnimation=nullptr;
 	KickAnimation=nullptr;
+	HitReactionAnimation=nullptr;
+	HitReactionAnimation2=nullptr;
+	bPlayHitReactions=false;
 	HeadDetachImpulse=48000.f;
 	KillExperience=75;
 	HeadshotBonusExperience=25;
@@ -46,7 +58,7 @@ ABruteZombieCharacter::ABruteZombieCharacter()
 	ArmDetachHits=7;
 	LegDetachHits=9;
 	CrawlSpeed=75.f;
-	if(Health)Health->MaxHealth=4800.f;
+	if(Health)Health->MaxHealth=30000.f;
 }
 
 float ABruteZombieCharacter::GetMeleeDamage(const UHealthArmorComponent* TargetHealth)const

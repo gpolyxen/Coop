@@ -126,11 +126,13 @@ protected:
 private:
 	void Refresh();
 	UFUNCTION()void CraftMedkitClicked();
+	UFUNCTION()void CraftPlanksClicked();
 	UFUNCTION()void CraftSticksClicked();
 	UFUNCTION()void UseMedkitClicked();
 	UFUNCTION()void CloseClicked();
 	UPROPERTY()UTextBlock* MaterialsText=nullptr;
 	UPROPERTY()UButton* CraftButton=nullptr;
+	UPROPERTY()UButton* CraftPlanksButton=nullptr;
 	UPROPERTY()UButton* CraftSticksButton=nullptr;
 	UPROPERTY()UButton* UseButton=nullptr;
 	float NextRefreshTime=0.f;

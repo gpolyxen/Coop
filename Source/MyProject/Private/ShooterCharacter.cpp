@@ -55,22 +55,22 @@ namespace
 	};
 	struct FBuildCost
 	{
-		int32 Wood=0;int32 Stick=0;int32 Rope=0;int32 Leather=0;int32 Cloth=0;int32 Gasoline=0;
+		int32 Plank=0;int32 Stick=0;int32 Rope=0;int32 Leather=0;int32 Cloth=0;int32 Gasoline=0;
 	};
 	FBuildCost GetBuildCost(EBuildPieceType Piece)
 	{
 		FBuildCost Cost;
 		switch(Piece)
 		{
-		case EBuildPieceType::Bed:Cost.Wood=10;Cost.Rope=10;break;
-		case EBuildPieceType::WoodChest:Cost.Wood=20;Cost.Leather=5;break;
-		case EBuildPieceType::WoodWall:Cost.Wood=6;break;
-		case EBuildPieceType::WoodWindowWall:Cost.Wood=7;break;
-		case EBuildPieceType::WoodDoor:Cost.Wood=8;Cost.Rope=2;break;
-		case EBuildPieceType::WoodGate:Cost.Wood=12;Cost.Rope=4;break;
-		case EBuildPieceType::WoodFloor:Cost.Wood=5;break;
-		case EBuildPieceType::WoodStairs:Cost.Wood=8;break;
-		case EBuildPieceType::WoodPillar:Cost.Wood=4;break;
+		case EBuildPieceType::Bed:Cost.Plank=10;Cost.Rope=10;break;
+		case EBuildPieceType::WoodChest:Cost.Plank=20;Cost.Leather=5;break;
+		case EBuildPieceType::WoodWall:Cost.Plank=6;break;
+		case EBuildPieceType::WoodWindowWall:Cost.Plank=7;break;
+		case EBuildPieceType::WoodDoor:Cost.Plank=8;Cost.Rope=2;break;
+		case EBuildPieceType::WoodGate:Cost.Plank=12;Cost.Rope=4;break;
+		case EBuildPieceType::WoodFloor:Cost.Plank=5;break;
+		case EBuildPieceType::WoodStairs:Cost.Plank=8;break;
+		case EBuildPieceType::WoodPillar:Cost.Plank=4;break;
 		case EBuildPieceType::WallTorch:Cost.Stick=1;Cost.Cloth=1;Cost.Gasoline=1;break;
 		default:break;
 		}
@@ -78,12 +78,12 @@ namespace
 	}
 	bool CanAffordBuild(const UInventoryComponent* Inventory,const FBuildCost& Cost)
 	{
-		return Inventory&&Inventory->GetQuantity(TEXT("Wood"))>=Cost.Wood&&Inventory->GetQuantity(TEXT("Stick"))>=Cost.Stick&&Inventory->GetQuantity(TEXT("Rope"))>=Cost.Rope&&Inventory->GetQuantity(TEXT("Leather"))>=Cost.Leather&&Inventory->GetQuantity(TEXT("Cloth"))>=Cost.Cloth&&Inventory->GetQuantity(TEXT("Gasoline"))>=Cost.Gasoline;
+		return Inventory&&Inventory->GetQuantity(TEXT("Plank"))>=Cost.Plank&&Inventory->GetQuantity(TEXT("Stick"))>=Cost.Stick&&Inventory->GetQuantity(TEXT("Rope"))>=Cost.Rope&&Inventory->GetQuantity(TEXT("Leather"))>=Cost.Leather&&Inventory->GetQuantity(TEXT("Cloth"))>=Cost.Cloth&&Inventory->GetQuantity(TEXT("Gasoline"))>=Cost.Gasoline;
 	}
 	void ConsumeBuildCost(UInventoryComponent* Inventory,const FBuildCost& Cost)
 	{
 		if(!Inventory)return;
-		if(Cost.Wood)Inventory->RemoveItem(TEXT("Wood"),Cost.Wood);if(Cost.Stick)Inventory->RemoveItem(TEXT("Stick"),Cost.Stick);if(Cost.Rope)Inventory->RemoveItem(TEXT("Rope"),Cost.Rope);if(Cost.Leather)Inventory->RemoveItem(TEXT("Leather"),Cost.Leather);if(Cost.Cloth)Inventory->RemoveItem(TEXT("Cloth"),Cost.Cloth);if(Cost.Gasoline)Inventory->RemoveItem(TEXT("Gasoline"),Cost.Gasoline);
+		if(Cost.Plank)Inventory->RemoveItem(TEXT("Plank"),Cost.Plank);if(Cost.Stick)Inventory->RemoveItem(TEXT("Stick"),Cost.Stick);if(Cost.Rope)Inventory->RemoveItem(TEXT("Rope"),Cost.Rope);if(Cost.Leather)Inventory->RemoveItem(TEXT("Leather"),Cost.Leather);if(Cost.Cloth)Inventory->RemoveItem(TEXT("Cloth"),Cost.Cloth);if(Cost.Gasoline)Inventory->RemoveItem(TEXT("Gasoline"),Cost.Gasoline);
 	}
 	bool FindWallTorchPlacement(UWorld* World,const FVector& Desired,FBuildSnapCandidate& Out)
 	{
@@ -169,6 +169,12 @@ namespace
 		}
 		if(Piece==EBuildPieceType::WoodStairs)
 		{
+			if(AWoodFloor* Floor=Cast<AWoodFloor>(Target))
+			{
+				FRotator R=Floor->GetActorRotation();R.Yaw+=QuarterTurns*90.f;
+				Out.Add({T,R,Target});
+				return;
+			}
 			if(!(Target->IsA<AWoodWall>()||Target->IsA<AWoodWindowWall>()||Target->IsA<AWoodGate>()))return;
 			for(float Side:{-1.f,1.f})
 			{
@@ -506,13 +512,21 @@ bool AShooterCharacter::GetPursuitTrailWaypoint(const FVector& PursuerLocation,i
 			if(Score<BestScore){BestScore=Score;ClosestIndex=Index;}
 		}
 		// Dynamic navigation may still be generating immediately after spawning.
-		// Fall back to a same-storey point rather than abandoning pursuit entirely.
+		// Prefer a visible same-storey breadcrumb. A geometrically closer point in
+		// the neighbouring room would otherwise make the zombie push into the wall.
 		if(ClosestIndex==INDEX_NONE)
 			for(int32 Index=PursuitTrail.Num()-1;Index>=0;--Index)
 			{
 				const FVector Delta=PursuitTrail[Index]-PursuerLocation;
-				if(FMath::Abs(Delta.Z)<=115.f&&Delta.SizeSquared2D()<BestScore){BestScore=Delta.SizeSquared2D();ClosestIndex=Index;}
+				if(FMath::Abs(Delta.Z)>115.f||Delta.SizeSquared2D()>=BestScore)continue;
+				FCollisionQueryParams Query(SCENE_QUERY_STAT(PursuitTrailVisibility),false,this);
+				if(GetWorld()->LineTraceTestByChannel(PursuerLocation+FVector(0.f,0.f,45.f),PursuitTrail[Index]+FVector(0.f,0.f,45.f),ECC_Visibility,Query))continue;
+				BestScore=Delta.SizeSquared2D();ClosestIndex=Index;
 			}
+		// Never fall back to the geometrically closest point. In a building that
+		// point is commonly in the adjacent room behind a solid wall, making the
+		// pursuer press into the wall indefinitely. Wait for a reachable or directly
+		// visible breadcrumb instead.
 		if(ClosestIndex==INDEX_NONE)return false;
 		InOutTrailCursor=FMath::Min(ClosestIndex+1,PursuitTrail.Num()-1);
 	}
@@ -552,9 +566,10 @@ bool AShooterCharacter::ConsumeStaminaForAction(float Cost)
 	return true;
 }
 
-bool AShooterCharacter::CanCraftBed()const{return Inventory&&Inventory->HasItems(TEXT("Wood"),10,TEXT("Rope"),10);}
+bool AShooterCharacter::CanCraftBed()const{return Inventory&&Inventory->HasItems(TEXT("Plank"),10,TEXT("Rope"),10);}
 bool AShooterCharacter::CanCraftMedkit()const{return Inventory&&Inventory->HasItems(TEXT("Medicine"),1,TEXT("Bandage"),2);}
-bool AShooterCharacter::CanCraftSticks()const{return Inventory&&Inventory->GetQuantity(TEXT("Wood"))>=1&&Inventory->CanAddItems(TEXT("Stick"),4,NAME_None,0);}
+bool AShooterCharacter::CanCraftSticks()const{return Inventory&&Inventory->GetQuantity(TEXT("Plank"))>=1&&Inventory->CanAddItems(TEXT("Stick"),4,NAME_None,0);}
+bool AShooterCharacter::CanCraftPlanks()const{return Inventory&&Inventory->GetQuantity(TEXT("Wood"))>=1&&Inventory->CanAddItems(TEXT("Plank"),4,NAME_None,0);}
 void AShooterCharacter::CraftMedkit()
 {
 	if(!HasAuthority()){ServerCraftMedkit();return;}
@@ -571,16 +586,27 @@ void AShooterCharacter::CraftStickBatches(int32 BatchCount)
 {
 	BatchCount=FMath::Clamp(BatchCount,1,999);
 	if(!HasAuthority()){ServerCraftStickBatches(BatchCount);return;}
+	if(!Inventory)return;const int32 TotalPlanks=Inventory->GetQuantity(TEXT("Plank"));if(TotalPlanks<BatchCount)return;
+	if(!Inventory->RemoveItem(TEXT("Plank"),TotalPlanks))return;
+	const int32 RemainingPlanks=TotalPlanks-BatchCount;
+	if((RemainingPlanks>0&&!Inventory->AddItem(TEXT("Plank"),RemainingPlanks))||!Inventory->AddItem(TEXT("Stick"),BatchCount*4))
+	{
+		Inventory->RemoveItem(TEXT("Plank"),Inventory->GetQuantity(TEXT("Plank")));Inventory->AddItem(TEXT("Plank"),TotalPlanks);ShowLocalNotification(TEXT("НЕДОСТАТОЧНО МЕСТА ДЛЯ РЕЗУЛЬТАТА"),2.f);return;
+	}
+	ShowLocalNotification(FString::Printf(TEXT("СОЗДАНО: ПАЛКИ x%d"),BatchCount*4),2.f);
+}
+void AShooterCharacter::CraftPlankBatches(int32 BatchCount)
+{
+	BatchCount=FMath::Clamp(BatchCount,1,999);
+	if(!HasAuthority()){ServerCraftPlankBatches(BatchCount);return;}
 	if(!Inventory)return;const int32 TotalWood=Inventory->GetQuantity(TEXT("Wood"));if(TotalWood<BatchCount)return;
-	// Old saves may contain several Wood stacks although Wood now supports one
-	// stack of 999. Repacking them first releases the slot required by the result.
 	if(!Inventory->RemoveItem(TEXT("Wood"),TotalWood))return;
 	const int32 RemainingWood=TotalWood-BatchCount;
-	if((RemainingWood>0&&!Inventory->AddItem(TEXT("Wood"),RemainingWood))||!Inventory->AddItem(TEXT("Stick"),BatchCount*4))
+	if((RemainingWood>0&&!Inventory->AddItem(TEXT("Wood"),RemainingWood))||!Inventory->AddItem(TEXT("Plank"),BatchCount*4))
 	{
 		Inventory->RemoveItem(TEXT("Wood"),Inventory->GetQuantity(TEXT("Wood")));Inventory->AddItem(TEXT("Wood"),TotalWood);ShowLocalNotification(TEXT("НЕДОСТАТОЧНО МЕСТА ДЛЯ РЕЗУЛЬТАТА"),2.f);return;
 	}
-	ShowLocalNotification(FString::Printf(TEXT("СОЗДАНО: ПАЛКИ x%d"),BatchCount*4),2.f);
+	ShowLocalNotification(FString::Printf(TEXT("СОЗДАНО: ДОСКИ x%d"),BatchCount*4),2.f);
 }
 void AShooterCharacter::UseMedkit()
 {
@@ -591,6 +617,7 @@ void AShooterCharacter::UseMedkit()
 bool AShooterCharacter::ServerCraftMedkit_Validate(){return true;}void AShooterCharacter::ServerCraftMedkit_Implementation(){CraftMedkit();}
 bool AShooterCharacter::ServerCraftSticks_Validate(){return true;}void AShooterCharacter::ServerCraftSticks_Implementation(){CraftSticks();}
 bool AShooterCharacter::ServerCraftStickBatches_Validate(int32 BatchCount){return BatchCount>0&&BatchCount<=999;}void AShooterCharacter::ServerCraftStickBatches_Implementation(int32 BatchCount){CraftStickBatches(BatchCount);}
+bool AShooterCharacter::ServerCraftPlankBatches_Validate(int32 BatchCount){return BatchCount>0&&BatchCount<=999;}void AShooterCharacter::ServerCraftPlankBatches_Implementation(int32 BatchCount){CraftPlankBatches(BatchCount);}
 bool AShooterCharacter::ServerUseMedkit_Validate(){return true;}void AShooterCharacter::ServerUseMedkit_Implementation(){UseMedkit();}
 FString AShooterCharacter::GetSelectedBuildName()const
 {
@@ -651,8 +678,16 @@ void AShooterCharacter::UpdateBuildPreview()
 			for(const FBuildSnapCandidate& Candidate:Candidates)
 			{
 				if(SelectedBuildPiece==EBuildPieceType::WoodFloor&&(Candidate.Parent->IsA<AWoodWall>()||Candidate.Parent->IsA<AWoodWindowWall>()||Candidate.Parent->IsA<AWoodGate>())&&AimLocation.Z<Candidate.Parent->GetActorLocation().Z+115.f)continue;
-				const float CandidateDistanceSq=FVector::DistSquared(Location,Candidate.Location);const float Score=CandidateDistanceSq+(DirectStructure==*It?-FMath::Square(500.f):0.f);
-				const float SnapSearchRadius=SelectedBuildPiece==EBuildPieceType::WoodStairs?800.f:550.f;
+				const float CandidateDistanceSq=FVector::DistSquared(Location,Candidate.Location);float Score=CandidateDistanceSq+(DirectStructure==*It&&SelectedBuildPiece!=EBuildPieceType::WoodStairs?-FMath::Square(500.f):0.f);
+				if(SelectedBuildPiece==EBuildPieceType::WoodStairs&&It->IsA<AWoodFloor>())
+				{
+					// Prefer the surviving floor directly below a destroyed staircase:
+					// its corresponding tile one storey above is deliberately absent.
+					bool bOpeningAbove=true;for(TActorIterator<AWoodFloor> Upper(GetWorld());Upper;++Upper)
+						if(FMath::Abs(Upper->GetActorLocation().Z-(It->GetActorLocation().Z+300.f))<45.f&&FVector::Dist2D(Upper->GetActorLocation(),It->GetActorLocation())<120.f){bOpeningAbove=false;break;}
+					Score-=bOpeningAbove?FMath::Square(1100.f):FMath::Square(350.f);
+				}
+				const float SnapSearchRadius=SelectedBuildPiece==EBuildPieceType::WoodStairs?1700.f:550.f;
 				if((DirectStructure==*It||CandidateDistanceSq<=FMath::Square(SnapSearchRadius))&&Score<BestScore&&!IsBuildLocationBlocked(GetWorld(),SelectedBuildPiece,Candidate.Location,Candidate.Parent)){BestScore=Score;Best=Candidate;bFoundSnap=true;}
 			}
 		}

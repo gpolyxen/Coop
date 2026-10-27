@@ -10,6 +10,8 @@ class UStaticMeshComponent;
 class USkeletalMeshComponent;
 class UBoxComponent;
 class UPointLightComponent;
+class UParticleSystemComponent;
+class UAudioComponent;
 class UNavLinkComponent;
 
 UCLASS(Abstract,Blueprintable)
@@ -135,7 +137,9 @@ public:
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly)UStaticMeshComponent* Pole;
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly)UStaticMeshComponent* Bracket;
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly)UStaticMeshComponent* Flame;
+	UPROPERTY(VisibleAnywhere,BlueprintReadOnly)UParticleSystemComponent* FireEffect;
+	UPROPERTY(VisibleAnywhere,BlueprintReadOnly)UAudioComponent* FireAudio;
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly)UPointLightComponent* TorchLight;
 protected:virtual bool HasStructuralSupport()const override;
-private:void UpdateTorchLight();
+private:void UpdateTorchLight();float FlickerTarget=1.f;float NextFlickerTime=0.f;
 };

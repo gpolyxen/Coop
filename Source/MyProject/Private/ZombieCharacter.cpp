@@ -18,6 +18,7 @@
 #include "Animation/AnimSingleNodeInstance.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Components/DecalComponent.h"
 #include "Engine/SkeletalMesh.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
@@ -28,6 +29,7 @@
 #include "NavigationSystem.h"
 #include "Net/UnrealNetwork.h"
 #include "TimerManager.h"
+#include "Kismet/GameplayStatics.h"
 #include "UObject/ConstructorHelpers.h"
 
 AZombieCharacter::AZombieCharacter()
@@ -76,6 +78,10 @@ AZombieCharacter::AZombieCharacter()
 	if(WalkAsset.Succeeded())WalkAnimation=WalkAsset.Object;
 	static ConstructorHelpers::FObjectFinder<UAnimSequence> AttackAsset(TEXT("/Game/ThirdPersonBP/Bot/bot_animations/Zombie_Attack__1__Anim.Zombie_Attack__1__Anim"));
 	if(AttackAsset.Succeeded())AttackAnimation=AttackAsset.Object;
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> BloodDecal(TEXT("/Game/ThirdPersonBP/VFX/Blood/M_BloodAtlas_Decal.M_BloodAtlas_Decal"));
+	if(BloodDecal.Succeeded())BloodDecalMaterial=BloodDecal.Object;
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> WallBloodDecal(TEXT("/Game/ThirdPersonBP/VFX/Blood/M_BloodWallSplatter_Decal.M_BloodWallSplatter_Decal"));
+	if(WallBloodDecal.Succeeded())WallBloodDecalMaterial=WallBloodDecal.Object;
 	static ConstructorHelpers::FObjectFinder<UAnimSequence> CrawlAsset(TEXT("/Game/ThirdPersonBP/Bot/bot_animations/Zombie_Crawl_Anim.Zombie_Crawl_Anim"));
 	if(CrawlAsset.Succeeded())CrawlAnimation=CrawlAsset.Object;
 	static ConstructorHelpers::FObjectFinder<UAnimSequence> RunAsset(TEXT("/Game/ThirdPersonBP/Bot/bot_animations/Zombie_Run_Anim.Zombie_Run_Anim"));
@@ -475,7 +481,7 @@ float AZombieCharacter::TakeDamage(float DamageAmount,const FDamageEvent& Damage
 	const float AppliedDamage=OldCombatHealth-CombatHealth;
 	LethalProgress=1.f-CombatHealth/FMath::Max(1.f,MaxCombatHealth);
 	const bool bKilled=CombatHealth<=KINDA_SMALL_NUMBER;
-	MulticastBloodImpact(HitLocation,ShotDirection,false);
+	MulticastBloodImpact(HitLocation,ShotDirection,HitBone,false);
 	if(!bKilled&&!IsAttacking())BeginHitReaction();
 	WakeUp();
 
@@ -499,13 +505,38 @@ float AZombieCharacter::TakeDamage(float DamageAmount,const FDamageEvent& Damage
 	return AppliedDamage;
 }
 
-void AZombieCharacter::MulticastBloodImpact_Implementation(FVector_NetQuantize HitLocation,FVector_NetQuantizeNormal ShotDirection,bool bFountain)
+void AZombieCharacter::MulticastBloodImpact_Implementation(FVector_NetQuantize HitLocation,FVector_NetQuantizeNormal ShotDirection,FName HitBone,bool bFountain)
 {
 	if(!GetWorld())return;
 	FActorSpawnParameters Parameters;
 	Parameters.SpawnCollisionHandlingOverride=ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 	if(ABloodBurstActor* Blood=GetWorld()->SpawnActor<ABloodBurstActor>(ABloodBurstActor::StaticClass(),HitLocation,ShotDirection.Rotation(),Parameters))
 		Blood->ActivateBurst(ShotDirection,bFountain);
+	if(!BloodDecalMaterial)return;
+	if(!HitBone.IsNone()&&GetMesh())
+	{
+		const int32 AtlasIndex=FMath::RandRange(8,15);UMaterialInstanceDynamic* WoundMaterial=UMaterialInstanceDynamic::Create(BloodDecalMaterial,this);
+		WoundMaterial->SetVectorParameterValue(TEXT("AtlasOffset"),FLinearColor((AtlasIndex%4)*.25f,(AtlasIndex/4)*.25f,0.f,0.f));
+		FRotator WoundRotation=FVector(ShotDirection).Rotation();WoundRotation.Roll=FMath::FRandRange(0.f,360.f);
+		UGameplayStatics::SpawnDecalAttached(WoundMaterial,FVector(4.f,FMath::FRandRange(5.f,8.f),FMath::FRandRange(5.f,8.f)),GetMesh(),HitBone,FVector(HitLocation),WoundRotation,EAttachLocation::KeepWorldPosition,35.f);
+	}
+	FHitResult SurfaceHit;FCollisionQueryParams SurfaceQuery(SCENE_QUERY_STAT(BloodSurfaceSplash),false,this);SurfaceQuery.AddIgnoredActor(this);
+	const FVector Direction=FVector(ShotDirection).GetSafeNormal();
+	if(WallBloodDecalMaterial&&GetWorld()->LineTraceSingleByChannel(SurfaceHit,FVector(HitLocation)+Direction*20.f,FVector(HitLocation)+Direction*900.f,ECC_WorldStatic,SurfaceQuery))
+	{
+		const int32 DecalCount=FMath::RandRange(1,3);
+		const FVector WallRight=FVector::CrossProduct(SurfaceHit.ImpactNormal,FVector::UpVector).GetSafeNormal();
+		const FVector WallUp=FVector::CrossProduct(WallRight,SurfaceHit.ImpactNormal).GetSafeNormal();
+		for(int32 DecalIndex=0;DecalIndex<DecalCount;++DecalIndex)
+		{
+			const int32 AtlasIndex=FMath::RandRange(0,15);UMaterialInstanceDynamic* SplashMaterial=UMaterialInstanceDynamic::Create(WallBloodDecalMaterial,this);
+			SplashMaterial->SetVectorParameterValue(TEXT("AtlasOffset"),FLinearColor((AtlasIndex%4)*.25f,(AtlasIndex/4)*.25f,0.f,0.f));
+			FRotator SplashRotation=SurfaceHit.ImpactNormal.Rotation();SplashRotation.Roll=FMath::FRandRange(0.f,360.f);
+			const float Size=DecalIndex==0?FMath::FRandRange(24.f,44.f):FMath::FRandRange(9.f,21.f);
+			const FVector Spread=DecalIndex==0?FVector::ZeroVector:WallRight*FMath::FRandRange(-38.f,38.f)+WallUp*FMath::FRandRange(-28.f,34.f);
+			UGameplayStatics::SpawnDecalAtLocation(GetWorld(),SplashMaterial,FVector(5.f,Size,FMath::FRandRange(Size*.7f,Size*1.25f)),SurfaceHit.ImpactPoint+SurfaceHit.ImpactNormal*.7f+Spread,SplashRotation,90.f);
+		}
+	}
 }
 
 void AZombieCharacter::MulticastHitReaction_Implementation(uint8 ReactionIndex)
@@ -519,7 +550,7 @@ void AZombieCharacter::MulticastHitReaction_Implementation(uint8 ReactionIndex)
 
 void AZombieCharacter::BeginHitReaction()
 {
-	if(!HasAuthority()||bIsDead||IsAttacking()||!HitReactionAnimation)return;
+	if(!HasAuthority()||bIsDead||IsAttacking()||!bPlayHitReactions||!HitReactionAnimation)return;
 	bHitReacting=true;
 	if(AZombieAIController* ZombieController=Cast<AZombieAIController>(GetController()))ZombieController->StopMovement();
 	if(UCharacterMovementComponent* Movement=GetCharacterMovement())
@@ -561,10 +592,11 @@ bool AZombieCharacter::TryAttack(AActor* Target)
 
 	LastAttackTime=Now;
 	PendingAttackTarget=Target;
-	AttackVariantIndex=AttackAnimation2?(AttackVariantIndex+1)%2:0;
+	const uint8 AttackVariantCount=AttackAnimation3?3:(AttackAnimation2?2:1);
+	AttackVariantIndex=SelectAttackVariant(Target,(AttackVariantIndex+1)%AttackVariantCount,AttackVariantCount);
 	ACharacter* CharacterTarget=Cast<ACharacter>(Target);
 	const float TargetDistance2D=FVector::Dist2D(GetActorLocation(),Target->GetActorLocation());
-	const bool bCanBite=CharacterTarget&&!Cast<ABuildableStructure>(Target)&&(SeveredLimbs&3)==0;
+	const bool bCanBite=bCanUseBiteAttack&&CharacterTarget&&!Cast<ABuildableStructure>(Target)&&(SeveredLimbs&3)==0;
 	const bool bStationaryPointBlank=bCanBite&&TargetDistance2D<=ImmediateBiteRange
 		&&CharacterTarget->GetVelocity().Size2D()<=StationaryBiteSpeed;
 	if(bCanBite&&(bStationaryPointBlank||FMath::FRand()<BiteChance))AttackMode=EZombieAttackMode::Bite;
@@ -581,8 +613,23 @@ bool AZombieCharacter::TryAttack(AActor* Target)
 	UAnimSequence* SelectedAttack=GetSelectedAttackAnimation();
 	const float SelectedPlayRate=GetSelectedAttackPlayRate();
 	const float AnimationDuration=SelectedAttack?SelectedAttack->GetPlayLength()/FMath::Max(.1f,SelectedPlayRate):1.8f;
-	GetWorldTimerManager().SetTimer(AttackFinishTimer,this,&AZombieCharacter::FinishAttack,FMath::Max(SelectedHitDelay+.2f,AnimationDuration),false);
+	float FinishDelay=AttackFinishSecondsAfterHit>=0.f
+		?SelectedHitDelay+AttackFinishSecondsAfterHit
+		:FMath::Max(SelectedHitDelay+.2f,AnimationDuration-AttackAnimationEndTrim);
+	if(SelectedAttack)
+	{
+		// Never leave a non-looping Single Node animation parked on its final bind-
+		// pose frame. Some imported attacks end with a reference-pose key.
+		const float SafeAnimationEnd=FMath::Max(SelectedHitDelay+.05f,AnimationDuration-FMath::Max(.08f,AttackAnimationEndTrim));
+		FinishDelay=FMath::Min(FinishDelay,SafeAnimationEnd);
+	}
+	GetWorldTimerManager().SetTimer(AttackFinishTimer,this,&AZombieCharacter::FinishAttack,FMath::Max(SelectedHitDelay+.05f,FinishDelay),false);
 	return true;
+}
+
+uint8 AZombieCharacter::SelectAttackVariant(AActor*,uint8 NextVariant,uint8 VariantCount)const
+{
+	return VariantCount>0?NextVariant%VariantCount:0;
 }
 
 void AZombieCharacter::OnRep_AttackMode()
@@ -590,7 +637,11 @@ void AZombieCharacter::OnRep_AttackMode()
 	CurrentAnimation=nullptr;
 	if(AttackMode!=EZombieAttackMode::None)
 	{
-		PlayZombieAnimation(GetSelectedAttackAnimation(),false,GetSelectedAttackPlayRate());
+		UAnimSequence* SelectedAttack=GetSelectedAttackAnimation();
+		if(SelectedAttack)PlayZombieAnimation(SelectedAttack,false,GetSelectedAttackPlayRate());
+		else PlayZombieAnimation(IdleAnimation,true,1.f);
+		if(SelectedAttack&&AttackAnimationStartOffset>0.f)
+			if(UAnimSingleNodeInstance* Instance=GetMesh()->GetSingleNodeInstance())Instance->SetPosition(FMath::Min(AttackAnimationStartOffset,SelectedAttack->GetPlayLength()*.25f),false);
 	}
 	else UpdateLocomotionAnimation();
 }
@@ -599,6 +650,7 @@ UAnimSequence* AZombieCharacter::GetSelectedAttackAnimation()const
 {
 	if(AttackMode==EZombieAttackMode::Bite&&BiteAnimation)return BiteAnimation;
 	if(AttackMode==EZombieAttackMode::Kick&&KickAnimation)return KickAnimation;
+	if(AttackVariantIndex==2&&AttackAnimation3)return AttackAnimation3;
 	if(AttackVariantIndex==1&&AttackAnimation2)return AttackAnimation2;
 	return AttackAnimation;
 }
@@ -653,7 +705,13 @@ void AZombieCharacter::PerformAttackHit()
 	}
 	else if(ABuildableStructure* Structure=Cast<ABuildableStructure>(Target))
 	{
-		Structure->TakeDamage(FMath::Max(20.f,AttackDamage*1.35f),FDamageEvent(),GetController(),this);
+		float StructureDamage=FMath::Max(35.f,AttackDamage*1.75f);
+		// Interior doors must delay a pursuing horde, not stop it for half a
+		// minute. Walls remain tougher, while a normal door falls in about three
+		// committed strikes and immediately opens the navigation corridor.
+		if(Structure->IsA<AWoodDoor>())StructureDamage=140.f;
+		else if(Structure->IsA<AWoodWall>()||Structure->IsA<AWoodWindowWall>())StructureDamage=75.f;
+		Structure->TakeDamage(StructureDamage,FDamageEvent(),GetController(),this);
 	}
 	else
 	{

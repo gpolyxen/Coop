@@ -85,11 +85,21 @@ FText AOpenWorldStreamingManager::GetTimePeriodName()const
 void AOpenWorldStreamingManager::ApplyTimeOfDay()
 {
 	if(!Sun||!SkyLight||!HeightFog)return;
-	const float SolarRadians=(CurrentTimeHours-6.f)/12.f*PI;
-	const float SunHeight=FMath::Sin(SolarRadians);
-	const float DayFactor=FMath::Clamp(SunHeight/.18f,0.f,1.f);
-	Sun->SetWorldRotation(FRotator(-(CurrentTimeHours-6.f)*15.f,-35.f,0.f));
-	Sun->SetIntensity(FMath::Lerp(.025f,5.f,DayFactor));
+	// Keep useful daylight until the end of the evening. The old twelve-hour
+	// sine put the sun below the horizon at 18:00, making 18:52 look like
+	// midnight. Sunrise now starts at 05:00 and sunset completes at 21:00.
+	auto Smooth01=[](float Value)
+	{
+		const float X=FMath::Clamp(Value,0.f,1.f);
+		return X*X*(3.f-2.f*X);
+	};
+	const float DawnFactor=Smooth01((CurrentTimeHours-5.f)/2.f);
+	const float DuskFactor=1.f-Smooth01((CurrentTimeHours-18.f)/3.f);
+	const float DayFactor=FMath::Min(DawnFactor,DuskFactor);
+	const float SolarProgress=FMath::Clamp((CurrentTimeHours-5.f)/16.f,0.f,1.f);
+	const float SunHeight=FMath::Sin(SolarProgress*PI);
+	Sun->SetWorldRotation(FRotator(-SolarProgress*180.f,-35.f,0.f));
+	Sun->SetIntensity(FMath::Lerp(.04f,5.f,DayFactor));
 	FLinearColor SunColor=FLinearColor(.48f,.58f,1.f);
 	if(DayFactor>.01f)
 	{
@@ -97,8 +107,8 @@ void AOpenWorldStreamingManager::ApplyTimeOfDay()
 		SunColor=FLinearColor::LerpUsingHSV(FLinearColor(1.f,.38f,.14f),FLinearColor(1.f,.96f,.86f),1.f-HorizonWarmth);
 	}
 	Sun->SetLightColor(SunColor);
-	SkyLight->SetIntensity(FMath::Lerp(.08f,.9f,DayFactor));
-	HeightFog->SetFogDensity(FMath::Lerp(.012f,.003f,DayFactor));
+	SkyLight->SetIntensity(FMath::Lerp(.14f,.9f,DayFactor));
+	HeightFog->SetFogDensity(FMath::Lerp(.009f,.003f,DayFactor));
 	HeightFog->SetFogInscatteringColor(FLinearColor::LerpUsingHSV(FLinearColor(.025f,.045f,.11f),FLinearColor(.64f,.72f,.78f),DayFactor));
 }
 

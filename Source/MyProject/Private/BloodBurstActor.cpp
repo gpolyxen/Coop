@@ -46,8 +46,8 @@ void ABloodBurstActor::ActivateBurst(const FVector& ShotDirection,bool bFountain
 			const FLinearColor BloodColor=Index%3==0?FLinearColor(.16f,.002f,.002f):FLinearColor(.42f,.006f,.004f);
 			Material->SetVectorParameterValue(TEXT("Color"),BloodColor);
 		}
-		const float Scale=bFountain?FMath::FRandRange(.032f,.085f):FMath::FRandRange(.024f,.058f);
-		Drop->SetWorldScale3D(FVector(Scale,FMath::FRandRange(Scale*.35f,Scale),Scale));
+		const float Scale=bFountain?FMath::FRandRange(.012f,.034f):FMath::FRandRange(.009f,.027f);
+		Drop->SetWorldScale3D(FVector(Scale*FMath::FRandRange(1.4f,2.8f),FMath::FRandRange(Scale*.3f,Scale*.7f),Scale));
 		Drop->SetRelativeLocation(FMath::VRand()*FMath::FRandRange(0.f,8.f));
 		FVector Velocity;
 		if(bFountain)
@@ -62,8 +62,8 @@ void ABloodBurstActor::ResetFountainDroplet(int32 Index)
 	if(!Droplets.IsValidIndex(Index)||!Velocities.IsValidIndex(Index))return;
 	UStaticMeshComponent* Drop=Droplets[Index];
 	Drop->SetVisibility(true);
-	const float Scale=FMath::FRandRange(.028f,.075f);
-	Drop->SetWorldScale3D(FVector(Scale,FMath::FRandRange(Scale*.3f,Scale),Scale));
+	const float Scale=FMath::FRandRange(.011f,.032f);
+	Drop->SetWorldScale3D(FVector(Scale*FMath::FRandRange(1.5f,2.7f),FMath::FRandRange(Scale*.3f,Scale*.7f),Scale));
 	Drop->SetRelativeLocation(FMath::VRand()*FMath::FRandRange(0.f,7.f));
 	Velocities[Index]=FVector(FountainDirection.X,FountainDirection.Y,0.f)*FMath::FRandRange(40.f,210.f)
 		+FVector::UpVector*FMath::FRandRange(300.f,680.f)+FMath::VRand()*150.f;

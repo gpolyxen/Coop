@@ -3,3 +3,5 @@ Content/ThirdPersonBP/Items/Small_Medkit/tactical_medkit_pouch.uasset filter=lfs
 Content/ThirdPersonBP/Items/Small_Bag/small_bag.uasset filter=lfs diff=lfs merge=lfs -text
 Content/ThirdPersonBP/Items/Big_Bag/Large_bag.uasset filter=lfs diff=lfs merge=lfs -text
 Content/ThirdPersonBP/Items/Middle_Bag/medium_bag.uasset filter=lfs diff=lfs merge=lfs -text
+Content/ThirdPersonBP/Build/Meshes/Wall_mounted_torch/wall_mounted_torch.uasset filter=lfs diff=lfs merge=lfs -text
+Content/ThirdPersonBP/Build/Meshes/Wood_wall/wood_wall.uasset filter=lfs diff=lfs merge=lfs -text
